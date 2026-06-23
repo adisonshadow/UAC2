@@ -1,0 +1,5 @@
+# EUAC 离线 Docker 镜像清单
+# 开发机执行 export-images.sh 后，将生成的 tar 包与此清单一并拷贝到内网
+
+postgres:16-alpine
+redis:7-alpine

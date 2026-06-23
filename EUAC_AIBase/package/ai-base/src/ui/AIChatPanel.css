@@ -1,0 +1,101 @@
+.aibase-chat-panel {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-left: 1px solid #f0f0f0;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+  box-sizing: border-box;
+}
+
+.aibase-chat-float-btn {
+  z-index: 1090;
+}
+
+.aibase-chat-header {
+  height: 52px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 16px;
+  flex-shrink: 0;
+}
+
+.aibase-chat-header-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.aibase-chat-header-btn {
+  font-size: 18px;
+}
+
+.aibase-chat-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+
+.aibase-chat-welcome {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  margin-bottom: 16px;
+}
+
+.aibase-chat-send {
+  padding: 12px;
+  border-top: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.aibase-chat-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.aibase-chat-ref-tag {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.aibase-chat-send-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.aibase-chat-model-select {
+  max-width: 160px;
+  flex: 0 1 160px;
+}
+
+.aibase-chat-send-footer .ant-sender-switch-content {
+  font-size: 12px;
+  height: 24px;
+  padding-inline: 8px;
+}
+
+.aibase-chat-conversations {
+  width: 280px;
+}
+
+.aibase-chat-conversations .ant-conversations-list {
+  padding-inline-start: 0;
+}
+
+.ant-bubble-list .ant-bubble-start:not(.ant-bubble-divider):not(.ant-bubble-system) {
+  padding-inline-end: 0;
+}

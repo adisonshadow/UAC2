@@ -1,0 +1,78 @@
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Dependencies ---
+node_modules/
+
+# --- Environment & secrets ---
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+!.env.example
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Build output ---
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+
+# --- Test & coverage ---
+coverage/
+.nyc_output/
+
+# --- Cache ---
+.cache/
+.turbo/
+.eslintcache
+.stylelintcache
+*.swp
+*.swo
+*~
+
+# --- Editors ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# --- Cursor (local plans / agent state) ---
+.cursor/
+
+# --- Umi / Ant Design Pro (EUAC_frontend) ---
+.umi/
+.umi-production/
+.umi-test/
+.mfsu/
+.swc/
+
+# --- EUAC_frontend ---
+EUAC_frontend/tmp/
+
+# --- EUAC_backend ---
+EUAC_backend/uploads/*
+!EUAC_backend/uploads/.gitkeep
+EUAC_backend/thumbsCache/*
+EUAC_backend/backups/
+EUAC_backend/data/*.db
+EUAC_backend/src/resource/
+EUAC_backend/install/images/*.tar
+
+# --- EUAC_AIBase ---
+EUAC_AIBase/ref-demo/

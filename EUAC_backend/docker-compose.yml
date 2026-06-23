@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: euac-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-35432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:-fyMOM}
+      POSTGRES_USER: ${POSTGRES_USER:-yoyo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+    volumes:
+      - euac_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yoyo} -d ${POSTGRES_DATABASE:-fyMOM}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: euac-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-36379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - euac_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  euac_postgres_data:
+  euac_redis_data:

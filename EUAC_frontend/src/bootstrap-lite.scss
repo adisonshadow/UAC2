@@ -1,0 +1,232 @@
+/* ================
+   Display 类型
+================ */
+.d-none      { display: none !important; }
+.d-inline   { display: inline !important; }
+.d-block    { display: block !important; }
+.d-inline-block { display: inline-block !important; }
+.d-flex     { display: flex !important; }
+.d-grid     { display: grid !important; }
+
+/* ================
+   Float 工具
+================ */
+.float-start { float: left !important; }
+.float-end   { float: right !important; }
+.float-none  { float: none !important; }
+
+/* ================
+   Clearfix
+================ */
+.clearfix::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* ================
+   Margin & Padding (0~7)
+================ */
+@for $i from 0 through 7 {
+  .p-#{$i}     { padding: calc($i * 0.25rem) !important; }
+  .px-#{$i}    { padding-left: calc($i * 0.25rem); padding-right: calc($i * 0.25rem); }
+  .py-#{$i}    { padding-top: calc($i * 0.25rem); padding-bottom: calc($i * 0.25rem); }
+  .pt-#{$i}    { padding-top: calc($i * 0.25rem); }
+  .pe-#{$i}    { padding-right: calc($i * 0.25rem); }
+  .pb-#{$i}    { padding-bottom: calc($i * 0.25rem); }
+  .ps-#{$i}    { padding-left: calc($i * 0.25rem); }
+
+  .m-#{$i}     { margin: calc($i * 0.25rem) !important; }
+  .mx-#{$i}    { margin-left: calc($i * 0.25rem); margin-right: calc($i * 0.25rem); }
+  .my-#{$i}    { margin-top: calc($i * 0.25rem); margin-bottom: calc($i * 0.25rem); }
+  .mt-#{$i}    { margin-top: calc($i * 0.25rem); }
+  .me-#{$i}    { margin-right: calc($i * 0.25rem); }
+  .mb-#{$i}    { margin-bottom: calc($i * 0.25rem); }
+  .ms-#{$i}    { margin-left: calc($i * 0.25rem); }
+}
+
+/* ================
+   Flex 工具
+================ */
+.flex-row        { flex-direction: row !important; }
+.flex-column     { flex-direction: column !important; }
+.flex-wrap       { flex-wrap: wrap !important; }
+.justify-content-start { justify-content: flex-start !important; }
+.justify-content-end   { justify-content: flex-end !important; }
+.justify-content-center{ justify-content: center !important; }
+.justify-content-between{ justify-content: space-between !important; }
+.align-items-start    { align-items: flex-start !important; }
+.align-items-end      { align-items: flex-end !important; }
+.align-items-center   { align-items: center !important; }
+
+/* ================
+   Grid 系统 (24列)
+================ */
+.container {
+  width: 100%;
+  padding-right: 1rem;
+  padding-left: 1rem;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: -1rem;
+  margin-left: -1rem;
+}
+
+.col {
+  flex: 0 0 100%;
+  max-width: 100%;
+  padding-right: 1rem;
+  padding-left: 1rem;
+}
+
+@for $i from 1 through 24 {
+  .col-#{$i} {
+    flex: 0 0 calc(100% / 24 * #{$i});
+    max-width: calc(100% / 24 * #{$i});
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+}
+
+/* row-cols-n 控制一行中列数 */
+@for $n from 1 through 24 {
+  .row-cols-#{$n} > * {
+    flex: 0 0 calc(100% / #{$n});
+    max-width: calc(100% / #{$n});
+  }
+}
+
+/* gutter 控制间距 */
+.gutter-0 {
+  margin-right: 0;
+  margin-left: 0;
+}
+.gutter-0 > * {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.gutter-1 > * { padding-right: 0.25rem; padding-left: 0.25rem; }
+.gutter-2 > * { padding-right: 0.5rem; padding-left: 0.5rem; }
+.gutter-3 > * { padding-right: 1rem; padding-left: 1rem; }
+.gutter-4 > * { padding-right: 1.5rem; padding-left: 1.5rem; }
+.gutter-5 > * { padding-right: 3rem; padding-left: 3rem; }
+
+/* ================
+   字体大小 (8级)
+================ */
+@for $i from 1 through 8 {
+  .fs-#{$i} {
+    font-size: calc(0.75rem + ($i - 1) * 0.25rem);
+  }
+}
+
+/* ================
+   行高 (8级)
+================ */
+@for $i from 1 through 8 {
+  .lh-#{$i} {
+    line-height: calc(1 + ($i - 1) * 0.2);
+  }
+}
+
+/* ================
+   字体粗细
+================ */
+.fw-bold {
+  font-weight: 700 !important;
+}
+
+.fw-bolder {
+  font-weight: bolder !important;
+}
+
+.fw-semibold {
+  font-weight: 600 !important;
+}
+
+.fw-normal {
+  font-weight: 400 !important;
+}
+
+.fw-light {
+  font-weight: 300 !important;
+}
+
+.fw-lighter {
+  font-weight: lighter !important;
+}
+
+/* ================
+   字体样式
+================ */
+.fst-italic {
+  font-style: italic !important;
+}
+
+.fst-normal {
+  font-style: normal !important;
+}
+
+/* ================
+   文本对齐
+================ */
+.text-start {
+  text-align: left !important;
+}
+
+.text-end {
+  text-align: right !important;
+}
+
+.text-center {
+  text-align: center !important;
+}
+
+.text-justify {
+  text-align: justify !important;
+}
+
+/* ================
+   文本颜色
+================ */
+.text-muted {
+  color: #6c757d !important;
+}
+
+.text-primary {
+  color: #0d6efd !important;
+}
+
+.text-secondary {
+  color: #6c757d !important;
+}
+
+.text-success {
+  color: #198754 !important;
+}
+
+.text-danger {
+  color: #dc3545 !important;
+}
+
+.text-warning {
+  color: #ffc107 !important;
+}
+
+.text-info {
+  color: #0dcaf0 !important;
+}
+
+.text-light {
+  color: #f8f9fa !important;
+}
+
+.text-dark {
+  color: #212529 !important;
+}

@@ -1,0 +1,13 @@
+node_modules/
+logs/
+yarn-error.log
+.DS_Store
+src/resource/
+uploads/*
+thumbsCache/*
+coverage/
+test/
+.env.production
+backups/
+data/sales-demo.db
+install/images/*.tar

@@ -1,0 +1,154 @@
+import {
+  CheckCircleOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  KeyOutlined,
+  MessageOutlined,
+  MoreOutlined,
+} from '@ant-design/icons';
+import { DragSortTable } from '@ant-design/pro-components';
+import type { ProColumns } from '@ant-design/pro-components';
+import { Button, Dropdown, Empty, Popconfirm, Space, Tag } from 'antd';
+import React, { useEffect, useState } from 'react';
+type FieldRow = API.BusinessDataField & { sort: number };
+
+interface FieldListProps {
+  fields: API.BusinessDataField[];
+  disabled?: boolean;
+  onEdit: (field: API.BusinessDataField) => void;
+  onDelete: (field: API.BusinessDataField) => void;
+  onAddToChat?: (field: API.BusinessDataField) => void;
+  onSortChange: (fields: API.BusinessDataField[]) => void;
+}
+
+const FieldList: React.FC<FieldListProps> = ({
+  fields,
+  disabled,
+  onEdit,
+  onDelete,
+  onAddToChat,
+  onSortChange,
+}) => {
+  const [dataSource, setDataSource] = useState<FieldRow[]>([]);
+
+  useEffect(() => {
+    setDataSource(fields.map((field, index) => ({ ...field, sort: index })));
+  }, [fields]);
+
+  const columns: ProColumns<FieldRow>[] = [
+    { title: '', dataIndex: 'sort', width: 40, className: 'drag-visible' },
+    {
+      title: '字段',
+      width: 140,
+      render: (_, record) => (
+        <Space size={4}>
+          <code style={{ color: '#1890ff' }}>{record.fieldKey}</code>
+          {record.typeormConfig?.primary && (
+            <KeyOutlined style={{ color: '#faad14' }} title="主键" />
+          )}
+          {record.typeormConfig?.unique && (
+            <CheckCircleOutlined style={{ color: '#52c41a' }} title="唯一" />
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: '标签',
+      render: (_, record) => record.columnInfo?.label || '-',
+      width: 120,
+    },
+    {
+      title: '信息',
+      render: (_, record) => {
+        const type = record.typeormConfig?.type || 'varchar';
+        const length = record.typeormConfig?.length;
+        const typeDisplay = length ? `${type}(${length})` : type;
+        return (
+          <Space size={4} wrap>
+            <Tag color="blue">{String(typeDisplay).toUpperCase()}</Tag>
+            {record.typeormConfig?.nullable === false && <Tag color="red">NOT NULL</Tag>}
+            {record.typeormConfig?.unique && <Tag color="green">UNIQUE</Tag>}
+            {record.typeormConfig?.default !== undefined && record.typeormConfig?.default !== null && (
+              <>
+                <Tag color="orange">DEFAULT</Tag>
+                <code>{String(record.typeormConfig.default)}</code>
+              </>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: '操作',
+      width: 48,
+      fixed: 'right',
+      render: (_, record) => (
+        <Dropdown
+          disabled={disabled}
+          menu={{
+            items: [
+              { key: 'edit', icon: <EditOutlined />, label: '编辑', disabled, onClick: () => onEdit(record) },
+              ...(onAddToChat
+                ? [
+                    {
+                      key: 'chat',
+                      icon: <MessageOutlined />,
+                      label: '加入 AI 对话',
+                      onClick: () => onAddToChat(record),
+                    },
+                  ]
+                : []),
+              {
+                key: 'delete',
+                icon: <DeleteOutlined />,
+                label: (
+                  <Popconfirm title="确定删除该字段？" onConfirm={() => onDelete(record)}>
+                    <span>删除</span>
+                  </Popconfirm>
+                ),
+                danger: true,
+              },
+            ],
+          }}
+          trigger={['click']}
+        >
+          <Button type="text" size="small" icon={<MoreOutlined />} onClick={(e) => e.stopPropagation()} />
+        </Dropdown>
+      ),
+    },
+  ];
+
+  if (!dataSource.length) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="暂无字段，点击右上角「添加字段」"
+        style={{ margin: '32px 0' }}
+      />
+    );
+  }
+
+  return (
+    <DragSortTable<FieldRow>
+      rowKey={(record) => record.fieldKey || String(record.sort)}
+      columns={columns}
+      dataSource={dataSource}
+      search={false}
+      options={false}
+      pagination={false}
+      size="small"
+      dragSortKey="sort"
+      toolBarRender={false}
+      onDragSortEnd={(_before, _after, newData) => {
+        setDataSource(newData);
+        const sorted = newData.map(({ sort: _sort, ...field }) => ({
+          ...field,
+          sortOrder: field.sortOrder,
+        }));
+        onSortChange(sorted);
+      }}
+    />
+  );
+};
+
+export default FieldList;
