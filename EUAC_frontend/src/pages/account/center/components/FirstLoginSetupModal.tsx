@@ -1,6 +1,7 @@
 import { Alert, Button, Form, Input, Modal, message } from 'antd';
 import React, { useState } from 'react';
-import { useModel, request } from '@umijs/max';
+import { useInitialState } from '@/providers/InitialStateProvider';
+import { request } from '@/utils/request';
 import api from '@/services/UAC/api';
 import { parseAuthUser } from '@/utils/auth';
 import { getAuthCheck } from '@/services/UAC/api/auth';
@@ -12,7 +13,7 @@ interface FirstLoginSetupModalProps {
 const FirstLoginSetupModal: React.FC<FirstLoginSetupModalProps> = ({ open }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const { initialState, setInitialState } = useModel('@@initialState');
+  const { initialState, setInitialState } = useInitialState();
 
   const handleSubmit = async (values: {
     oldPassword: string;

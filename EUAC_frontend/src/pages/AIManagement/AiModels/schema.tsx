@@ -20,9 +20,9 @@ export const modelTableColumns: ProColumns<API.AdminAiModel>[] = [
   },
   {
     title: '服务商',
-    dataIndex: ['provider', 'name'],
+    dataIndex: 'providerId',
     width: 140,
-    render: (_, record) => record.provider?.name || record.providerId,
+    render: (_, record) => (record as API.AdminAiModel & { provider?: { name?: string } }).provider?.name || record.providerId,
   },
   {
     title: '能力标签',

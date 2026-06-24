@@ -21,6 +21,8 @@ export {
 } from './utils/aiChatBridge';
 export type { AIChatControls } from './utils/aiChatBridge';
 export { formatMessageWithReferences } from './utils/formatChatReferences';
+export { setToolInvokeLogger, logToolInvoke, withToolInvokeLog } from './utils/toolInvokeLogger';
+export type { ToolInvokeLogEntry, ToolInvokeLogger, ToolInvokeSide } from './utils/toolInvokeLogger';
 
 export {
   registerFunctionCall,

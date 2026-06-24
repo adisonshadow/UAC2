@@ -11,7 +11,10 @@ import {
 } from '@ant-design/icons';
 import { Button, Dropdown, Empty, Popconfirm, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useChatReference } from '@euac/ai-base';
 import React, { useMemo } from 'react';
+import ChatReferenceTarget from '@/components/ChatReferenceTarget';
+import { buildEntityReference } from '../../ai/chatReferenceUtils';
 import { buildScopeTree, type ScopeTreeItem } from '../../utils/buildScopeTree';
 const { Text } = Typography;
 
@@ -25,7 +28,6 @@ interface ScopeEntityTreeProps {
   onToggleLock?: (entity: API.BusinessDataEntity) => void;
   onEditEntity?: (entity: API.BusinessDataEntity) => void;
   onDeleteEntity?: (entity: API.BusinessDataEntity) => void;
-  onAddToChat?: (entity: API.BusinessDataEntity) => void;
 }
 
 function flattenAll(nodes: ScopeTreeItem[], depth = 0): FlatTreeRow[] {
@@ -47,8 +49,8 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
   onToggleLock,
   onEditEntity,
   onDeleteEntity,
-  onAddToChat,
 }) => {
+  const { addReference } = useChatReference();
   const tableData = useMemo(() => flattenAll(buildScopeTree(entities)), [entities]);
 
   const columns: ColumnsType<FlatTreeRow> = [
@@ -61,6 +63,11 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
           <div style={{ paddingLeft: indent, display: 'flex', alignItems: 'center', gap: 8 }}>
             {record.isScopeNode ? <PartitionOutlined /> : <DatabaseOutlined />}
             <Text strong={!record.isScopeNode}>{record.name}</Text>
+            {!record.isScopeNode && record.entity && (
+              <ChatReferenceTarget
+                onClick={() => addReference(buildEntityReference(record.entity!))}
+              />
+            )}
             {!record.isScopeNode && record.isLocked && (
               <LockOutlined style={{ color: '#faad14' }} title="已锁定" />
             )}
@@ -103,8 +110,8 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
                 {
                   key: 'chat',
                   icon: <MessageOutlined />,
-                  label: '加入 AI 对话',
-                  onClick: () => onAddToChat?.(entity),
+                  label: '添加引用',
+                  onClick: () => addReference(buildEntityReference(entity)),
                 },
                 {
                   key: 'edit',

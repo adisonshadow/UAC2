@@ -1,4 +1,4 @@
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 export async function getAdminScopes(params?: { page?: number; size?: number; isActive?: boolean }) {
   return request<any>('/api/v1/admin/scopes', { method: 'GET', params });

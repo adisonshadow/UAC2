@@ -1,5 +1,5 @@
 // @ts-ignore
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 const BASE = '/api/v1/business-data';
 

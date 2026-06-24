@@ -1,5 +1,5 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { useModel } from '@umijs/max';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { Card, theme } from 'antd';
 import React from 'react';
 
@@ -37,7 +37,7 @@ const InfoCard: React.FC<{
 
 const Welcome: React.FC = () => {
   const { token } = theme.useToken();
-  const { initialState } = useModel('@@initialState');
+  const { initialState } = useInitialState();
   return (
     <PageContainer>
       <Card

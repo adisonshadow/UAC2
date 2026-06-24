@@ -8,27 +8,31 @@ import {
 } from '@ant-design/icons';
 import { DragSortTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
+import { useChatReference } from '@euac/ai-base';
 import { Button, Dropdown, Empty, Popconfirm, Space, Tag } from 'antd';
 import React, { useEffect, useState } from 'react';
+import ChatReferenceTarget from '@/components/ChatReferenceTarget';
+import { buildFieldReference } from '../../ai/chatReferenceUtils';
 type FieldRow = API.BusinessDataField & { sort: number };
 
 interface FieldListProps {
+  entity: API.BusinessDataEntity;
   fields: API.BusinessDataField[];
   disabled?: boolean;
   onEdit: (field: API.BusinessDataField) => void;
   onDelete: (field: API.BusinessDataField) => void;
-  onAddToChat?: (field: API.BusinessDataField) => void;
   onSortChange: (fields: API.BusinessDataField[]) => void;
 }
 
 const FieldList: React.FC<FieldListProps> = ({
+  entity,
   fields,
   disabled,
   onEdit,
   onDelete,
-  onAddToChat,
   onSortChange,
 }) => {
+  const { addReference } = useChatReference();
   const [dataSource, setDataSource] = useState<FieldRow[]>([]);
 
   useEffect(() => {
@@ -43,6 +47,9 @@ const FieldList: React.FC<FieldListProps> = ({
       render: (_, record) => (
         <Space size={4}>
           <code style={{ color: '#1890ff' }}>{record.fieldKey}</code>
+          <ChatReferenceTarget
+            onClick={() => addReference(buildFieldReference(entity, record))}
+          />
           {record.typeormConfig?.primary && (
             <KeyOutlined style={{ color: '#faad14' }} title="主键" />
           )}
@@ -88,16 +95,12 @@ const FieldList: React.FC<FieldListProps> = ({
           menu={{
             items: [
               { key: 'edit', icon: <EditOutlined />, label: '编辑', disabled, onClick: () => onEdit(record) },
-              ...(onAddToChat
-                ? [
-                    {
-                      key: 'chat',
-                      icon: <MessageOutlined />,
-                      label: '加入 AI 对话',
-                      onClick: () => onAddToChat(record),
-                    },
-                  ]
-                : []),
+              {
+                key: 'chat',
+                icon: <MessageOutlined />,
+                label: '添加引用',
+                onClick: () => addReference(buildFieldReference(entity, record)),
+              },
               {
                 key: 'delete',
                 icon: <DeleteOutlined />,

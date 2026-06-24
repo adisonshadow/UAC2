@@ -1,6 +1,6 @@
 import React from 'react';
 import { Form, Input, Button, message, Select } from 'antd';
-import { useModel } from '@umijs/max';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import api from '@/services/UAC/api';
 import AvatarUpload from '@/components/AvatarUpload';
 import { genderEnum } from '@/enums';
@@ -11,7 +11,7 @@ interface ProfileFormProps {
 }
 
 const ProfileForm: React.FC<ProfileFormProps> = ({ onSuccess }) => {
-  const { initialState, refresh } = useModel('@@initialState');
+  const { initialState, refresh } = useInitialState();
   const [form] = Form.useForm();
   const [loading, setLoading] = React.useState(false);
 

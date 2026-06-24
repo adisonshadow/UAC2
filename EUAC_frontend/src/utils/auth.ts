@@ -1,4 +1,4 @@
-import { history } from '@umijs/max';
+import { history } from '@/utils/navigation';
 import { getAuthCheck } from '@/services/UAC/api/auth';
 import { message } from 'antd';
 import { getApiData } from './apiResponse';

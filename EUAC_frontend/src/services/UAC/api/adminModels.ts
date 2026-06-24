@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取 AI 模型列表 [需要认证] GET /api/v1/admin/models */
 export async function getAdminModels(

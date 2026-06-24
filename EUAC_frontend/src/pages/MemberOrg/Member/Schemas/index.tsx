@@ -3,7 +3,7 @@ import UUIDDisplay from "@/components/UUIDDisplay";
 import AvatarUpload from "@/components/AvatarUpload";
 import { Image } from 'antd';
 import { getImageUrlIfValid } from '@/utils/image';
-import { useModel } from '@umijs/max';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { statusEnum, genderEnum } from '@/enums';
 import type { MixedFieldType } from "@/types/schema";
 
@@ -152,7 +152,7 @@ export const fieldDefinitions: MixedFieldType[] = [
 
 // 创建一个自定义 hook 来获取部门数据
 export const useDepartmentOptions = () => {
-  const { initialState } = useModel('@@initialState');
+  const { initialState } = useInitialState();
   return initialState?.departmentsTreeData || [];
 };
 

@@ -1,4 +1,4 @@
-import { history } from '@umijs/max';
+import { history } from '@/utils/navigation';
 import { Button, Result } from 'antd';
 import React from 'react';
 

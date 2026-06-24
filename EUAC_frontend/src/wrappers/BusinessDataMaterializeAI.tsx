@@ -1,5 +1,5 @@
 import { AIChatPageScope, useAIChatDisplayMode } from '@euac/ai-base';
-import { Outlet } from '@umijs/max';
+import { Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 import { registerBizDataTools, unregisterBizDataTools } from '@/pages/BusinessData/ai/registerBizDataTools';
 

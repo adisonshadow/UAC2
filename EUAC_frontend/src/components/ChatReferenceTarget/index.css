@@ -1,0 +1,36 @@
+.chat-reference-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #1677ff;
+  cursor: pointer;
+  line-height: 1.5715;
+}
+
+.chat-reference-target:hover {
+  color: #4096ff;
+}
+
+.chat-reference-target-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.chat-reference-target img {
+  opacity: 0.3;
+  margin-left: 4px;
+  transition: opacity 0.3s ease;
+}
+
+.chat-reference-target:hover img {
+  opacity: 1;
+}
+
+.ant-table-row .chat-reference-target {
+  visibility: hidden;
+}
+
+.ant-table-row:hover .chat-reference-target {
+  visibility: visible;
+}

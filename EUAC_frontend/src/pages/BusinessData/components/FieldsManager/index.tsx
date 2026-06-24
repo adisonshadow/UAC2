@@ -175,17 +175,13 @@ const FieldsManager = forwardRef<FieldsManagerRef, FieldsManagerProps>(
 
         {segment === 'fields' && (
           <FieldList
+            entity={entity}
             fields={fields}
             disabled={disabled}
             onEdit={openFieldModal}
             onDelete={async (field) => {
               await persistFields(fields.filter((f) => f.fieldKey !== field.fieldKey));
             }}
-            onAddToChat={(field) =>
-              sendAIChat(
-                `我要设计实体「${entity.label}」(${entity.code}) 的字段「${field.columnInfo?.label || field.fieldKey}」(${field.fieldKey})，请先调用 bizdata_get_entity 查看现状并给出建议。`,
-              )
-            }
             onSortChange={persistFields}
           />
         )}

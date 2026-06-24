@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取服务商列表 [需要认证] GET /api/v1/admin/providers */
 export async function getAdminProviders(

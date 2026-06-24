@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useModel } from '@umijs/max';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { Tooltip, Cascader } from 'antd';
 import type { CascaderProps } from 'antd';
 import { getDepartmentPath } from '@/utils/department';
@@ -17,7 +17,7 @@ const DepartmentPath: React.FC<DepartmentPathProps> = ({
   onChange,
   isOnlyShowTail = true 
 }) => {
-  const { initialState } = useModel('@@initialState');
+  const { initialState } = useInitialState();
   const departments = initialState?.departments || [];
   const [path, setPath] = useState<string[]>([]);
 

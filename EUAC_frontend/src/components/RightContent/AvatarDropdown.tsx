@@ -1,5 +1,6 @@
 import { LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
-import { history, useModel } from '@umijs/max';
+import { history } from '@/utils/navigation';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { Spin, Avatar } from 'antd';
 import type { MenuInfo } from 'rc-menu/lib/interface';
 import React, { useCallback } from 'react';
@@ -14,7 +15,7 @@ export type GlobalHeaderRightProps = {
 };
 
 export const AvatarName = () => {
-  const { initialState } = useModel('@@initialState');
+  const { initialState } = useInitialState();
   const { currentUser } = initialState || {};
   return <span className="anticon">{currentUser?.username}</span>;
 };
@@ -40,14 +41,17 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ menu, childre
     }
   };
 
-  const { initialState, setInitialState } = useModel('@@initialState');
+  const { initialState, setInitialState } = useInitialState();
 
   const onMenuClick = useCallback(
     (event: MenuInfo) => {
       const { key } = event;
       if (key === 'logout') {
         flushSync(() => {
-          setInitialState((s) => ({ ...s, currentUser: undefined }));
+          setInitialState((s) => {
+            if (!s) return s;
+            return { ...s, currentUser: undefined };
+          });
         });
         loginOut();
         return;

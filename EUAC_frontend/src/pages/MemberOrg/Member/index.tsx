@@ -16,7 +16,9 @@ import {
 import { useSetState } from "ahooks";
 import { Button, Drawer, Modal, Spin, Space, message, Form, Input } from 'antd';
 import React, { useRef, useState } from "react";
-import { history, useLocation, useModel } from '@umijs/max';
+import { history } from '@/utils/navigation';
+import { useLocation } from 'react-router-dom';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { tableColumns, userDetailFormColumns, userEditFormColumns, useDepartmentOptions } from "./Schemas";
 import { getUsers, postUsers, putUsersUserId, deleteUsersUserId, getUsersUserId } from "@/services/UAC/api/users";
 import { getDepartmentPath } from '@/utils/department';
@@ -39,7 +41,7 @@ interface UserRecord {
 }
 
 const Page: React.FC = () => {
-  const { initialState } = useModel('@@initialState');
+  const { initialState } = useInitialState();
   const departmentOptions = useDepartmentOptions();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [loading, setLoading] = useState(false);

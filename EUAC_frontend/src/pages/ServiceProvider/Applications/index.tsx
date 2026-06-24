@@ -21,7 +21,7 @@ import {
 import { useSetState } from "ahooks";
 import { Button, Drawer, Modal, Spin, Space, message, Form, Typography, Upload } from 'antd';
 import React, { useRef, useState, useEffect } from "react";
-import { useLocation } from '@umijs/max';
+import { useLocation } from 'react-router-dom';
 import { tableColumns, applicationEditFormColumns } from "./Schemas";
 import { getApplications, postApplications, putApplicationsId, deleteApplicationsId, getApplicationsId, postApplicationsIdGenerateSecret } from "@/services/UAC/api/applications";
 import { postUploadsImage } from "@/services/UAC/api/uploads";

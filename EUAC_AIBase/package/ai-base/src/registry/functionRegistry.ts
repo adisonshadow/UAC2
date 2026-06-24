@@ -1,4 +1,5 @@
 import type { FunctionCallDef } from '../types';
+import { withToolInvokeLog } from '../utils/toolInvokeLogger';
 
 const registry = new Map<string, FunctionCallDef>();
 
@@ -34,5 +35,5 @@ export async function invokeFunctionCall(name: string, args: Record<string, unkn
   if (!def) {
     throw new Error(`未注册的 Client Tool: ${name}`);
   }
-  return def.handler(args);
+  return withToolInvokeLog('client', name, args, () => def.handler(args));
 }

@@ -4,13 +4,15 @@ import Lottie from 'react-lottie-player';
 import ProfileForm from './components/ProfileForm';
 import PasswordForm from './components/PasswordForm';
 import FirstLoginSetupModal from './components/FirstLoginSetupModal';
-import styles from './index.scss';
+import styles from './index.module.scss';
 import { LeftOutlined, LogoutOutlined } from '@ant-design/icons';
 import api from '@/services/UAC/api';
-import { history, useModel } from '@umijs/max';
+import { history } from '@/utils/navigation';
+import { useInitialState } from '@/providers/InitialStateProvider';
+import goodJobLottie from '@/assets/lotties/good-job.json';
 
 const AccountCenter: React.FC = () => {
-  const { initialState, refresh } = useModel('@@initialState');
+  const { initialState, refresh } = useInitialState();
   const [activeTab, setActiveTab] = useState('profile');
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -52,7 +54,7 @@ const AccountCenter: React.FC = () => {
   const mustChangePassword = !!initialState.currentUser.must_change_password;
 
   return (
-    <div className={styles.container}>
+    <div className={styles['account-center-container']}>
       <FirstLoginSetupModal open={mustChangePassword} />
       <div className='d-flex justify-content-between align-items-center'>
         <Button type='link' onClick={() => {
@@ -61,7 +63,7 @@ const AccountCenter: React.FC = () => {
           <LeftOutlined /> 返回
         </Button>
 
-        <img src="/images/logo.svg" alt="UAC" className={styles.logo} />
+        <img src="/images/logo.svg" alt="UAC" className={styles['account-center-logo']} />
         
         <Button type='link' onClick={() => {
           loginOut();
@@ -89,9 +91,9 @@ const AccountCenter: React.FC = () => {
         />
       </div>
       {showSuccess && (
-        <div className={styles.successAnimation}>
+        <div className={styles['account-center-success-animation']}>
           <Lottie
-            animationData={require('/public/lotties/good-job.json')}
+            animationData={goodJobLottie}
             loop={false}
             play
             style={{ width: 200, height: 200 }}

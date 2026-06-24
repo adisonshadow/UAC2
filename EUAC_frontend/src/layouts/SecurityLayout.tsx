@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation, useModel } from '@umijs/max';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { Spin } from 'antd';
 import { AUTH_PAGES, LOGIN_PATH, DEFAULT_REDIRECT } from '@/constants/auth';
 import { checkAuth } from '@/utils/auth';
@@ -11,7 +12,7 @@ const SecurityLayout: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const location = useLocation();
   const { pathname, search } = location;
-  const { initialState, setInitialState } = useModel('@@initialState');
+  const { initialState, setInitialState } = useInitialState();
 
   useEffect(() => {
     const checkAuthentication = async () => {

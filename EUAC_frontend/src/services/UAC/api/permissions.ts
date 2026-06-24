@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取权限列表 [需要认证] 获取权限列表，支持分页和筛选。当 size 参数为 -1 时，返回所有记录不分页。 GET /api/v1/permissions */
 export async function getPermissions(

@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { Form, Input, Button, message } from 'antd';
-import { useModel } from '@umijs/max';
-import { request } from '@umijs/max';
+import { useInitialState } from '@/providers/InitialStateProvider';
+import { request } from '@/utils/request';
 
 interface PasswordFormProps {
   onSuccess: () => void;
 }
 
 const PasswordForm: React.FC<PasswordFormProps> = ({ onSuccess }) => {
-  const { initialState } = useModel('@@initialState');
+  const { initialState } = useInitialState();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 

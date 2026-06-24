@@ -1,5 +1,6 @@
 const salesDemoDb = require('../demo/salesDemoDb');
 const materializationService = require('../businessData/materializationService');
+const { withToolInvokeLog } = require('../../utils/aiToolLogger');
 
 const BUILTIN_HANDLERS = {
   demo_echo: async (args) => ({
@@ -91,24 +92,33 @@ async function invokeServerBuiltin(config, args) {
 }
 
 async function invokeTool(tool, args = {}) {
+  const functionName = tool.function_name || tool.functionName || '(unknown)';
+  const executionType = tool.execution_type || tool.executionType;
+
   if (tool.execution_type === 'client') {
-    return {
+    return withToolInvokeLog(functionName, args, 'client', async () => ({
       executionType: 'client',
-      message: 'Client tool must be executed in the browser via functionRegistry'
-    };
+      message: 'Client tool must be executed in the browser via functionRegistry',
+    }));
   }
 
   if (tool.execution_type === 'server_http') {
-    const result = await invokeServerHttp(tool.server_config || {}, args);
-    return { executionType: 'server_http', result };
+    return withToolInvokeLog(functionName, args, 'server_http', async () => {
+      const result = await invokeServerHttp(tool.server_config || {}, args);
+      return { executionType: 'server_http', result };
+    });
   }
 
   if (tool.execution_type === 'server_builtin') {
-    const result = await invokeServerBuiltin(tool.server_config || {}, args);
-    return { executionType: 'server_builtin', result };
+    return withToolInvokeLog(functionName, args, 'server_builtin', async () => {
+      const result = await invokeServerBuiltin(tool.server_config || {}, args);
+      return { executionType: 'server_builtin', result };
+    });
   }
 
-  throw new Error(`不支持的 execution_type: ${tool.execution_type}`);
+  return withToolInvokeLog(functionName, args, executionType || 'unknown', async () => {
+    throw new Error(`不支持的 execution_type: ${tool.execution_type}`);
+  });
 }
 
 function formatOpenAITool(tool) {

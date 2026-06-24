@@ -12,8 +12,10 @@ import {
   message,
 } from 'antd';
 import { PageContainer } from '@ant-design/pro-components';
-import { sendMockUserMessage } from '@euac/ai-base';
+import { useChatReference } from '@euac/ai-base';
 import React, { useCallback, useEffect, useState } from 'react';
+import ChatReferenceTarget from '@/components/ChatReferenceTarget';
+import { buildEntityReference } from '../ai/chatReferenceUtils';
 import ScopeEntityTree from '../components/ScopeEntityTree';
 import FieldsManager from '../components/FieldsManager';
 import JsonSchemaEditor from '../components/JsonSchemaEditor';
@@ -38,7 +40,7 @@ const ModelDesigner: React.FC = () => {
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
-  const sendAIChat = sendMockUserMessage;
+  const { addReference } = useChatReference();
 
   const loadSchema = useCallback(async () => {
     setLoading(true);
@@ -133,12 +135,6 @@ const ModelDesigner: React.FC = () => {
     }
   };
 
-  const handleAddEntityToChat = (entity: API.BusinessDataEntity) => {
-    sendAIChat(
-      `我要设计实体「${entity.label}」(${entity.code})，请先调用 bizdata_get_entity 查看当前字段与索引，再给出建模建议。`,
-    );
-  };
-
   const handleSaveFields = async (fields: API.BusinessDataField[]) => {
     if (!selected?.id) return;
     setSaving(true);
@@ -178,7 +174,11 @@ const ModelDesigner: React.FC = () => {
       <div style={{ height: '100%', overflow: 'auto', padding: '0 4px' }}>
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <div>
-            <Space wrap>
+            <Space wrap align="center">
+              <Typography.Text strong>{selected.label}</Typography.Text>
+              <ChatReferenceTarget
+                onClick={() => addReference(buildEntityReference(selected))}
+              />
               <Typography.Text type="secondary">{selected.code}</Typography.Text>
               {selected.isLocked && <Tag color="gold">已锁定</Tag>}
               <Tag color="blue">v{selected.version}</Tag>
@@ -237,7 +237,6 @@ const ModelDesigner: React.FC = () => {
                 onToggleLock={handleToggleLock}
                 onEditEntity={openEditModal}
                 onDeleteEntity={handleDeleteEntity}
-                onAddToChat={handleAddEntityToChat}
               />
             </div>
           </div>

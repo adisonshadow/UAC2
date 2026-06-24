@@ -1,4 +1,4 @@
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 export async function getAdminTools(params?: {
   page?: number;

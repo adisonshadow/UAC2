@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取SSO应用信息 获取指定应用的SSO配置信息，用于SSO登录流程 GET /api/v1/applications-sso/${param0} */
 export async function getApplicationsSsoId(

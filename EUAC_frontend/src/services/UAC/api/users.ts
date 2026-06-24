@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取用户列表 [需要认证] 获取用户列表，支持分页和多种筛选条件 GET /api/v1/users */
 export async function getUsers(

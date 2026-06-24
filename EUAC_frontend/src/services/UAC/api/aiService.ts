@@ -1,4 +1,4 @@
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 export interface AiServiceModelInfo {
   slug: string;

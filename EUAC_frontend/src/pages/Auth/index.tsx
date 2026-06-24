@@ -3,12 +3,16 @@ import { getHealth } from '@/services/UAC/api/health';
 import { getAuthCheck, postAuthLogin } from '@/services/UAC/api/auth';
 import { getApplicationsSsoId } from '@/services/UAC/api/applicationsSso';
 import { getCaptcha } from '@/services/UAC/api/captcha';
-import { history, useModel, Helmet } from '@umijs/max';
+import { history } from '@/utils/navigation';
+import { useInitialState } from '@/providers/InitialStateProvider';
+import { Helmet } from '@/components/Helmet';
 import { message, Modal, Form, Input, Button, Card, Space, Spin, Result } from 'antd';
 import Lottie from 'react-lottie-player';
 import React, { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import SliderCaptchaComponent, { SliderCaptchaRef } from '@/components/SliderCaptcha';
+import bigdataLottie from '@/assets/lotties/bigdata-2.json';
+import loadingLottie from '@/assets/lotties/loading.json';
 import './index.scss';
 import { saveAuth, checkAuth, checkTokenValid, parseAuthUser } from '@/utils/auth';
 import { getApiErrorMessage } from '@/utils/apiResponse';
@@ -93,7 +97,7 @@ const LoginPage: React.FC = () => {
   const [isApplicationInfoLoaded, setIsApplicationInfoLoaded] = useState(false);
   const captchaRef = useRef<SliderCaptchaRef>(null);
   const ssoRedirectStartedRef = useRef(false);
-  const { setInitialState } = useModel('@@initialState');
+  const { setInitialState } = useInitialState();
 
   // useAIChatDisplayMode('hidden');
 
@@ -518,7 +522,10 @@ const LoginPage: React.FC = () => {
             sso_config: {
               redirect_uri: ssoInfo.sso_config?.redirect_uri,
               protocol: ssoInfo.sso_config?.protocol,
-              currentTimestamp: ssoInfo.sso_config?.currentTimestamp,
+              currentTimestamp:
+                ssoInfo.sso_config?.currentTimestamp != null
+                  ? String(ssoInfo.sso_config.currentTimestamp)
+                  : undefined,
               secret: ssoInfo.sso_config?.secret,
               redirect_mode: ssoInfo.sso_config?.redirect_mode,
               salt: ssoInfo.sso_config?.salt,
@@ -629,7 +636,7 @@ const LoginPage: React.FC = () => {
       </div>
       <Lottie
         className="lottie-bg"
-        animationData={require('/public/lotties/bigdata-2.json')}
+        animationData={bigdataLottie}
         loop
         play
       />
@@ -697,7 +704,7 @@ const LoginPage: React.FC = () => {
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Lottie
               style={{ width: '80px', height: '80px', margin: '0 auto 20px' }}
-              animationData={require('/public/lotties/loading.json')}
+              animationData={loadingLottie}
               loop
               play
             />

@@ -140,7 +140,11 @@ export function createEuacChatProvider() {
             if (token) {
               headers.set('Authorization', `Bearer ${token}`);
             }
-            return [url, { ...init, headers }];
+            const headerRecord: Record<string, string> = {};
+            headers.forEach((value, key) => {
+              headerRecord[key] = value;
+            });
+            return [url, { ...init, headers: headerRecord }];
           },
         },
         params: {

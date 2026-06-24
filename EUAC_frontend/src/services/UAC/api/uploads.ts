@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 上传文件 [需要认证] 上传单个文件，支持图片自动转换为webp格式 POST /api/v1/uploads */
 export async function postUploads(

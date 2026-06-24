@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取验证码 获取登录验证码图片 GET /api/v1/auth/captcha */
 export async function getAuthCaptcha(options?: { [key: string]: any }) {

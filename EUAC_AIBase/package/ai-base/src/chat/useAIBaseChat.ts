@@ -9,6 +9,7 @@ import type { AIBaseSkill, AIBaseTool, OpenAIToolDefinition } from '../types';
 import type { AIBaseClient } from '../sdk/client';
 import { createEuacChatProvider, type EuacChatMessage } from './EuacChatProvider';
 import { streamChatRound } from './streamToolChat';
+import { withToolInvokeLog } from '../utils/toolInvokeLogger';
 
 async function invokeToolByMeta(
   client: AIBaseClient,
@@ -20,8 +21,16 @@ async function invokeToolByMeta(
   if (toolMeta?.executionType === 'client' || (!toolMeta && getAllFunctionCalls().some((d) => d.name === functionName))) {
     return invokeFunctionCall(functionName, args);
   }
-  const res = await client.invokeServerTool(functionName, args);
-  return res.result ?? res;
+  return withToolInvokeLog(
+    'server',
+    functionName,
+    args,
+    async () => {
+      const res = await client.invokeServerTool(functionName, args);
+      return res.result ?? res;
+    },
+    { executionType: toolMeta?.executionType || 'server' },
+  );
 }
 
 export function useAIBaseChat(conversationKey: string) {

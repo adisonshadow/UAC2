@@ -1,6 +1,6 @@
 // @ts-ignore
 /* eslint-disable */
-import { request } from '@umijs/max';
+import { request } from '@/utils/request';
 
 /** 获取角色列表 [需要认证] 获取角色列表，支持分页和筛选。当 size 参数为 -1 时，返回所有记录不分页。 GET /api/v1/roles */
 export async function getRoles(
