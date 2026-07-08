@@ -1,0 +1,153 @@
+.application-api-catalog {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.application-api-catalog__header {
+  flex-shrink: 0;
+  background: #1b1b1b;
+  color: #fff;
+  padding: 16px 24px;
+  border-bottom: 3px solid #49cc90;
+}
+
+.application-api-catalog__header-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.application-api-catalog__header-sub {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+}
+
+.application-api-catalog__body {
+  height: calc(100vh - 90px);
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左侧树 / 右侧明细切换时不做过渡动画 */
+.application-api-catalog__body,
+.application-api-catalog__body * {
+  transition: none !important;
+  animation: none !important;
+}
+
+.application-api-catalog__sidebar {
+  width: 300px;
+  height: 100%;
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid #e8e8e8;
+  overflow: auto;
+  padding: 12px;
+}
+
+.application-api-catalog__content {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+/* 滚动区域内部内容底部留白（ant-tree / 明细正文） */
+.application-api-catalog__sidebar > .ant-tree {
+  padding-bottom: 50px;
+}
+
+.application-api-catalog__detail {
+  padding-bottom: 50px;
+}
+
+.application-api-catalog__service-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.application-api-catalog__service-meta {
+  margin-bottom: 24px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.application-api-catalog__operation {
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.application-api-catalog__operation-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.application-api-catalog__operation-head:hover {
+  background: #fafafa;
+}
+
+.application-api-catalog__method {
+  display: inline-block;
+  min-width: 64px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.application-api-catalog__method--get { background: #61affe; }
+.application-api-catalog__method--post { background: #49cc90; }
+.application-api-catalog__method--put { background: #fca130; }
+.application-api-catalog__method--patch { background: #50e3c2; color: #1b1b1b; }
+.application-api-catalog__method--delete { background: #f93e3e; }
+
+.application-api-catalog__path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.application-api-catalog__operation-body {
+  border-top: 1px solid #e8e8e8;
+  padding: 16px;
+}
+
+.application-api-catalog__schema {
+  margin: 0;
+  padding: 12px;
+  background: #41444e;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow: auto;
+  max-height: 320px;
+}
+
+.application-api-catalog__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 240px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.application-api-catalog__tree .ant-tree-node-content-wrapper {
+  white-space: nowrap;
+}

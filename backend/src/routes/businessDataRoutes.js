@@ -1,0 +1,970 @@
+const Router = require('koa-router');
+const BusinessDataController = require('../controllers/businessDataController');
+const MetricController = require('../controllers/metricController');
+const DataStandardController = require('../controllers/dataStandardController');
+const MetadataCatalogController = require('../controllers/metadataCatalogController');
+const auth = require('../middlewares/auth');
+
+const router = new Router({ prefix: '/api/v1/business-data' });
+
+/**
+ * @swagger
+ * /api/v1/business-data/schema:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取业务数据模型全量快照 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/schema', auth, BusinessDataController.getSchema);
+
+/**
+ * @swagger
+ * /api/v1/business-data/entities:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取实体列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: codePrefix
+ *         schema: { type: string }
+ *       - in: query
+ *         name: entityKind
+ *         schema: { type: string, enum: [er_table, json_schema] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建实体 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, label]
+ *             properties:
+ *               code: { type: string, description: "Scope:Entity 编码，如 sales:order:Order" }
+ *               label: { type: string }
+ *               entityKind: { type: string, enum: [er_table, json_schema] }
+ *               tableName: { type: string, description: "ER 表物理表名；不填则默认将 code 中的冒号替换为下划线；自定义时须全局唯一" }
+ *               entityInfo: { type: object }
+ *               jsonSchema: { type: object }
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ */
+router.get('/entities', auth, BusinessDataController.listEntities);
+router.post('/entities', auth, BusinessDataController.createEntity);
+
+/**
+ * @swagger
+ * /api/v1/business-data/entities/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取实体详情 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   patch:
+ *     tags: [BusinessData]
+ *     summary: 更新实体（version+1） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除实体 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.get('/entities/:id', auth, BusinessDataController.getEntity);
+router.patch('/entities/:id', auth, BusinessDataController.updateEntity);
+router.delete('/entities/:id', auth, BusinessDataController.deleteEntity);
+
+/**
+ * @swagger
+ * /api/v1/business-data/entities/{id}/fields:
+ *   put:
+ *     tags: [BusinessData]
+ *     summary: 批量保存实体字段（version+1） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fields:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [fieldKey]
+ *                   properties:
+ *                     fieldKey:
+ *                       type: string
+ *                       description: 字段名（也支持 name/key 别名）
+ *                     columnInfo:
+ *                       type: object
+ *                       description: 列元信息，如 label
+ *                     typeormConfig:
+ *                       type: object
+ *                       description: 类型配置，如 type/length/nullable/primary
+ *                     sortOrder:
+ *                       type: integer
+ *                     name:
+ *                       type: string
+ *                       description: fieldKey 别名（AI 常用）
+ *                     label:
+ *                       type: string
+ *                       description: 写入 columnInfo.label
+ *                     type:
+ *                       type: string
+ *                       description: 写入 typeormConfig.type
+ *     responses:
+ *       200:
+ *         description: 保存成功
+ */
+router.put('/entities/:id/fields', auth, BusinessDataController.upsertFields);
+
+/**
+ * @swagger
+ * /api/v1/business-data/enums:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取枚举列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建枚举 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ */
+router.get('/enums', auth, BusinessDataController.listEnums);
+router.post('/enums', auth, BusinessDataController.createEnum);
+
+/**
+ * @swagger
+ * /api/v1/business-data/enums/{id}:
+ *   patch:
+ *     tags: [BusinessData]
+ *     summary: 更新枚举 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除枚举 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.patch('/enums/:id', auth, BusinessDataController.updateEnum);
+router.delete('/enums/:id', auth, BusinessDataController.deleteEnum);
+
+/**
+ * @swagger
+ * /api/v1/business-data/relations:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取关系列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建关系（关联实体 version+1） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ */
+router.get('/relations', auth, BusinessDataController.listRelations);
+router.post('/relations', auth, BusinessDataController.createRelation);
+
+/**
+ * @swagger
+ * /api/v1/business-data/relations/{id}:
+ *   patch:
+ *     tags: [BusinessData]
+ *     summary: 更新关系 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除关系 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.patch('/relations/:id', auth, BusinessDataController.updateRelation);
+router.delete('/relations/:id', auth, BusinessDataController.deleteRelation);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/preview:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 物化预览（SQL + TS 代码） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               entityIds:
+ *                 type: array
+ *                 items: { type: string, format: uuid }
+ *               targetSchema: { type: string }
+ *               connectionId: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 预览成功
+ */
+router.post('/materialization/preview', auth, BusinessDataController.previewMaterialization);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/execute:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 执行物化（记录 entity_version） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               entityIds:
+ *                 type: array
+ *                 items: { type: string, format: uuid }
+ *               targetSchema: { type: string }
+ *               connectionId: { type: string, format: uuid }
+ *               dryRun: { type: boolean }
+ *               createTargetIfMissing:
+ *                 type: boolean
+ *                 description: 目标 Schema/数据库不存在时是否自动创建唯一ID（通常由前端确认后传入）
+ *               expectedVersions:
+ *                 type: object
+ *                 additionalProperties: { type: integer }
+ *     responses:
+ *       200:
+ *         description: 执行成功
+ *       409:
+ *         description: 目标 Schema/数据库不存在，需用户确认后带 createTargetIfMissing 重试
+ */
+router.post('/materialization/execute', auth, BusinessDataController.executeMaterialization);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/status:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取各实体物化版本与 stale 状态 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: connectionId
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/materialization/status', auth, BusinessDataController.getMaterializationStatus);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/runs:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 物化历史列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: connectionId
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/materialization/runs', auth, BusinessDataController.listMaterializationRuns);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/runs/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 物化记录详情 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/materialization/runs/:id', auth, BusinessDataController.getMaterializationRun);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/tables/{entityId}/schema:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 浏览物化物理表结构 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: entityId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: connectionId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get(
+  '/materialization/tables/:entityId/schema',
+  auth,
+  BusinessDataController.getMaterializedTableSchema,
+);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/tables/{entityId}/rows:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 分页浏览物化物理表数据 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: entityId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: connectionId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer, default: 20 }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get(
+  '/materialization/tables/:entityId/rows',
+  auth,
+  BusinessDataController.getMaterializedTableRows,
+);
+
+/**
+ * @swagger
+ * /api/v1/business-data/materialization/tables/{entityId}/mock-data:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 向物化物理表插入 MOCK 测试数据 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: entityId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: connectionId
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               connectionId: { type: string, format: uuid }
+ *               rows:
+ *                 type: array
+ *                 items: { type: object }
+ *               rowCount: { type: integer }
+ *     responses:
+ *       200:
+ *         description: 插入成功
+ */
+router.post(
+  '/materialization/tables/:entityId/mock-data',
+  auth,
+  BusinessDataController.insertMaterializedMockData,
+);
+
+/**
+ * @swagger
+ * /api/v1/business-data/database-connections:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取数据库连接列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建数据库连接 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, dbType, host, username, databaseName]
+ *             properties:
+ *               name: { type: string }
+ *               dbType: { type: string, enum: [postgresql, mongodb, redis] }
+ *               host: { type: string }
+ *               port: { type: integer }
+ *               username: { type: string }
+ *               password: { type: string }
+ *               databaseName: { type: string }
+ *               targetSchema: { type: string }
+ *               isDefault: { type: boolean }
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ */
+router.get('/database-connections', auth, BusinessDataController.listDatabaseConnections);
+router.post('/database-connections', auth, BusinessDataController.createDatabaseConnection);
+
+/**
+ * @swagger
+ * /api/v1/business-data/database-connections/{id}:
+ *   put:
+ *     tags: [BusinessData]
+ *     summary: 更新数据库连接 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除数据库连接 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.put('/database-connections/:id', auth, BusinessDataController.updateDatabaseConnection);
+router.delete('/database-connections/:id', auth, BusinessDataController.deleteDatabaseConnection);
+
+/**
+ * @swagger
+ * /api/v1/business-data/database-connections/{id}/test:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 测试数据库连接 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 测试成功
+ */
+router.post('/database-connections/:id/test', auth, BusinessDataController.testDatabaseConnection);
+
+/**
+ * @swagger
+ * /api/v1/business-data/scopes:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取业务数据 Scope 树（模型 code 路径前缀） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 获取成功，data.tree 为树形结构，data.items 为扁平列表
+ */
+router.get('/scopes', auth, BusinessDataController.listScopes);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/dashboard:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标看板聚合 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         schema: { type: string }
+ *       - in: query
+ *         name: refresh
+ *         schema: { type: string, enum: ['0', '1', 'true', 'false'] }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/metrics/dashboard', auth, MetricController.getDashboard);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/execute-batch:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 批量执行指标 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               scopeCode: { type: string }
+ *     responses:
+ *       200:
+ *         description: 执行完成
+ */
+router.post('/metrics/execute-batch', auth, MetricController.executeBatch);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         schema: { type: string }
+ *       - in: query
+ *         name: scopeCode
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建指标 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ */
+router.get('/metrics', auth, MetricController.listMetrics);
+router.post('/metrics', auth, MetricController.createMetric);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/{id}/execute:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 手动执行指标 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 执行成功
+ */
+router.post('/metrics/:id/execute', auth, MetricController.executeMetric);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/{id}/runs:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标执行历史 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/metrics/:id/runs', auth, MetricController.listRuns);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/{id}/values:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标历史值 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/metrics/:id/values', auth, MetricController.listValues);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/{id}/value:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标最新值 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: refresh
+ *         schema: { type: string, enum: ['0', '1', 'true', 'false'] }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/metrics/:id/value', auth, MetricController.getValue);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标详情 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   patch:
+ *     tags: [BusinessData]
+ *     summary: 更新指标 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除指标 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.get('/metrics/:id', auth, MetricController.getMetric);
+router.patch('/metrics/:id', auth, MetricController.updateMetric);
+router.delete('/metrics/:id', auth, MetricController.deleteMetric);
+
+/**
+ * @swagger
+ * /api/v1/business-data/data-standards:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 数据标准列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: keyword
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [enabled, disabled] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建数据标准 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       201:
+ *         description: 创建成功
+ */
+router.get('/data-standards', auth, DataStandardController.list);
+router.post('/data-standards', auth, DataStandardController.create);
+
+/**
+ * @swagger
+ * /api/v1/business-data/data-standards/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 数据标准详情 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   put:
+ *     tags: [BusinessData]
+ *     summary: 更新数据标准 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除数据标准 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.get('/data-standards/:id', auth, DataStandardController.get);
+router.put('/data-standards/:id', auth, DataStandardController.update);
+router.delete('/data-standards/:id', auth, DataStandardController.delete);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metadata/tables:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 元数据逻辑表列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建或按 target 保存元数据表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 保存成功
+ */
+router.get('/metadata/tables', auth, MetadataCatalogController.listTables);
+router.post('/metadata/tables', auth, MetadataCatalogController.upsertTable);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metadata/by-target:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 按 target 获取元数据 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: targetType
+ *         schema: { type: string, enum: [entity, metric, enum] }
+ *       - in: query
+ *         name: targetId
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: fieldKey
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/metadata/by-target', auth, MetadataCatalogController.getByTarget);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metadata/sync-from-schema:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 从数据模型同步元数据目录骨架 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 同步成功
+ */
+router.post('/metadata/sync-from-schema', auth, MetadataCatalogController.syncFromSchema);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metadata/tables/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 元数据表详情（含字段） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   put:
+ *     tags: [BusinessData]
+ *     summary: 更新元数据表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除元数据表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.get('/metadata/tables/:id', auth, MetadataCatalogController.getTable);
+router.put('/metadata/tables/:id', auth, MetadataCatalogController.updateTable);
+router.delete('/metadata/tables/:id', auth, MetadataCatalogController.deleteTable);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metadata/tables/{id}/fields:
+ *   put:
+ *     tags: [BusinessData]
+ *     summary: 批量更新元数据字段 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ */
+router.put('/metadata/tables/:id/fields', auth, MetadataCatalogController.updateFields);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metadata/tables/{id}/fields:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 保存单个元数据字段 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 保存成功
+ */
+router.post('/metadata/tables/:id/fields', auth, MetadataCatalogController.upsertField);
+
+module.exports = router;

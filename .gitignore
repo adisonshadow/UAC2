@@ -55,24 +55,26 @@ coverage/
 # --- Cursor (local plans / agent state) ---
 .cursor/
 
-# --- Umi / Ant Design Pro (EUAC_frontend) ---
+# --- Umi / Ant Design Pro (EADAF_frontend) ---
 .umi/
 .umi-production/
 .umi-test/
 .mfsu/
 .swc/
 
-# --- EUAC_frontend ---
-EUAC_frontend/tmp/
+# --- EADAF_frontend ---
+EADAF_frontend/tmp/
 
-# --- EUAC_backend ---
-EUAC_backend/uploads/*
-!EUAC_backend/uploads/.gitkeep
-EUAC_backend/thumbsCache/*
-EUAC_backend/backups/
-EUAC_backend/data/*.db
-EUAC_backend/src/resource/
-EUAC_backend/install/images/*.tar
+# --- EADAF_backend ---
+EADAF_backend/uploads/*
+upload_test/
+!EADAF_backend/uploads/.gitkeep
+EADAF_backend/thumbsCache/*
+EADAF_backend/backups/
+EADAF_backend/db-backup/
+EADAF_backend/data/*.db
+EADAF_backend/src/resource/
+EADAF_backend/install/images/*.tar
 
-# --- EUAC_AIBase ---
-EUAC_AIBase/ref-demo/
+# --- AIBase_with_example ---
+AIBase_with_example/ref-demo/

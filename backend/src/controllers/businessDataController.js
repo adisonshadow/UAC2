@@ -1,0 +1,383 @@
+const businessDataService = require('../services/businessData/businessDataService');
+const materializationService = require('../services/businessData/materializationService');
+const materializedTableBrowseService = require('../services/businessData/materializedTableBrowseService');
+const databaseConnectionService = require('../services/businessData/databaseConnectionService');
+const logger = require('../utils/logger');
+const { formatApiError } = require('../utils/formatApiError');
+
+function sendBizDataError(ctx, error, options = {}) {
+  const formatted = formatApiError(error, options);
+  logger.error(formatted.message, {
+    errorType: error?.name,
+    details: formatted.data,
+    stack: error?.stack,
+  });
+  ctx.status = formatted.status;
+  ctx.body = {
+    code: formatted.code,
+    message: formatted.message,
+    data: formatted.data,
+  };
+}
+
+class BusinessDataController {
+  static async getSchema(ctx) {
+    try {
+      const data = await businessDataService.getFullSchema();
+      ctx.body = { code: 200, message: '获取业务数据模型成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async listEntities(ctx) {
+    try {
+      const data = await businessDataService.listEntities({
+        codePrefix: ctx.query.codePrefix,
+        entityKind: ctx.query.entityKind,
+        page: parseInt(ctx.query.page, 10) || 1,
+        size: parseInt(ctx.query.size, 10) || 100
+      });
+      ctx.body = { code: 200, message: '获取实体列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async getEntity(ctx) {
+    try {
+      const data = await businessDataService.getEntityById(ctx.params.id);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '实体不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '获取实体成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async createEntity(ctx) {
+    try {
+      const data = await businessDataService.createEntity(ctx.request.body);
+      ctx.status = 201;
+      ctx.body = { code: 201, message: '创建实体成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { resourceLabel: '实体' });
+    }
+  }
+
+  static async updateEntity(ctx) {
+    try {
+      const data = await businessDataService.updateEntity(ctx.params.id, ctx.request.body);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '实体不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '更新实体成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async deleteEntity(ctx) {
+    try {
+      const ok = await businessDataService.deleteEntity(ctx.params.id);
+      if (!ok) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '实体不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '删除实体成功', data: null };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async upsertFields(ctx) {
+    try {
+      const data = await businessDataService.upsertEntityFields(ctx.params.id, ctx.request.body.fields || []);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '实体不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '保存字段成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async listEnums(ctx) {
+    try {
+      const data = await businessDataService.listEnums({
+        page: parseInt(ctx.query.page, 10) || 1,
+        size: parseInt(ctx.query.size, 10) || 100
+      });
+      ctx.body = { code: 200, message: '获取枚举列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async createEnum(ctx) {
+    try {
+      const data = await businessDataService.createEnum(ctx.request.body);
+      ctx.status = 201;
+      ctx.body = { code: 201, message: '创建枚举成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { resourceLabel: '枚举' });
+    }
+  }
+
+  static async updateEnum(ctx) {
+    try {
+      const data = await businessDataService.updateEnum(ctx.params.id, ctx.request.body);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '枚举不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '更新枚举成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async deleteEnum(ctx) {
+    try {
+      const ok = await businessDataService.deleteEnum(ctx.params.id);
+      if (!ok) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '枚举不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '删除枚举成功', data: null };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async listRelations(ctx) {
+    try {
+      const data = await businessDataService.listRelations();
+      ctx.body = { code: 200, message: '获取关系列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async createRelation(ctx) {
+    try {
+      const data = await businessDataService.createRelation(ctx.request.body);
+      ctx.status = 201;
+      ctx.body = { code: 201, message: '创建关系成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async updateRelation(ctx) {
+    try {
+      const data = await businessDataService.updateRelation(ctx.params.id, ctx.request.body);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '关系不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '更新关系成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async deleteRelation(ctx) {
+    try {
+      const ok = await businessDataService.deleteRelation(ctx.params.id);
+      if (!ok) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '关系不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '删除关系成功', data: null };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async previewMaterialization(ctx) {
+    try {
+      const { entityIds, targetSchema, connectionId } = ctx.request.body;
+      const data = await materializationService.buildPreview({ entityIds, targetSchema, connectionId });
+      ctx.body = { code: 200, message: '物化预览成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async executeMaterialization(ctx) {
+    try {
+      const { entityIds, targetSchema, connectionId, dryRun, expectedVersions, createTargetIfMissing } = ctx.request.body;
+      const data = await materializationService.executeMaterialization({
+        entityIds,
+        targetSchema,
+        connectionId,
+        dryRun: !!dryRun,
+        expectedVersions: expectedVersions || {},
+        createTargetIfMissing: !!createTargetIfMissing,
+        createdBy: ctx.state.user?.user_id
+      });
+      ctx.body = { code: 200, message: dryRun ? '物化预览已记录' : '物化执行成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async getMaterializationStatus(ctx) {
+    try {
+      const data = await materializationService.getMaterializationStatus({
+        connectionId: ctx.query.connectionId
+      });
+      ctx.body = { code: 200, message: '获取物化状态成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async listMaterializationRuns(ctx) {
+    try {
+      const data = await materializationService.listRuns({
+        page: parseInt(ctx.query.page, 10) || 1,
+        size: parseInt(ctx.query.size, 10) || 10,
+        connectionId: ctx.query.connectionId
+      });
+      ctx.body = { code: 200, message: '获取物化历史成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async getMaterializationRun(ctx) {
+    try {
+      const data = await materializationService.getRunById(ctx.params.id);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '物化记录不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '获取物化记录成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async getMaterializedTableSchema(ctx) {
+    try {
+      const data = await materializedTableBrowseService.getTableSchema({
+        entityId: ctx.params.entityId,
+        connectionId: ctx.query.connectionId,
+      });
+      ctx.body = { code: 200, message: '获取物化表结构成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async getMaterializedTableRows(ctx) {
+    try {
+      const data = await materializedTableBrowseService.queryTableRows({
+        entityId: ctx.params.entityId,
+        connectionId: ctx.query.connectionId,
+        page: parseInt(ctx.query.page, 10) || 1,
+        size: parseInt(ctx.query.size, 10) || 20,
+      });
+      ctx.body = { code: 200, message: '获取物化表数据成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async insertMaterializedMockData(ctx) {
+    try {
+      const { rows, rowCount } = ctx.request.body || {};
+      const data = await materializedTableBrowseService.insertMockData({
+        entityId: ctx.params.entityId,
+        connectionId: ctx.query.connectionId || ctx.request.body?.connectionId,
+        rows,
+        rowCount,
+      });
+      ctx.body = { code: 200, message: 'MOCK 数据插入成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async listDatabaseConnections(ctx) {
+    try {
+      const data = await databaseConnectionService.listConnections();
+      ctx.body = { code: 200, message: '获取数据库连接列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async createDatabaseConnection(ctx) {
+    try {
+      const data = await databaseConnectionService.createConnection(ctx.request.body);
+      ctx.status = 201;
+      ctx.body = { code: 201, message: '创建数据库连接成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async updateDatabaseConnection(ctx) {
+    try {
+      const data = await databaseConnectionService.updateConnection(ctx.params.id, ctx.request.body);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '数据库连接不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '更新数据库连接成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async deleteDatabaseConnection(ctx) {
+    try {
+      const ok = await databaseConnectionService.deleteConnection(ctx.params.id);
+      if (!ok) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '数据库连接不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '删除数据库连接成功', data: null };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async testDatabaseConnection(ctx) {
+    try {
+      const data = await databaseConnectionService.testConnectionById(ctx.params.id);
+      ctx.body = { code: 200, message: '连接测试成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async listScopes(ctx) {
+    try {
+      const data = await businessDataService.listScopes();
+      ctx.body = { code: 200, message: '获取 Scope 列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+}
+
+module.exports = BusinessDataController;

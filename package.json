@@ -1,5 +1,5 @@
 {
-  "name": "euac-monorepo",
+  "name": "EADAF-monorepo",
   "private": true,
   "pnpm": {
     "overrides": {

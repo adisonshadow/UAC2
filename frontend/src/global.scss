@@ -1,0 +1,46 @@
+@use './bootstrap-lite';
+@use './overrides';
+
+body {
+  margin: 0 !important;
+}
+
+@property --ai-btn-border-angle {
+  syntax: '<angle>';
+  initial-value: 77.86deg;
+  inherits: false;
+}
+
+.ai-btn.ant-btn {
+  --ai-btn-border-angle: 77.86deg;
+  border: 1px solid transparent !important;
+  background:
+    linear-gradient(123deg, rgb(229, 244, 255) 0%, rgb(239, 231, 255) 100%) padding-box,
+    linear-gradient(
+      var(--ai-btn-border-angle),
+      #8ac5ff -3.23%,
+      #74abff 51.11%,
+      #e1a9ff 98.65%
+    ) border-box !important;
+  box-shadow: none !important;
+
+  &:not(:disabled):hover {
+    background:
+      linear-gradient(123deg, rgb(229, 244, 255) 0%, rgb(239, 231, 255) 100%) padding-box,
+      linear-gradient(
+        var(--ai-btn-border-angle),
+        #8ac5ff -3.23%,
+        #74abff 51.11%,
+        #e1a9ff 98.65%
+      ) border-box !important;
+    border-color: transparent !important;
+    animation: ai-btn-border-rotate 1.8s linear infinite;
+  }
+}
+
+@keyframes ai-btn-border-rotate {
+  to {
+    --ai-btn-border-angle: 437.86deg;
+  }
+}
+

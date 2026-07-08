@@ -1,0 +1,65 @@
+# EADAF Backend
+
+Koa + Sequelize 实现的 EADAF REST API，提供身份权限、应用 SSO、业务数据与 AI 网关能力。
+
+## 功能
+
+- **认证与用户**：登录/登出、验证码、JWT、Refresh Token、用户 CRUD、状态与密码管理
+- **组织与角色**：部门树、成员与组织多角色绑定、RBAC 角色与权限
+- **权限资源**：菜单 / 按钮 / API 权限维护与角色授权
+- **应用与 SSO**：三方应用注册、SSO 配置、应用侧 API 接入
+- **业务数据**：实体模型、枚举、关系、物化预览/执行、数据库连接（PostgreSQL / MongoDB / Redis）
+- **AI 管理**：Provider、Model、Scope、Tool、Skill、Chat 网关、Tool 调用、请求日志
+- **其他**：文件上传、健康检查、Swagger 文档
+
+## 安装
+
+### 环境
+
+- Node.js 18+
+- PostgreSQL 14+
+- Redis（可选，部分能力依赖）
+
+### 步骤
+
+```bash
+# 1. 配置环境变量（数据库、端口、JWT、CORS 等）
+cp .env.development .env.development.local   # 按需修改
+
+# 2. 安装依赖
+npm install
+
+# 3. 初始化数据库（会重建 uac schema）
+npm run init-db                              # 仅结构 + 超管
+npm run init-db-with-mock                    # 附加 Mock 用户/部门数据
+npm run init-db-with-aibase-seed             # 含 AIBase、业务数据、销售 Demo 等种子（推荐开发）
+
+# 4. 启动（nodemon 热重载，默认端口 9526）
+npm run dev
+```
+
+### 常用命令
+
+```bash
+npm test                    # 单元 / 接口测试
+npm run swagger             # 生成 swagger.json
+npm run init-sales-demo-db  # 单独初始化销售 Demo SQLite
+npm run db:maintenance:all  # VACUUM / ANALYZE / REINDEX
+```
+
+### 验证
+
+```bash
+curl -s http://localhost:9526/api/v1/health
+# Swagger: http://localhost:9526/swagger
+```
+
+## 关键注意事项
+
+1. **配置以 `.env.development` / `.env.production` 为准**，启动时由 `src/config/index.js` 加载。
+2. **`init-db` 会 DROP SCHEMA `uac` 并重建**，会清空该 schema 下全部数据，禁止对生产库执行。
+3. **CORS**：`CORS_ORIGIN` 需包含前端地址（开发默认含 `http://localhost:9527`）。
+4. **超管账号**：`superadmin.sql` 在 init 时写入，上线前务必改密或删除。
+5. **增量表结构**：如 `migrate-bizdata-database-connections.sql`、`migrate-department-roles.sql` 等，在已有库上需手动 `psql -f` 执行。
+6. **物化执行**：目标 PostgreSQL Schema / MongoDB 库不存在时返回 409，前端确认后带 `createTargetIfMissing: true` 自动创建。
+7. **路由 Swagger**：接口注释即文档源，改路由后请同步更新 JSDoc `@swagger` 备注。

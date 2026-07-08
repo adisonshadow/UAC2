@@ -1,7 +1,7 @@
 packages:
   # AI Base 源码包
-  - "EUAC_AIBase/package/ai-base"
+  - "AIBase_with_example/package/ai-base"
   # 业务项目 （AI Base 业务项目）
-  - "EUAC_frontend"
+  - "EADAF_frontend"
   # AI Base demo 项目
-  - "EUAC_AIBase"
+  - "AIBase_with_example"

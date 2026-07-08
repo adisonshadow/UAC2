@@ -1,0 +1,26 @@
+.eadaf-next-step-deck {
+  margin-top: 12px;
+}
+
+.eadaf-next-step-title {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.eadaf-next-step-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.eadaf-next-step-btn {
+  justify-content: flex-start;
+  text-align: left;
+  max-width: 100%;
+}
+
+.eadaf-next-step-streaming {
+  margin-top: 8px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}

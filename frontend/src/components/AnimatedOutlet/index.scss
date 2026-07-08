@@ -1,0 +1,10 @@
+.eadaf-page-transition {
+  min-height: 100%;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eadaf-page-transition {
+    will-change: opacity;
+  }
+}
