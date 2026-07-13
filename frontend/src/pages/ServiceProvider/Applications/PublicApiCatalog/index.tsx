@@ -1,6 +1,6 @@
 import { useAIChatDisplayMode } from '@EADAF/ai-base';
-import { ApiOutlined, PartitionOutlined } from '@ant-design/icons';
-import { Alert, Collapse, Spin, Tag, Tree, Typography } from 'antd';
+import { ApiOutlined, PartitionOutlined, CopyOutlined } from '@ant-design/icons';
+import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
@@ -10,6 +10,7 @@ import {
   type ApplicationApiCatalogService,
   type ApplicationApiCatalogTreeNode,
   type ApplicationApiCatalogResult,
+  type BuiltinApiCatalogItem,
 } from '@/services/UAC/api/applicationsPublic';
 import {
   buildApplicationApiDocsPath,
@@ -80,6 +81,72 @@ function toTreeNodes(items: ApplicationApiCatalogTreeNode[]): DataNode[] {
     isLeaf: !!item.isApiNode,
     children: item.children?.length ? toTreeNodes(item.children) : undefined,
   }));
+}
+
+function toBuiltinTreeNodes(items: ApplicationApiCatalogTreeNode[]): DataNode[] {
+  return items.map((item) => ({
+    key: item.code,
+    title: item.isApiNode ? (
+      <span>
+        <ApiOutlined style={{ marginRight: 6, color: '#1677ff' }} />
+        {item.name}
+      </span>
+    ) : (
+      <span>
+        <PartitionOutlined style={{ marginRight: 6 }} />
+        <Text strong>{item.name}</Text>
+      </span>
+    ),
+    selectable: !!item.isApiNode,
+    isLeaf: !!item.isApiNode,
+    children: item.children?.length ? toBuiltinTreeNodes(item.children) : undefined,
+  }));
+}
+
+function BuiltinApiDetail({ api }: { api: BuiltinApiCatalogItem }) {
+  const METHOD_COLORS: Record<string, string> = {
+    GET: 'blue',
+    POST: 'green',
+    PUT: 'orange',
+    DELETE: 'red',
+    PATCH: 'cyan',
+  };
+  return (
+    <div className="application-api-catalog__detail">
+      <h1 className="application-api-catalog__service-title">{api.label}</h1>
+      <div className="application-api-catalog__service-meta">
+        <div>
+          <Text code>{api.code}</Text>
+          {api.domain ? <Tag style={{ marginLeft: 8 }}>{api.domain}</Tag> : null}
+        </div>
+        {api.description ? <Paragraph style={{ marginTop: 8 }}>{api.description}</Paragraph> : null}
+        <div style={{ marginTop: 12 }}>
+          <div className="application-api-catalog__operation-head" style={{ cursor: 'default' }}>
+            {(api.httpMethods || []).length ? (
+              api.httpMethods.map((m) => (
+                <span key={m} className={methodClass(m)}>{m}</span>
+              ))
+            ) : null}
+            <span className="application-api-catalog__path">{api.routePath}</span>
+          </div>
+        </div>
+        {api.actions?.length ? (
+          <div style={{ marginTop: 12 }}>
+            <Text strong style={{ display: 'block', marginBottom: 4 }}>操作类型</Text>
+            {api.actions.map((a) => (
+              <Tag key={a} color={METHOD_COLORS[a.toUpperCase()] || 'default'}>{a}</Tag>
+            ))}
+          </div>
+        ) : null}
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginTop: 16 }}
+          message="内置 API：外部应用通过应用 API 密钥调用时，不受角色/组织限制（按应用授权鉴权）。"
+        />
+      </div>
+    </div>
+  );
 }
 
 function OperationBlock({
@@ -270,6 +337,8 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ApplicationApiCatalogResult | undefined>(undefined);
   const [selectedServiceCode, setSelectedServiceCode] = useState<string>();
+  const [tab, setTab] = useState<'business' | 'builtin'>('business');
+  const [selectedBuiltinCode, setSelectedBuiltinCode] = useState<string>();
 
   const routePathFromUrl = useMemo(
     () => (code ? parseApiDocsRoutePathFromPathname(location.pathname, code) : undefined),
@@ -306,6 +375,12 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
         }
         const data = getApiData<ApplicationApiCatalogResult>(res);
         setCatalog(data);
+        // 默认 Tab：业务 API 为空且内置 API 非空时，切到内置 API
+        const businessEmpty = !data?.tree?.length;
+        const builtinHas = !!data?.builtinApiTree?.length;
+        if (businessEmpty && builtinHas) {
+          setTab('builtin');
+        }
       } catch (err) {
         if (!cancelled) setError(getApiErrorMessage(err, '加载 API 目录失败'));
       } finally {
@@ -333,10 +408,21 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
   }, [catalog, code, syncSelectionFromUrl]);
 
   const treeNodes = useMemo(() => (catalog?.tree ? toTreeNodes(catalog.tree) : []), [catalog?.tree]);
+  const builtinTreeNodes = useMemo(
+    () => (catalog?.builtinApiTree ? toBuiltinTreeNodes(catalog.builtinApiTree) : []),
+    [catalog?.builtinApiTree],
+  );
   const selectedService = useMemo(
     () => catalog?.services?.find((item) => item.code === selectedServiceCode),
     [catalog?.services, selectedServiceCode],
   );
+  const selectedBuiltinApi = useMemo(
+    () => catalog?.builtinApis?.find((item) => item.code === selectedBuiltinCode),
+    [catalog?.builtinApis, selectedBuiltinCode],
+  );
+
+  const hasBusinessApis = treeNodes.length > 0;
+  const hasBuiltinApis = builtinTreeNodes.length > 0;
 
   const handleSelectService = useCallback(
     (serviceCode: string) => {
@@ -353,10 +439,23 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
     [catalog, code, selectedServiceCode],
   );
 
+  const openApiJsonUrl = useMemo(() => {
+    if (!code || typeof window === 'undefined') return '';
+    return `${window.location.origin}/api/v1/applications-public/${encodeURIComponent(code)}/apis.json`;
+  }, [code]);
+
+  const handleCopyJsonUrl = useCallback(() => {
+    if (!openApiJsonUrl) return;
+    navigator.clipboard
+      ?.writeText(openApiJsonUrl)
+      .then(() => message.success('已复制 OpenAPI JSON URL'))
+      .catch(() => message.error('复制失败，请手动复制'));
+  }, [openApiJsonUrl]);
+
   if (loading) {
     return (
       <div className="application-api-catalog" style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <Spin size="large" tip="加载 API 目录..." />
+        <Spin size="large" description="加载 API 目录..." />
       </div>
     );
   }
@@ -372,39 +471,89 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
   return (
     <div className="application-api-catalog">
       <header className="application-api-catalog__header">
-        <h1 className="application-api-catalog__header-title">{catalog.application.name} · API 文档</h1>
-        <p className="application-api-catalog__header-sub">
-          应用 <Text code style={{ color: '#fff' }}>{catalog.application.code}</Text>
-          {' · '}
-          以下为该应用已授权可访问的 API（公开文档，无需登录）
-        </p>
+        <div className="application-api-catalog__header-main">
+          <h1 className="application-api-catalog__header-title">{catalog.application.name} · API 文档</h1>
+          <p className="application-api-catalog__header-sub">
+            应用 <Text code style={{ color: '#fff' }}>{catalog.application.code}</Text>
+            {' · '}
+            以下为该应用已授权可访问的 API（公开文档，无需登录）
+          </p>
+        </div>
+        <div className="application-api-catalog__header-actions">
+          <Button
+            type="primary"
+            ghost
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={handleCopyJsonUrl}
+            disabled={!openApiJsonUrl}
+          >
+            复制 JSON URL
+          </Button>
+        </div>
       </header>
 
       <div className="application-api-catalog__body">
         <aside className="application-api-catalog__sidebar application-api-catalog__tree">
-          {treeNodes.length ? (
+          {hasBusinessApis || hasBuiltinApis ? (
+            <Segmented
+              block
+              value={tab}
+              onChange={(val) => setTab(val as 'business' | 'builtin')}
+              options={[
+                { label: '业务 API', value: 'business', disabled: !hasBusinessApis },
+                { label: '内置 API', value: 'builtin', disabled: !hasBuiltinApis },
+              ]}
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
+          {tab === 'business' ? (
+            treeNodes.length ? (
+              <Tree
+                showLine
+                defaultExpandAll
+                motion={false}
+                selectedKeys={selectedServiceCode ? [selectedServiceCode] : []}
+                treeData={treeNodes}
+                onSelect={(keys) => {
+                  const key = keys[0] as string | undefined;
+                  if (key) handleSelectService(key);
+                }}
+              />
+            ) : (
+              <Text type="secondary">暂无已授权的业务 API 域，请在应用 API 配置中勾选可访问域</Text>
+            )
+          ) : builtinTreeNodes.length ? (
             <Tree
               showLine
               defaultExpandAll
               motion={false}
-              selectedKeys={selectedServiceCode ? [selectedServiceCode] : []}
-              treeData={treeNodes}
+              selectedKeys={selectedBuiltinCode ? [selectedBuiltinCode] : []}
+              treeData={builtinTreeNodes}
               onSelect={(keys) => {
                 const key = keys[0] as string | undefined;
-                if (key) handleSelectService(key);
+                if (key) setSelectedBuiltinCode(key);
               }}
             />
           ) : (
-            <Text type="secondary">暂无已授权的 API 域，请在应用 API 配置中勾选可访问域</Text>
+            <Text type="secondary">暂无已授权的内置 API，请在应用 API 配置中勾选可访问内置 API</Text>
           )}
         </aside>
 
         <main className="application-api-catalog__content">
-          {selectedService ? (
-            <ServiceDetail service={selectedService} />
+          {tab === 'business' ? (
+            selectedService ? (
+              <ServiceDetail service={selectedService} />
+            ) : (
+              <div className="application-api-catalog__detail application-api-catalog__empty">
+                请从左侧选择一个 API 服务查看明细
+              </div>
+            )
+          ) : selectedBuiltinApi ? (
+            <BuiltinApiDetail api={selectedBuiltinApi} />
           ) : (
             <div className="application-api-catalog__detail application-api-catalog__empty">
-              请从左侧选择一个 API 服务查看明细
+              请从左侧选择一个内置 API 查看明细
             </div>
           )}
         </main>

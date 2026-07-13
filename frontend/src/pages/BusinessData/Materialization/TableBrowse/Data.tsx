@@ -1,5 +1,6 @@
-import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { PageContainer } from '@ant-design/pro-components';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Alert, Button, Spin, Typography, message } from 'antd';
 import { useAISurface, sendMockUserMessage } from '@EADAF/ai-base';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -185,7 +186,7 @@ const TableDataPage: React.FC = () => {
             </Typography.Text>
           </Typography.Paragraph>
         )}
-        <ProTable<Record<string, unknown>>
+        <UrlSyncedProTable<Record<string, unknown>>
           actionRef={actionRef}
           size="small"
           rowKey={(r, i) => String(r.id || r._key || r._id || i)}
@@ -194,7 +195,7 @@ const TableDataPage: React.FC = () => {
           columns={columns}
           request={loadRows}
           scroll={{ x: tableScrollX }}
-          pagination={{ pageSize: 20, showSizeChanger: true }}
+          defaultPageSize={20}
         />
       </Spin>
     </PageContainer>

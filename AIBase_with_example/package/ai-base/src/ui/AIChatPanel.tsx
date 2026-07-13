@@ -61,6 +61,8 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [hydratedNamespace, setHydratedNamespace] = useState<string | null>(null);
   const historyReady = hydratedNamespace === storageNamespace;
+  // 瞬态系统消息（如 AI 报错）：仅展示，不进 messages/上下文/持久化。切换会话时清除。
+  const [systemNotices, setSystemNotices] = useState<{ id: string; content: string }[]>([]);
   const listRef = useRef<BubbleListRef>(null);
   const attachRef = useRef<AttachmentsRef>(null);
   const modelsLoadDoneRef = useRef(false);
@@ -172,8 +174,8 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
   };
 
   const bubbleItems = useMemo(
-    () =>
-      messages.map(({ id, message: msg, status }) => {
+    () => [
+      ...messages.map(({ id, message: msg, status }) => {
         const text = typeof msg.content === 'string' ? msg.content.trim() : '';
         const segments = (msg as { segments?: AssistantSegment[] }).segments;
         const hasBody = !!segments?.length || !!text;
@@ -192,7 +194,14 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
           },
         };
       }),
-    [messages],
+      // 瞬态系统消息（AI 报错等）：不入对话上下文，仅展示
+      ...systemNotices.map((notice) => ({
+        key: notice.id,
+        role: 'system-error',
+        content: notice.content,
+      })),
+    ],
+    [messages, systemNotices],
   );
 
   const bubbleRole = useMemo<BubbleListProps['role']>(
@@ -213,6 +222,12 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
       user: {
         placement: 'end',
         avatar: <Avatar icon={<UserOutlined />} />,
+      },
+      // AI 报错等系统消息：红色、居中、无边框，不入对话上下文
+      'system-error': {
+        placement: 'start',
+        variant: 'borderless',
+        contentRender: (content) => <div className="aibase-chat-system-error">{content}</div>,
       },
     }),
     [config.nextStepPrompts],
@@ -278,7 +293,11 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
           setConversation(activeConversationKey, { ...conversation, label: titleSource.slice(0, 20) });
         }
       } catch (error) {
-        messageApi.error(extractAiChatErrorMessage(error));
+        // AI 报错以内联系统消息展示（红色、不入对话上下文/持久化）
+        setSystemNotices((prev) => [
+          ...prev,
+          { id: `sys-${Date.now()}`, content: extractAiChatErrorMessage(error) },
+        ]);
       }
     },
     [
@@ -339,6 +358,11 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
     });
   }, [handleSubmit]);
 
+  // 切换会话时清除瞬态系统消息（错误不入持久化，切回也不复现）
+  useEffect(() => {
+    setSystemNotices([]);
+  }, [activeConversationKey]);
+
   const handleNewConversation = () => {
     const key = Date.now().toString();
     addConversation({ key, label: '新会话', group: '今天' });
@@ -395,7 +419,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
         {chatHeader}
 
         <div className="aibase-chat-list">
-          {!messages.length ? (
+          {!messages.length && !systemNotices.length ? (
             <div className="aibase-chat-empty">
               <Welcome
                 variant="borderless"

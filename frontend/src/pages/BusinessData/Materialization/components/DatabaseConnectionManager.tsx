@@ -163,7 +163,7 @@ const DatabaseConnectionManager: React.FC<DatabaseConnectionManagerProps> = ({
     },
     {
       ...TABLE_ACTION_COLUMN_BASE,
-      width: 120,
+      width: 90,
       render: (_, record) => (
         <TableActions>
           <TableActionButton
@@ -177,7 +177,7 @@ const DatabaseConnectionManager: React.FC<DatabaseConnectionManagerProps> = ({
             icon={<EditOutlined />}
             onClick={() => openEdit(record)}
           />
-          {!record.isDefault && (
+          {/* {!record.isDefault && ( */}
             <Popconfirm title="确定删除？" onConfirm={() => handleDelete(record.id!)}>
               <Tooltip title="删除">
                 <Button
@@ -189,7 +189,7 @@ const DatabaseConnectionManager: React.FC<DatabaseConnectionManagerProps> = ({
                 />
               </Tooltip>
             </Popconfirm>
-          )}
+          {/* )} */}
         </TableActions>
       ),
     },
@@ -198,7 +198,7 @@ const DatabaseConnectionManager: React.FC<DatabaseConnectionManagerProps> = ({
   return (
     <>
       <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+        <Button type="primary" className="btn-gradient-primary" icon={<PlusOutlined />} onClick={openCreate}>
           新建连接
         </Button>
       </Space>

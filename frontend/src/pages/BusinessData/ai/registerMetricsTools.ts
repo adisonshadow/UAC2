@@ -28,6 +28,7 @@ function editOrCreateScope(args: Record<string, unknown>) {
 
 const TOOL_NAMES = [
   'bizdata_metric_list',
+  'bizdata_metric_filter',
   'bizdata_metric_get',
   'bizdata_metric_upsert',
   'bizdata_metric_delete',
@@ -75,6 +76,27 @@ export function registerMetricsTools() {
         size: args.size as number,
       });
       return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_metric_filter',
+    description: '按页面过滤项检索指标（code 前缀 + 状态），返回全部命中项；面向检索而非分页浏览',
+    parameters: {
+      type: 'object',
+      properties: {
+        codePrefix: { type: 'string', description: 'code 前缀，如 sales 或 sales:order' },
+        status: { type: 'string', enum: ['enabled', 'disabled'] },
+      },
+    },
+    handler: async (args) => {
+      const res = await getBizdataMetrics({
+        codePrefix: args.codePrefix as string,
+        status: args.status as string,
+        size: -1,
+      });
+      const data = getApiData<API.BizdataMetricList>(res);
+      return { items: data?.items || [], total: data?.items?.length || 0 };
     },
   });
 
@@ -358,11 +380,11 @@ export function registerMetricsTools() {
 
   registerFunctionCall({
     name: 'bizdata_metric_navigate',
-    description: '在指标 list / create / edit / dashboard 页面间跳转',
+    description: '在指标 list / dashboard 页面间跳转',
     parameters: {
       type: 'object',
       properties: {
-        target: { type: 'string', enum: ['list', 'create', 'edit', 'dashboard'] },
+        target: { type: 'string', enum: ['list', 'dashboard'] },
         metricId: { type: 'string' },
       },
       required: ['target'],
@@ -372,8 +394,6 @@ export function registerMetricsTools() {
       const id = args.metricId as string | undefined;
       const paths: Record<string, string> = {
         list: '/business_data/metrics',
-        create: '/business_data/metrics/create',
-        edit: id ? `/business_data/metrics/${id}/edit` : '/business_data/metrics',
         dashboard: '/business_data/metrics/dashboard',
       };
       history.push(paths[target] || paths.list);

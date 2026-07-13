@@ -139,3 +139,10 @@
 .aibase-tool-invoke-steps .ant-thought-chain-node {
   margin: 0;
 }
+
+/* AI 报错等瞬态系统消息：红色、不入对话上下文，仅展示 */
+.aibase-chat-system-error {
+  color: #940a0a;
+  font-size: 13px;
+  margin: 20px 0;
+}

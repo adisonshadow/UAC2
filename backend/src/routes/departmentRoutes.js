@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const DepartmentController = require('../controllers/departmentController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 const router = new Router({
   prefix: '/api/v1/departments'
 });
@@ -100,7 +101,7 @@ const router = new Router({
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/', auth, DepartmentController.create);
+router.post('/', authWithBuiltinApiGuard, DepartmentController.create);
 
 /**
  * @swagger
@@ -182,7 +183,7 @@ router.post('/', auth, DepartmentController.create);
  *       500:
  *         description: 服务器错误
  */
-router.get('/', auth, DepartmentController.list);
+router.get('/', authWithBuiltinApiGuard, DepartmentController.list);
 
 /**
  * @swagger
@@ -228,7 +229,7 @@ router.get('/', auth, DepartmentController.list);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/tree', auth, DepartmentController.getTree);
+router.get('/tree', authWithBuiltinApiGuard, DepartmentController.getTree);
 
 /**
  * @swagger
@@ -319,7 +320,7 @@ router.get('/tree', auth, DepartmentController.getTree);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/:department_id', auth, DepartmentController.getById);
+router.get('/:department_id', authWithBuiltinApiGuard, DepartmentController.getById);
 
 /**
  * @swagger
@@ -421,7 +422,7 @@ router.get('/:department_id', auth, DepartmentController.getById);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:department_id', auth, DepartmentController.update);
+router.put('/:department_id', authWithBuiltinApiGuard, DepartmentController.update);
 
 /**
  * @swagger
@@ -483,7 +484,7 @@ router.put('/:department_id', auth, DepartmentController.update);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.delete('/:department_id', auth, DepartmentController.delete);
+router.delete('/:department_id', authWithBuiltinApiGuard, DepartmentController.delete);
 
 /**
  * @swagger
@@ -566,7 +567,7 @@ router.delete('/:department_id', auth, DepartmentController.delete);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/:department_id/users', auth, DepartmentController.getMembers);
+router.get('/:department_id/users', authWithBuiltinApiGuard, DepartmentController.getMembers);
 
 /**
  * @swagger
@@ -597,7 +598,7 @@ router.get('/:department_id/users', auth, DepartmentController.getMembers);
  *       200:
  *         description: 分配成功
  */
-router.put('/:department_id/roles', auth, DepartmentController.assignRoles);
+router.put('/:department_id/roles', authWithBuiltinApiGuard, DepartmentController.assignRoles);
 
 /**
  * @swagger

@@ -10,7 +10,7 @@ WHERE slug IN ('bizdata-collection-pipeline', 'api-services-collection-pipeline'
 
 UPDATE aibase.tools
 SET
-    review_markdown = E'## collection_pipeline_navigate\n\n页面路径前缀 `/api_services/collection-pipelines`：\n- list → 列表\n- create → 新建\n- edit → `/api_services/collection-pipelines/{id}/edit`\n- test → `/api_services/collection-pipelines/{id}/test`',
+    review_markdown = E'## collection_pipeline_navigate\n\n页面路径前缀 `/api_services/collection-pipelines`：\n- list → 列表\n- test → `/api_services/collection-pipelines/{id}/test`',
     updated_at = CURRENT_TIMESTAMP
 WHERE function_name = 'collection_pipeline_navigate';
 

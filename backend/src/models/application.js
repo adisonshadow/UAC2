@@ -59,6 +59,12 @@ Application.init({
     type: DataTypes.JSONB,
     comment: 'API数据权限范围'
   },
+  builtin_api_scope: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: { permissionCodes: [] },
+    comment: '可访问内置API：{permissionCodes:["user:account:list",...]}'
+  },
   bizdata_scope_codes: {
     type: DataTypes.JSONB,
     allowNull: false,

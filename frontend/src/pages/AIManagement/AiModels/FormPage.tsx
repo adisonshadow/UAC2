@@ -2,6 +2,7 @@ import { EditOutlined } from '@ant-design/icons';
 import {
   PageContainer,
   ProForm,
+  ProFormDigit,
   ProFormSelect,
   ProFormSwitch,
   ProFormText,
@@ -95,6 +96,8 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
       form.setFieldsValue({
         ...data,
         defaultParams: stringifyDefaultParams(data.defaultParams),
+        maxConcurrent: data.rateLimit?.maxConcurrent ?? undefined,
+        requestsPerMinute: data.rateLimit?.requestsPerMinute ?? undefined,
       });
     } catch {
       messageApi.error('获取模型详情失败');
@@ -131,17 +134,30 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
     void loadDetail();
   }, [form, id, listPath, loadDetail, mode, navigate]);
 
-  const buildPayload = (values: Record<string, unknown>) => ({
-    providerId: values.providerId as string,
-    slug: (values.slug as string | undefined)?.trim() || undefined,
-    modelId: values.modelId as string,
-    displayName: values.displayName as string,
-    defaultParams: parseDefaultParams(values.defaultParams as string | undefined),
-    capabilities: values.capabilities as string[],
-    inputTags: values.inputTags as string[] | undefined,
-    outputTags: values.outputTags as string[] | undefined,
-    isActive: values.isActive as boolean | undefined,
-  });
+  const buildPayload = (values: Record<string, unknown>) => {
+    const maxConcurrent = values.maxConcurrent as number | undefined;
+    const requestsPerMinute = values.requestsPerMinute as number | undefined;
+    // 两字段皆空 → undefined（后端视为不传）；否则组装为 rateLimit 对象（空值转 null）
+    const rateLimit =
+      maxConcurrent || requestsPerMinute
+        ? {
+            maxConcurrent: maxConcurrent ?? null,
+            requestsPerMinute: requestsPerMinute ?? null,
+          }
+        : undefined;
+    return {
+      providerId: values.providerId as string,
+      slug: (values.slug as string | undefined)?.trim() || undefined,
+      modelId: values.modelId as string,
+      displayName: values.displayName as string,
+      defaultParams: parseDefaultParams(values.defaultParams as string | undefined),
+      rateLimit,
+      capabilities: values.capabilities as string[],
+      inputTags: values.inputTags as string[] | undefined,
+      outputTags: values.outputTags as string[] | undefined,
+      isActive: values.isActive as boolean | undefined,
+    };
+  };
 
   const handleSubmit = async () => {
     try {
@@ -241,6 +257,20 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
             name="defaultParams"
             label="默认参数 (JSON)"
             fieldProps={{ rows: 4, placeholder: '{"temperature": 0.7, "max_tokens": 4096}' }}
+          />
+          <ProFormDigit
+            name="maxConcurrent"
+            label="最大并发数"
+            min={1}
+            fieldProps={{ precision: 0 }}
+            extra="留空表示不限制。豆包/Seed 等突发保护严格的 Provider 建议设置（如 2）"
+          />
+          <ProFormDigit
+            name="requestsPerMinute"
+            label="每分钟最大请求数 (RPM)"
+            min={1}
+            fieldProps={{ precision: 0 }}
+            extra="留空表示不限制。用于防止对话续接循环密集连发打穿 Provider 突发保护（如 30）"
           />
           <ProFormSelect
             name="capabilities"

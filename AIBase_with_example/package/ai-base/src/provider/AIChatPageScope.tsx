@@ -17,6 +17,7 @@ export type AIChatPageScopeConfig = Partial<
     | 'headerCaption'
     | 'exposeAllClientTools'
     | 'nextStepPrompts'
+    | 'maxToolResultChars'
   >
 >;
 
@@ -51,6 +52,7 @@ export function useEffectiveAIChatConfig(): ResolvedAIChatConfig {
           headerCaption: pageScope.headerCaption ?? rootConfig.headerCaption,
           exposeAllClientTools: pageScope.exposeAllClientTools ?? rootConfig.exposeAllClientTools,
           nextStepPrompts: pageScope.nextStepPrompts ?? rootConfig.nextStepPrompts,
+          maxToolResultChars: pageScope.maxToolResultChars ?? rootConfig.maxToolResultChars,
         });
 
     if (dynamicPrompts == null) return base;
@@ -78,6 +80,7 @@ export function AIChatPageScope({
   headerCaption,
   exposeAllClientTools,
   nextStepPrompts,
+  maxToolResultChars,
 }: AIChatPageScopeProps) {
   const value = useMemo(
     () => ({
@@ -91,6 +94,7 @@ export function AIChatPageScope({
       headerCaption,
       exposeAllClientTools,
       nextStepPrompts,
+      maxToolResultChars,
     }),
     [
       scopeSlug,
@@ -104,6 +108,7 @@ export function AIChatPageScope({
       headerCaption,
       exposeAllClientTools,
       nextStepPrompts,
+      maxToolResultChars,
     ],
   );
 

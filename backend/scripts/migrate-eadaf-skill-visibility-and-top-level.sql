@@ -23,7 +23,8 @@ WHERE slug IN (
   'bizdata-data-standards',
   'bizdata-metadata-catalog',
   'bizdata-metrics',
-  'api-services-collection-pipeline'
+  'api-services-collection-pipeline',
+  'outbound-webhook-manage'
 );
 
 -- 确保仍为全局的只有框架协议
@@ -54,7 +55,8 @@ WHERE s.slug IN (
   'bizdata-data-standards',
   'bizdata-metadata-catalog',
   'bizdata-metrics',
-  'api-services-collection-pipeline'
+  'api-services-collection-pipeline',
+  'outbound-webhook-manage'
 )
 ON CONFLICT (skill_id, application_id) DO NOTHING;
 
@@ -80,11 +82,11 @@ SET top_level_skill_markdown = $EADAF_TOP$
 - **禁止**提示用户「请手动刷新页面」或「请刷新浏览器」
 
 ### 页面跳转与操作上下文
-- 当任务涉及具体功能页（模型设计、API 测试、指标编辑、采集管道等），应优先调用对应模块的 **navigate** 类 Tool，让用户清楚 AI 操作发生在哪一页：
-  - API 服务：`apiservice_navigate`（list / edit / test）
-  - 业务指标：`bizdata_metric_navigate`（list / create / edit / dashboard）
-  - 采集管道：`collection_pipeline_navigate`（list / create / edit / test）
-- **通常情况下**，没有复杂交叉调用时：调用相应 Skill/Tool 完成后，应跳转到或停留在**与该 Skill 最匹配的功能页面**，避免用户在错误页面看不到变更结果
+- 写操作（创建 / 更新 / 删除）成功后，前端会**自动跳转到对应模块的列表页**，让用户在列表中确认变更结果；**不需要**也不应该把用户带到 create / edit 等具体表单页
+- 仅在确有需要时，用 navigate 类 Tool 带用户去**查看类**页面（测试 / 看板），不要用于跳转到 create / edit：
+  - API 服务：`apiservice_navigate`（list / test）
+  - 业务指标：`bizdata_metric_navigate`（list / dashboard）
+  - 采集管道：`collection_pipeline_navigate`（list / test）
 - 执行写操作前，用 `aibase_read_surfaces` 读取当前页选中项、表单值、列表筛选等上下文
 
 ### 对话收尾与下一步建议

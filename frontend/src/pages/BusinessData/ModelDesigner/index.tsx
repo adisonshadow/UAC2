@@ -36,6 +36,7 @@ import {
 } from '@/services/UAC/api/businessData';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 import {
+  createEntityCodeUniqueRule,
   createTableNameUniqueRule,
   defaultTableNameFromCode,
   resolveEntityTableName,
@@ -200,6 +201,7 @@ const ModelDesigner: React.FC = () => {
     if (!editingEntity?.id) return;
     const values = await editForm.validateFields();
     const res = await patchBusinessDataEntity(editingEntity.id, {
+      code: values.code?.trim(),
       label: values.label,
       ...(editingEntity.entityKind === 'er_table'
         ? { tableName: values.tableName?.trim() || undefined }
@@ -262,6 +264,7 @@ const ModelDesigner: React.FC = () => {
   const openEditModal = (entity: API.BusinessDataEntity) => {
     setEditingEntity(entity);
     editForm.setFieldsValue({
+      code: entity.code,
       label: entity.label,
       tableName: entity.tableName,
       status: entity.status || 'enabled',
@@ -361,7 +364,11 @@ const ModelDesigner: React.FC = () => {
 
       <Modal title="新建实体" open={createOpen} onOk={handleCreateEntity} onCancel={() => setCreateOpen(false)}>
         <Form form={createForm} layout="vertical" initialValues={{ entityKind: 'er_table' }}>
-          <Form.Item name="code" label="Code (Scope:Entity)" rules={[{ required: true }]}>
+          <Form.Item
+            name="code"
+            label="Code (Scope:Entity)"
+            rules={[{ required: true }, createEntityCodeUniqueRule(schema.entities || [])]}
+          >
             <Input placeholder="sales:order:Order" />
           </Form.Item>
           <Form.Item name="label" label="显示名" rules={[{ required: true }]}>
@@ -397,28 +404,36 @@ const ModelDesigner: React.FC = () => {
 
       <Modal title="编辑实体" open={editOpen} onOk={handleEditEntity} onCancel={() => setEditOpen(false)}>
         <Form form={editForm} layout="vertical">
-          <Form.Item label="Code">
-            <Input value={editingEntity?.code} disabled />
+          <Form.Item
+            name="code"
+            label="Code (Scope:Entity)"
+            rules={[
+              { required: true },
+              createEntityCodeUniqueRule(schema.entities || [], editingEntity?.id),
+            ]}
+            extra="修改 Code 将在同一事务中级联更新元数据、API 服务、物化记录、关系配置等引用，并同步重命名已物化的物理表/集合；任一步失败则全部回滚并提示错误"
+          >
+            <Input placeholder="fmms:production:WorkCard" />
           </Form.Item>
           <Form.Item name="label" label="显示名" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           {editingEntity?.entityKind === 'er_table' && (
-            <Form.Item
-              name="tableName"
-              label="表名（ER 可选）"
-              extra={
-                editingEntity?.code
-                  ? `不填则默认：${defaultTableNameFromCode(editingEntity.code)}`
-                  : '不填则将 code 中的 : 替换为 _'
-              }
-              rules={[createTableNameUniqueRule(schema.entities || [], editingEntity?.id)]}
-            >
-              <Input
-                placeholder={
-                  editingEntity?.code ? defaultTableNameFromCode(editingEntity.code) : undefined
-                }
-              />
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.code !== cur.code}>
+              {({ getFieldValue }) => {
+                const code = (getFieldValue('code') as string | undefined) || editingEntity?.code || '';
+                const defaultName = code ? defaultTableNameFromCode(code) : '';
+                return (
+                  <Form.Item
+                    name="tableName"
+                    label="表名（ER 可选）"
+                    extra={code ? `不填则默认：${defaultName}` : '不填则将 code 中的 : 替换为 _'}
+                    rules={[createTableNameUniqueRule(schema.entities || [], editingEntity?.id)]}
+                  >
+                    <Input placeholder={defaultName || undefined} />
+                  </Form.Item>
+                );
+              }}
             </Form.Item>
           )}
           <Form.Item name="status" label="状态">

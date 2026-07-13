@@ -7,16 +7,16 @@ import {
   ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
-import { Button, message, Space, Modal, Drawer, Spin, Radio, Typography } from 'antd';
-import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from "@ant-design/icons";
+import { Button, message, Space, Modal, Drawer, Spin, Tag, Typography } from 'antd';
+import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined, ControlOutlined } from "@ant-design/icons";
 import { Form } from 'antd';
 import { useSetState } from "ahooks";
-import SearchForm from '@/components/SearchForm';
 import { Permission, PermissionTableProps, ActionType } from '../../types';
 import { getPermissions, postPermissions, putPermissionsPermissionId, deletePermissionsPermissionId, getPermissionsPermissionId } from "@/services/UAC/api/permissions";
-import { buildPermissionTree, getAllPermissionIds, processDataWithSearch, getNodeLevel, getCurrentLevelCode } from '../../utils';
+import { buildPermissionTree, getAllPermissionIds, getNodeLevel, getCurrentLevelCode } from '../../utils';
 import { RESOURCE_TYPES, ACTION_LABELS } from '../../constants';
 import PermissionForm from '../PermissionForm';
+import AccessRestrictionConfigDrawer from '../AccessRestrictionConfigDrawer';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { wrapWithChatReference } from '@/utils/augmentColumnsWithChatReference';
@@ -36,12 +36,14 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
-  const [searchText, setSearchText] = useState('');
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [isHighlighted, setIsHighlighted] = useState(false);
   const highlightTimerRef = useRef<number | undefined>(undefined);
   const [editform] = Form.useForm();
-  const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
+  // 访问限制配置抽屉（仅菜单/按钮使用）
+  const [arDrawerOpen, setArDrawerOpen] = useState(false);
+  const [arPermission, setArPermission] = useState<Permission | null>(null);
+  const isMenuOrButton = resourceType === 'MENU' || resourceType === 'BUTTON';
   const { references } = useChatReference();
   const chatPrompts = useMemo(
     () => buildPermissionPrompts(resourceType, references),
@@ -71,18 +73,32 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
     detailsValue,
   } = state;
 
-  const handleSearch = (value: string) => {
-    setSearchText(value);
-    if (actionRef.current) {
-      actionRef.current.reload();
-    }
-  };
-
-  const handleReset = () => {
-    setSearchText('');
-    if (actionRef.current) {
-      actionRef.current.reload();
-    }
+  /** 按关键词/状态过滤权限树（保留命中节点的祖先链） */
+  const filterPermissionTree = (
+    nodes: Permission[],
+    keyword?: string,
+    status?: string,
+  ): Permission[] => {
+    const matchNode = (node: Permission): boolean => {
+      if (node.permission_id.startsWith('virtual-')) return false;
+      if (status && node.status !== status) return false;
+      if (keyword) {
+        const codeMatch = (node.code || '').toLowerCase().includes(keyword);
+        if (!codeMatch) return false;
+      }
+      return true;
+    };
+    const walk = (list: Permission[]): Permission[] => {
+      const result: Permission[] = [];
+      list.forEach((node) => {
+        const children = node.children?.length ? walk(node.children) : [];
+        if (matchNode(node) || children.length) {
+          result.push({ ...node, children: children.length ? children : undefined });
+        }
+      });
+      return result;
+    };
+    return walk(nodes);
   };
 
   // 处理保存详情
@@ -139,38 +155,15 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
       width: 240,
       render: (dom: React.ReactNode, record: Permission) => {
         const text = String(dom || '');
-        const searchText = record._searchText || '';
-        
         const nodeLevel = getNodeLevel(record);
         const displayCode = getCurrentLevelCode(text, nodeLevel);
-
-        // 如果是禁用状态，添加删除线
         const content = record.status === 'DISABLED' ? (
           <Typography.Text delete>{displayCode}</Typography.Text>
         ) : displayCode;
-
         if (record.permission_id.startsWith('virtual-')) {
           return content;
         }
-
-        let codeContent: React.ReactNode = content;
-        if (searchText) {
-          const index = displayCode.toLowerCase().indexOf(searchText.toLowerCase());
-          if (index !== -1) {
-            const beforeStr = displayCode.substring(0, index);
-            const matchStr = displayCode.substring(index, index + searchText.length);
-            const afterStr = displayCode.substring(index + searchText.length);
-            codeContent = (
-              <span>
-                {beforeStr}
-                <span style={{ color: '#f50', backgroundColor: '#ffd591' }}>{matchStr}</span>
-                {afterStr}
-              </span>
-            );
-          }
-        }
-
-        return wrapWithChatReference(codeContent, record, buildPermissionReference);
+        return wrapWithChatReference(content, record, buildPermissionReference);
       },
     },
     {
@@ -204,21 +197,45 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
       render: (dom, record: Permission) =>
         passthroughStatusCell(dom, record.permission_id.startsWith('virtual-')),
     },
+    ...(isMenuOrButton ? [{
+      title: "访问限制",
+      dataIndex: "access_restriction",
+      width: 110,
+      render: (_: unknown, record: Permission) => {
+        if (record.permission_id.startsWith('virtual-')) return null;
+        const r = record.access_restriction;
+        if (!r || r.mode === 'none') return <Tag color="green">无限制</Tag>;
+        if (r.mode === 'role') return <Tag color="purple">限制角色</Tag>;
+        if (r.mode === 'department') return <Tag color="geekblue">限制组织</Tag>;
+        return <Tag color="default">无限制</Tag>;
+      },
+    }] : []),
     {
       ...TABLE_ACTION_COLUMN_BASE,
       dataIndex: 'option',
-      width: 100,
+      width: 70,
       render: (_: unknown, record: Permission) => {
         if (record.permission_id.startsWith('virtual-')) {
           return null;
         }
         return (
           <TableActions>
-            <TableActionButton
-              title="查看"
-              key="view"
-              icon={<EyeOutlined />}
-              onClick={async () => {
+            {isMenuOrButton ? (
+              <TableActionButton
+                title="配置限制"
+                key="access-restriction"
+                icon={<ControlOutlined />}
+                onClick={() => {
+                  setArPermission(record);
+                  setArDrawerOpen(true);
+                }}
+              />
+            ) : (
+              <TableActionButton
+                title="查看"
+                key="view"
+                icon={<EyeOutlined />}
+                onClick={async () => {
               try {
                 setLoading(true);
                 setState({
@@ -257,6 +274,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
               }
             }}
             />
+            )}
             <TableActionButton
               title="删除"
               key="delete"
@@ -329,32 +347,14 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
               opacity: record.status === 'DISABLED' ? 0.8 : 1,
             },
           })}
-          search={false}
-          headerTitle={
-            <SearchForm
-              key="search"
-              onSearch={handleSearch}
-              onReset={handleReset}
-              placeholder="请输入权限编码"
-            />
-          }
+          search={{
+            labelWidth: 'auto',
+            defaultCollapsed: false,
+          }}
+          headerTitle={RESOURCE_TYPES[resourceType].label}
           toolBarRender={() => [
-            <Radio.Group
-              key="status-filter"
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                if (actionRef.current) {
-                  actionRef.current.reload();
-                }
-              }}
-              style={{ marginRight: 16 }}
-            >
-              <Radio.Button value="ACTIVE">有效权限</Radio.Button>
-              <Radio.Button value="ALL">全部权限</Radio.Button>
-            </Radio.Group>,
             <Button
-              type="primary"
+              type="primary" className="btn-gradient-primary"
               key="create"
               icon={<PlusOutlined />}
               loading={createLoading}
@@ -363,28 +363,32 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
               新建
             </Button>
           ]}
-          request={async () => {
+          request={async (params) => {
             try {
               setLoading(true);
-              const params = {
-                resource_type: resourceType,
-                status: statusFilter === 'ALL' ? undefined : statusFilter,
-              } as any;
-              const response:any = await getPermissions(params);
+              // 始终拉取全部，按搜索参数前端过滤（树形全量数据）
+              const response: any = await getPermissions({ resource_type: resourceType } as any);
 
               if (response.code === 200 && response.data?.items) {
-                const treeData = buildPermissionTree(response.data.items);
+                let treeData = buildPermissionTree(response.data.items);
+
+                // ProTable 内置 search 过滤：编码 / 状态
+                const keyword = (params.code as string | undefined)?.trim().toLowerCase();
+                const statusParam = params.status as string | undefined;
+                if (keyword || statusParam) {
+                  treeData = filterPermissionTree(treeData, keyword, statusParam);
+                }
+
                 const allIds = getAllPermissionIds(treeData);
                 setExpandedRowKeys(allIds);
-                const processedData = processDataWithSearch(treeData, searchText);
 
                 return {
-                  data: processedData,
+                  data: treeData,
                   success: true,
-                  total: processedData.length,
+                  total: treeData.length,
                 };
               }
-              
+
               messageApi.error(response.message || `获取${RESOURCE_TYPES[resourceType].label}列表失败`);
               return {
                 data: [],
@@ -583,7 +587,9 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                   description: values.description,
                   resource_type: resourceType,
                   actions: values.actions as ActionType[],
-                });
+                  // 菜单/按钮创建时默认无限制，后续可通过「配置限制」调整
+                  ...(isMenuOrButton ? { access_restriction: { mode: 'none', roleIds: [], departmentIds: [] } } : {}),
+                } as any);
                 
                 if (response.code && response.code >= 200 && response.code < 300) {
                   messageApi.success('创建成功');
@@ -618,6 +624,14 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
             loading={createLoading}
           />
         </Modal>
+        {isMenuOrButton ? (
+          <AccessRestrictionConfigDrawer
+            open={arDrawerOpen}
+            permission={arPermission}
+            onClose={() => setArDrawerOpen(false)}
+            onSuccess={() => actionRef.current?.reload()}
+          />
+        ) : null}
       </PageContainer>
     </>
   );

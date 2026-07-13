@@ -3,7 +3,7 @@ import type { ButtonProps } from 'antd';
 import type { ReactNode } from 'react';
 import type { ProColumns } from '@ant-design/pro-components';
 
-/** 操作列通用配置 */
+/** 操作列通用配置 [规范 1.3]：固定右侧、右对齐 */
 export const TABLE_ACTION_COLUMN_BASE = {
   title: '操作',
   valueType: 'option' as const,

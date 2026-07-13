@@ -47,6 +47,19 @@ export const modelTableColumns: ProColumns<API.AdminAiModel>[] = [
     },
   },
   {
+    title: '限流',
+    dataIndex: 'rateLimit',
+    width: 140,
+    render: (_, record) => {
+      const { maxConcurrent, requestsPerMinute } = record.rateLimit || {};
+      if (!maxConcurrent && !requestsPerMinute) return <Tag>不限</Tag>;
+      const parts: string[] = [];
+      if (maxConcurrent) parts.push(`并发 ${maxConcurrent}`);
+      if (requestsPerMinute) parts.push(`${requestsPerMinute}/分`);
+      return <Tag color="blue">{parts.join(' · ')}</Tag>;
+    },
+  },
+  {
     title: '更新时间',
     dataIndex: 'updatedAt',
     valueType: 'dateTime',

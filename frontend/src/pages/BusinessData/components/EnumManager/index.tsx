@@ -205,7 +205,7 @@ const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefre
               allowClear
             />
           </Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button type="primary" className="btn-gradient-primary" icon={<PlusOutlined />} onClick={openCreate}>
             添加枚举
           </Button>
         </div>

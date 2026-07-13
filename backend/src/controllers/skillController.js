@@ -56,6 +56,7 @@ function formatSkill(skill, includeTools = true) {
     isActive: data.is_active,
     isGlobal: data.is_global === true,
     isDedicated: data.is_dedicated === true,
+    completionStrategy: data.completion_strategy || undefined,
     applicationIds: applications.map((item) => item.application_id),
     applications: applications.map((item) => ({
       applicationId: item.application_id,
@@ -158,6 +159,7 @@ class SkillController {
       isGlobal = false,
       isDedicated = false,
       applicationIds = [],
+      completionStrategy,
     } = ctx.request.body;
 
     if (!name) {
@@ -205,6 +207,7 @@ class SkillController {
           scope_id: scopeId || null,
           is_global: Boolean(isGlobal),
           is_dedicated: Boolean(isDedicated),
+          completion_strategy: completionStrategy || null,
           is_active: true,
         },
         { transaction },
@@ -271,6 +274,7 @@ class SkillController {
       isGlobal,
       isDedicated,
       applicationIds,
+      completionStrategy,
     } = ctx.request.body;
     const transaction = await Skill.sequelize.transaction();
 
@@ -331,6 +335,7 @@ class SkillController {
       if (scopeId !== undefined) skill.scope_id = scopeId || null;
       if (isGlobal !== undefined) skill.is_global = Boolean(isGlobal);
       if (isDedicated !== undefined) skill.is_dedicated = Boolean(isDedicated);
+      if (completionStrategy !== undefined) skill.completion_strategy = completionStrategy || null;
 
       await skill.save({ transaction });
 
@@ -413,12 +418,78 @@ class SkillController {
       const formatted = formatSkill(skill);
       formatted.tools = (formatted.tools || []).filter((t) => t.isActive !== false);
       formatted.openaiTools = formatted.tools.map(formatOpenAITool);
+
+      // ETag / 条件请求：基于 updated_at + slug，命中 If-None-Match 直接返回 304
+      const etag = `W/"${skill.updated_at ? new Date(skill.updated_at).getTime() : 'na'}-${skill.slug}"`;
+      ctx.set('ETag', etag);
+      ctx.set('Cache-Control', 'private, no-cache');
+      if (ctx.get('If-None-Match') === etag) {
+        ctx.status = 304;
+        ctx.body = null;
+        return;
+      }
+
       ctx.body = { data: formatted };
     } catch (error) {
       logger.error('获取 Skill 失败', { error: error.message });
       ctx.status = 500;
       ctx.body = {
         error: { code: 'INTERNAL_ERROR', message: '获取 Skill 失败', traceId: ctx.state.traceId },
+      };
+    }
+  }
+
+  /**
+   * 批量获取 Skill 详情（含 Tool 列表）：一次请求替代 N 次 GET /skills/:slug。
+   * 入参 ctx.query.slugs（逗号分隔，单次最多 50 个）。
+   * 解决 skill 加载 N+1 请求问题（docs/improvements/p2-skill-tool-caching.md）。
+   */
+  static async getPublicBySlugs(ctx) {
+    try {
+      const rawSlugs = ctx.query.slugs || '';
+      const slugs = String(rawSlugs)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 50);
+
+      if (!slugs.length) {
+        ctx.body = { data: [] };
+        return;
+      }
+
+      const skills = await Skill.findAll({
+        where: { slug: slugs, is_active: true },
+        include: skillInclude,
+      });
+
+      const formatted = skills.map((skill) => {
+        const f = formatSkill(skill);
+        f.tools = (f.tools || []).filter((t) => t.isActive !== false);
+        f.openaiTools = (f.tools || []).map(formatOpenAITool);
+        return f;
+      });
+
+      // 批量 ETag：取各 skill updated_at 最大值聚合
+      const maxUpdated = skills.reduce((max, skill) => {
+        const ts = skill.updated_at ? new Date(skill.updated_at).getTime() : 0;
+        return Math.max(max, ts);
+      }, 0);
+      const etag = `W/"${maxUpdated || 'na'}-${slugs.length}"`;
+      ctx.set('ETag', etag);
+      ctx.set('Cache-Control', 'private, no-cache');
+      if (ctx.get('If-None-Match') === etag) {
+        ctx.status = 304;
+        ctx.body = null;
+        return;
+      }
+
+      ctx.body = { data: formatted };
+    } catch (error) {
+      logger.error('批量获取 Skill 失败', { error: error.message });
+      ctx.status = 500;
+      ctx.body = {
+        error: { code: 'INTERNAL_ERROR', message: '批量获取 Skill 失败', traceId: ctx.state.traceId },
       };
     }
   }

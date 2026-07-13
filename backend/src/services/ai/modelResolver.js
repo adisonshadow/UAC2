@@ -69,6 +69,7 @@ async function resolveModel({ slug, modelId, traceId }) {
     apiKey,
     adapterType: provider.adapter_type,
     defaultParams: model.default_params || {},
+    rateLimit: model.rate_limit || null,
     capabilities,
     inputTags,
     outputTags

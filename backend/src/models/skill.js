@@ -40,6 +40,11 @@ const Skill = sequelize.define('Skill', {
     allowNull: false,
     defaultValue: false
   },
+  completion_strategy: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: null
+  },
   scope_id: {
     type: DataTypes.UUID,
     allowNull: true

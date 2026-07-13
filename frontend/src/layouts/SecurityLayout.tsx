@@ -49,7 +49,7 @@ const SecurityLayout: React.FC = () => {
           height: '100vh',
         }}
       >
-        <Spin size="large" tip="正在检查认证状态..." />
+        <Spin size="large" description="正在检查认证状态..." />
       </div>
     );
   }

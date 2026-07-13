@@ -4,6 +4,7 @@ const fs = require('fs');
 const koaBody = require('koa-body').default;
 const StorageController = require('../controllers/storageController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 const { authRequired, authOptional } = require('../middlewares/storageAuth');
 const config = require('../config');
 
@@ -65,8 +66,8 @@ const uploadMiddleware = koaBody({
  *       201:
  *         description: 创建成功
  */
-router.get('/buckets', auth, StorageController.listBuckets);
-router.post('/buckets', auth, StorageController.createBucket);
+router.get('/buckets', authWithBuiltinApiGuard, StorageController.listBuckets);
+router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket);
 
 /**
  * @swagger
@@ -114,9 +115,9 @@ router.post('/buckets', auth, StorageController.createBucket);
  *       200:
  *         description: 删除成功
  */
-router.get('/buckets/:id', auth, StorageController.getBucket);
-router.put('/buckets/:id', auth, StorageController.updateBucket);
-router.delete('/buckets/:id', auth, StorageController.deleteBucket);
+router.get('/buckets/:id', authWithBuiltinApiGuard, StorageController.getBucket);
+router.put('/buckets/:id', authWithBuiltinApiGuard, StorageController.updateBucket);
+router.delete('/buckets/:id', authWithBuiltinApiGuard, StorageController.deleteBucket);
 
 /**
  * @swagger
@@ -148,7 +149,7 @@ router.delete('/buckets/:id', auth, StorageController.deleteBucket);
  *       200:
  *         description: 获取成功
  */
-router.get('/objects', auth, StorageController.listObjects);
+router.get('/objects', authWithBuiltinApiGuard, StorageController.listObjects);
 
 /**
  * @swagger

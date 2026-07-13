@@ -15,6 +15,10 @@ export interface CurrentUser {
   status: 'ACTIVE' | 'DISABLED' | 'LOCKED' | 'ARCHIVED';
   department_id: string | null;
   must_change_password?: boolean;
+  /** 用户角色 id 列表（用于按 access_restriction 过滤菜单/按钮可见性） */
+  role_ids?: string[];
+  /** 用户角色 code 列表（含 SUPER_ADMIN 时拥有全部权限） */
+  role_codes?: string[];
 }
 
 /** 解析 auth/check 响应（兼容 request.dataField 解包前后） */
@@ -28,6 +32,12 @@ export function parseAuthUser(response: unknown): CurrentUser | undefined {
   }
 
   const username = String(user.username || '');
+  const roleIds = Array.isArray(user.role_ids)
+    ? user.role_ids.map((r) => String(r))
+    : [];
+  const roleCodes = Array.isArray(user.role_codes)
+    ? user.role_codes.map((r) => String(r)).filter(Boolean)
+    : [];
   return {
     user_id: String(user.user_id || ''),
     username,
@@ -39,7 +49,14 @@ export function parseAuthUser(response: unknown): CurrentUser | undefined {
     status: (user.status as CurrentUser['status']) || 'DISABLED',
     department_id: (user.department_id as string | null) ?? null,
     must_change_password: Boolean(user.must_change_password),
+    role_ids: roleIds,
+    role_codes: roleCodes,
   };
+}
+
+/** 是否为超级管理员（默认拥有全部权限，不受 access_restriction 限制） */
+export function isSuperAdmin(user?: CurrentUser | null): boolean {
+  return Boolean(user?.role_codes?.includes('SUPER_ADMIN'));
 }
 
 export function isAuthCheckSuccess(response: unknown): boolean {

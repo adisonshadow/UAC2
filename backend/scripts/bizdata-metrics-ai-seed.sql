@@ -154,10 +154,23 @@ VALUES
         '指标页面跳转',
         'bizdata-metric-navigate',
         'bizdata_metric_navigate',
-        '在 list / create / edit / dashboard 间跳转',
+        '在 list / dashboard 间跳转',
         'client',
-        '{"type":"object","properties":{"target":{"type":"string","enum":["list","create","edit","dashboard"]},"metricId":{"type":"string"}},"required":["target"]}'::jsonb,
-        E'## bizdata_metric_navigate\n\n路径前缀 `/business_data/metrics`：\n- list → 指标管理\n- create → 新建\n- edit → `/business_data/metrics/{id}/edit`\n- dashboard → 指标看板',
+        '{"type":"object","properties":{"target":{"type":"string","enum":["list","dashboard"]},"metricId":{"type":"string"}},"required":["target"]}'::jsonb,
+        E'## bizdata_metric_navigate\n\n路径前缀 `/business_data/metrics`：\n- list → 指标管理\n- dashboard → 指标看板',
+        '{}'::jsonb,
+        true
+    ),
+    (
+        '66666666-6666-4666-8666-666666666672',
+        '55555555-5555-4555-8555-555555555501',
+        '过滤业务指标',
+        'bizdata-metric-filter',
+        'bizdata_metric_filter',
+        '按页面过滤项检索指标：code 前缀 + 状态，返回全部命中项（size=-1）。与 list 的区别：面向检索而非分页浏览。',
+        'client',
+        '{"type":"object","properties":{"codePrefix":{"type":"string","description":"code 前缀，如 sales"},"status":{"type":"string","enum":["enabled","disabled"]}}}'::jsonb,
+        E'## bizdata_metric_filter\n\n参数全可选；不传则返回全部。返回 { items, total }。code 形如 sales:order:total_count。',
         '{}'::jsonb,
         true
     )
@@ -199,6 +212,7 @@ WHERE s.slug = 'bizdata-metrics'
   AND t.function_name IN (
     'aibase_read_surfaces',
     'bizdata_metric_list',
+    'bizdata_metric_filter',
     'bizdata_metric_get',
     'bizdata_metric_upsert',
     'bizdata_metric_delete',

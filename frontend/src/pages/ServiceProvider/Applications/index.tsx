@@ -9,12 +9,12 @@ import {
   SecurityScanOutlined,
   UserSwitchOutlined,
   BulbOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
 import {
   ActionType,
   PageContainer,
   ProColumns,
-  ProTable,
   ProForm,
   ProFormText,
   ProFormTextArea,
@@ -22,22 +22,24 @@ import {
   ProFormSwitch,
   ProFormDependency,
 } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useSetState } from "ahooks";
-import { Button, Modal, Space, message, Form, Typography } from 'antd';
+import { Button, Modal, Space, message, Form, Typography, Tabs } from 'antd';
 import { LinkOutlined } from '@ant-design/icons';
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useEffect } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildApplicationPrompts } from '@/ai/pageChatPrompts';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { tableColumns, SYSTEM_APPLICATION_CODE } from "./Schemas";
 import { BizdataScopePickerModal } from '@/components/BizdataScopePicker';
 import AppSecretUsageModal from './AppSecretUsageModal';
 import {
-  ApiDomainTreePicker,
   buildApiDataScopePayload,
   parseApiDataScopeValue,
   useApiDomainTreeData,
 } from '@/components/ApiDomainTreePicker';
+import SearchableScopeTree, { fromApiDomainTree, fromBuiltinApiTree } from '@/components/SearchableScopeTree';
+import { getBuiltinApis, type BuiltinApiTreeNode } from '@/services/UAC/api/builtinApis';
 import { buildApplicationApiDocsUrl } from '@/utils/applicationApiDocsUrl';
 import { getApplications, putApplicationsId, deleteApplicationsId, postApplicationsIdGenerateSecret } from '@/services/UAC/api/applications';
 import { isApiSuccess, parseApiListResponse, getApiData } from '@/utils/apiResponse';
@@ -54,6 +56,7 @@ interface ApplicationRecord extends API.Application {
   application_id: string;
   api_connect_config?: API.APIConnectConfig;
   api_data_scope?: API.APIDataScope;
+  builtin_api_scope?: API.BuiltinApiScope;
   bizdata_scope_codes?: string[];
 }
 
@@ -72,13 +75,44 @@ const Page: React.FC = () => {
   const apiEnabledInConfig = Form.useWatch('api_enabled', apiConfigForm);
   const [ssoConfigForm] = Form.useForm();
   const [apiScopeSelection, setApiScopeSelection] = useState<string[]>([]);
+  const [builtinApiSelection, setBuiltinApiSelection] = useState<string[]>([]);
+  const [builtinApiTree, setBuiltinApiTree] = useState<BuiltinApiTreeNode[]>([]);
+  const [builtinApiTreeLoading, setBuiltinApiTreeLoading] = useState(false);
+  const [activeApiTab, setActiveApiTab] = useState<'business' | 'builtin'>('business');
+  // 业务 API 配置：展示具体 API（叶子），域节点可勾选并级联到子节点
   const apiDomainTree = useApiDomainTreeData({
-    showApiSelectable: false,
+    showApiSelectable: true,
     enabled: apiConfigModalVisible,
   });
-  const location = useLocation();
-  const query = new URLSearchParams(location.search);
-  const currentPage = parseInt(query.get('page') || '1', 10);
+
+  // 内置 API 树数据（自行加载，供 SearchableScopeTree 使用）
+  useEffect(() => {
+    if (!apiConfigModalVisible) return;
+    let cancelled = false;
+    const load = async () => {
+      setBuiltinApiTreeLoading(true);
+      try {
+        const res = await getBuiltinApis();
+        if (!cancelled && isApiSuccess(res)) {
+          setBuiltinApiTree(getApiData(res)?.tree || []);
+        }
+      } catch {
+        if (!cancelled) setBuiltinApiTree([]);
+      } finally {
+        if (!cancelled) setBuiltinApiTreeLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfigModalVisible]);
+
+  const businessScopeTree = useMemo(
+    () => fromApiDomainTree(apiDomainTree.treeData),
+    [apiDomainTree.treeData],
+  );
+  const builtinScopeTree = useMemo(() => fromBuiltinApiTree(builtinApiTree), [builtinApiTree]);
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildApplicationPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -95,7 +129,7 @@ const Page: React.FC = () => {
         {
       ...TABLE_ACTION_COLUMN_BASE,
       dataIndex: "option",
-      width: 210,
+      width: 180,
       render: (_: unknown, record: ApplicationRecord) => (
         <TableActions>
           <TableActionButton
@@ -123,6 +157,7 @@ const Page: React.FC = () => {
             title="Scope 设置"
             key="scope-config"
             icon={<PartitionOutlined />}
+            disabled={record.code === SYSTEM_APPLICATION_CODE}
             onClick={() => {
               setCurrentApplication(record);
               setScopeModalVisible(true);
@@ -132,9 +167,11 @@ const Page: React.FC = () => {
             title="API 配置"
             key="api-config"
             icon={<ApiOutlined />}
+            disabled={record.code === SYSTEM_APPLICATION_CODE}
             onClick={() => {
               setCurrentApplication(record);
               setApiScopeSelection(parseApiDataScopeValue(record.api_data_scope));
+              setBuiltinApiSelection(record.builtin_api_scope?.permissionCodes ?? []);
               apiConfigForm.setFieldsValue({
                 api_enabled: record.api_enabled,
               });
@@ -145,6 +182,7 @@ const Page: React.FC = () => {
             title="SSO 配置"
             key="sso-config"
             icon={<UserSwitchOutlined />}
+            disabled={record.code === SYSTEM_APPLICATION_CODE}
             onClick={() => {
               setCurrentApplication(record);
         ssoConfigForm.setFieldsValue({
@@ -209,6 +247,10 @@ const Page: React.FC = () => {
         {
           api_enabled: values.api_enabled,
           api_data_scope: buildApiDataScopePayload(apiScopeSelection, apiDomainTree.domainCodes),
+          // 系统应用拥有全部内置 API，不发送 builtin_api_scope（避免清空语义混淆）
+          ...(currentApplication?.code === SYSTEM_APPLICATION_CODE
+            ? {}
+            : { builtin_api_scope: { permissionCodes: builtinApiSelection } }),
         }
       );
 
@@ -323,7 +365,8 @@ const Page: React.FC = () => {
       return <></>;
     }}>
       {contextHolder}
-      <ProTable<ApplicationRecord, API.getApplicationsParams, API.Application>
+      <UrlSyncedProTable<ApplicationRecord, API.getApplicationsParams, API.Application>
+        defaultPageSize={PAGE_SIZE}
         headerTitle="应用列表"
         actionRef={actionRef}
         rowKey="application_id"
@@ -333,7 +376,7 @@ const Page: React.FC = () => {
           <Button
             key="button"
             icon={<PlusOutlined />}
-            type="primary"
+            type="primary" className="btn-gradient-primary"
             onClick={() => navigate('/service_provider/create')}
           >
             新建
@@ -364,6 +407,7 @@ const Page: React.FC = () => {
           } : undefined,
               api_connect_config: item.api_connect_config,
               api_data_scope: item.api_data_scope,
+              builtin_api_scope: item.builtin_api_scope,
             } as ApplicationRecord));
             return {
               data: mappedItems,
@@ -379,10 +423,6 @@ const Page: React.FC = () => {
           }
         }}
         columns={columns}
-        pagination={{
-          pageSize: PAGE_SIZE,
-          current: currentPage,
-        }}
         options={DEFAULT_PRO_TABLE_OPTIONS}
       />
 
@@ -394,46 +434,73 @@ const Page: React.FC = () => {
         onOk={handleSaveApiConfig}
         okText="保存"
         cancelText="取消"
+        centered
         destroyOnHidden
       >
         <ProForm
           form={apiConfigForm}
           submitter={false}
+          layout="horizontal"
         >
           <ProFormSwitch
             name="api_enabled"
             label="启用 API"
           />
           {apiEnabledInConfig ? (
-            <Form.Item
-              label="可访问 API 域"
-              tooltip="勾选后，该应用可通过 API 密钥访问对应域下的 API 服务"
-            >
-              <ApiDomainTreePicker
-                mode="check"
-                showApiSelectable={false}
-                treeData={apiDomainTree.treeData}
-                loading={apiDomainTree.loading}
-                value={apiScopeSelection}
-                onChange={setApiScopeSelection}
-                height={400}
-              />
-            </Form.Item>
+            <Tabs
+              activeKey={activeApiTab}
+              onChange={(k) => setActiveApiTab(k as 'business' | 'builtin')}
+              items={[
+                {
+                  key: 'business',
+                  label: '业务API配置',
+                  children: (
+                    <SearchableScopeTree
+                      treeData={businessScopeTree}
+                      value={apiScopeSelection}
+                      onChange={setApiScopeSelection}
+                      loading={apiDomainTree.loading}
+                      valueStrategy="all"
+                      emptyText="暂无 API 域，请先在 API 服务中创建服务"
+                      searchPlaceholder="检索域 / API 名称"
+                    />
+                  ),
+                },
+                ...(currentApplication?.code === SYSTEM_APPLICATION_CODE
+                  ? []
+                  : [
+                      {
+                        key: 'builtin',
+                        label: '内置API配置',
+                        children: (
+                          <SearchableScopeTree
+                            treeData={builtinScopeTree}
+                            value={builtinApiSelection}
+                            onChange={setBuiltinApiSelection}
+                            loading={builtinApiTreeLoading}
+                            valueStrategy="leaf"
+                            emptyText="暂无内置 API 清单"
+                            searchPlaceholder="检索内置 API 名称 / code"
+                          />
+                        ),
+                      },
+                    ]),
+              ]}
+            />
           ) : null}
         </ProForm>
         {apiEnabledInConfig && apiDocsPreviewUrl ? (
           <div style={{ marginTop: 8 }}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>API 地址</div>
-            <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>
+              <span style={{ marginRight: 8 }}>API 地址</span>
+              <Typography.Link href={apiDocsPreviewUrl} target="_blank" rel="noopener noreferrer">
+                <EyeOutlined /> 打开 API 文档
+              </Typography.Link>
+            </div>
+            <Space orientation="vertical" size={4} style={{ width: '100%' }}>
               <Typography.Paragraph copyable={{ text: apiDocsPreviewUrl }} style={{ marginBottom: 0 }}>
                 <LinkOutlined /> {apiDocsPreviewUrl}
               </Typography.Paragraph>
-              <Typography.Link href={apiDocsPreviewUrl} target="_blank" rel="noopener noreferrer">
-                预览公开 API 文档
-              </Typography.Link>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                在新窗口打开公开文档（Swagger 风格），供第三方开发人员查阅；仅展示已勾选域下已发布的 API。
-              </Text>
             </Space>
           </div>
         ) : null}

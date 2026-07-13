@@ -3,6 +3,10 @@ const { Op } = require('sequelize');
 const { validate: isUuid } = require('uuid');
 const apiServiceService = require('./apiService/apiServiceService');
 const businessDataService = require('./businessData/businessDataService');
+const { getBuiltinApiByCode, listBuiltinApis } = require('./builtinApi/catalog');
+
+/** 系统内置应用 code：本系统拥有全部内置 API 访问权 */
+const SYSTEM_APPLICATION_CODE = 'EADAF';
 const { resolveEntityTableName } = require('./businessData/entityTableName');
 const { getOperationMeta } = require('./apiService/operationCatalog');
 const {
@@ -27,6 +31,81 @@ function parseApiDataScope(scope) {
   }
   const legacyCodes = Object.keys(scope).filter((key) => scope[key] != null && scope[key] !== false);
   return { domainCodes: legacyCodes.map(String), serviceCodes: [] };
+}
+
+/** 解析应用可访问内置 API 授权，返回清单 code 数组 */
+function parseBuiltinApiScope(scope) {
+  if (!scope || typeof scope !== 'object') return [];
+  const codes = Array.isArray(scope.permissionCodes) ? scope.permissionCodes : [];
+  return codes.map(String).filter(Boolean);
+}
+
+/** 把授权的内置 API code 映射为清单明细，供公开目录展示 */
+function buildBuiltinApiCatalog(permissionCodes) {
+  const apis = [];
+  permissionCodes.forEach((code) => {
+    const item = getBuiltinApiByCode(code);
+    if (item) {
+      apis.push({
+        code: item.code,
+        domain: item.domain,
+        label: item.label,
+        routePath: item.routePath,
+        httpMethods: item.httpMethods || [],
+        actions: item.actions || [],
+        description: item.description || '',
+      });
+    }
+  });
+  return apis;
+}
+
+/** 按 code 的 `:` 分层构建内置 API tree（domain→resource→action） */
+function buildBuiltinApiTree(apis) {
+  const root = { code: '', label: '', children: {} };
+  apis.forEach((item) => {
+    const segments = item.code.split(':');
+    let node = root;
+    segments.forEach((seg, idx) => {
+      const isLeaf = idx === segments.length - 1;
+      if (!node.children[seg]) {
+        node.children[seg] = { code: seg, label: seg, children: {} };
+      }
+      node = node.children[seg];
+      if (isLeaf) {
+        node.label = item.label || seg;
+        node.isLeaf = true;
+        node.isApiNode = true;
+        node.fullCode = item.code;
+      } else if (!node.isLeaf) {
+        node.isDomainNode = true;
+      }
+    });
+  });
+
+  function toNodes(mapNode, parentPath = '') {
+    return Object.values(mapNode.children)
+      .map((child) => {
+        const code = parentPath ? `${parentPath}:${child.code}` : child.code;
+        const treeNode = {
+          code,
+          name: child.label,
+          isDomainNode: !child.isLeaf,
+        };
+        if (child.isLeaf) {
+          treeNode.isApiNode = true;
+        }
+        if (!child.isLeaf && Object.keys(child.children).length) {
+          treeNode.children = toNodes(child, code);
+        }
+        return treeNode;
+      })
+      .sort((a, b) => {
+        if (Boolean(a.isApiNode) !== Boolean(b.isApiNode)) return a.isApiNode ? 1 : -1;
+        return String(a.code).localeCompare(String(b.code));
+      });
+  }
+  return toNodes(root);
 }
 
 function matchesApiDataScope(serviceCode, scope) {
@@ -163,6 +242,14 @@ async function getPublicApiCatalog(applicationKey) {
 
   const tree = buildCatalogDomainTree(domainCodes, services);
 
+  // 系统内置应用（本系统）拥有全部内置 API；其他应用按 builtin_api_scope 授权
+  const isSystemApplication = application.code === SYSTEM_APPLICATION_CODE;
+  const builtinPermissionCodes = isSystemApplication
+    ? listBuiltinApis().map((item) => item.code)
+    : parseBuiltinApiScope(application.builtin_api_scope);
+  const builtinApis = buildBuiltinApiCatalog(builtinPermissionCodes);
+  const builtinApiTree = buildBuiltinApiTree(builtinApis);
+
   return {
     application: {
       application_id: application.application_id,
@@ -173,6 +260,8 @@ async function getPublicApiCatalog(applicationKey) {
     },
     tree,
     services,
+    builtinApis,
+    builtinApiTree,
     generatedAt: new Date().toISOString(),
   };
 }

@@ -19,3 +19,19 @@ export function buildBatchValidatePrompt(scopePrefix?: string): string {
 
 批量创建或完善实体后必须执行本步骤；每个实体 isValid 为 true 时自动标记验证通过。全部完成后简要汇总结果。`;
 }
+
+/** FMMS 等 Scope 层级调整：必须用 rename，禁止 delete + create */
+export function buildScopeRestructurePrompt(scopePrefix: string, targetScopeMap?: string): string {
+  const mapHint = targetScopeMap
+    ? `\n\n目标 Scope 映射（示例）：\n${targetScopeMap}`
+    : '';
+  return `请将 Scope「${scopePrefix}」下实体的 code 调整为新的二级子 Scope 结构。
+
+**必遵流程**：
+1. \`bizdata_list_entities\`（codePrefix="${scopePrefix}"）列出全部实体及当前 code
+2. 对每个需调整的实体调用 **\`bizdata_rename_entity_code\`**，**仅传** \`entityCode\`（旧 code）+ \`code\`（新 code），**不要**传 fields/indexes/relations
+3. 全部改完后再次 \`bizdata_list_entities\` 验证新 code 已生效
+4. 对每个实体 \`bizdata_validate_model\`（传**新** entityCode）
+
+**禁止**：\`bizdata_delete_entity\` + \`bizdata_create_entity\` 删除重建（会丢失物化/MOCK/关系且常导致虚假成功）。${mapHint}`;
+}

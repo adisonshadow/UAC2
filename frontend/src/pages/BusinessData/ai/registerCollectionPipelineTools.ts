@@ -25,6 +25,7 @@ function editOrCreateScope(args: Record<string, unknown>) {
 
 const TOOL_NAMES = [
   'collection_pipeline_list',
+  'collection_pipeline_filter',
   'collection_pipeline_get',
   'collection_pipeline_upsert',
   'collection_pipeline_publish',
@@ -70,6 +71,29 @@ export function registerCollectionPipelineTools() {
         size: args.size as number,
       });
       return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'collection_pipeline_filter',
+    description: '按页面过滤项检索采集管道（code 前缀 + 状态 + 协议类型），返回全部命中项；面向检索而非分页浏览',
+    parameters: {
+      type: 'object',
+      properties: {
+        codePrefix: { type: 'string', description: 'code 前缀' },
+        status: { type: 'string', enum: ['draft', 'published', 'disabled'] },
+        protocolType: { type: 'string', enum: ['serial', 'modbus_rtu', 'modbus_tcp'] },
+      },
+    },
+    handler: async (args) => {
+      const res = await getCollectionPipelines({
+        codePrefix: args.codePrefix as string,
+        status: args.status as string,
+        protocolType: args.protocolType as string,
+        size: -1,
+      });
+      const data = getApiData<API.CollectionPipelineList>(res);
+      return { items: data?.items || [], total: data?.items?.length || 0 };
     },
   });
 
@@ -273,11 +297,11 @@ export function registerCollectionPipelineTools() {
 
   registerFunctionCall({
     name: 'collection_pipeline_navigate',
-    description: '在采集管道 list / edit / test / create 页面间跳转',
+    description: '在采集管道 list / test 页面间跳转',
     parameters: {
       type: 'object',
       properties: {
-        target: { type: 'string', enum: ['list', 'create', 'edit', 'test'] },
+        target: { type: 'string', enum: ['list', 'test'] },
         pipelineId: { type: 'string' },
       },
       required: ['target'],
@@ -287,8 +311,6 @@ export function registerCollectionPipelineTools() {
       const id = args.pipelineId as string | undefined;
       const paths: Record<string, string> = {
         list: '/api_services/collection-pipelines',
-        create: '/api_services/collection-pipelines/create',
-        edit: id ? `/api_services/collection-pipelines/${id}/edit` : '/api_services/collection-pipelines',
         test: id ? `/api_services/collection-pipelines/${id}/test` : '/api_services/collection-pipelines',
       };
       history.push(paths[target] || paths.list);

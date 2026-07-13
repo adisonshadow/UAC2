@@ -29,6 +29,7 @@ const TEST_SURFACE = 'api-services.test';
 
 const TOOL_NAMES = [
   'apiservice_list_services',
+  'apiservice_filter_services',
   'apiservice_get_service',
   'apiservice_resolve_connection',
   'apiservice_create_service',
@@ -82,6 +83,32 @@ export function registerApiServiceTools() {
           ? { id: exactMatch.id, code: exactMatch.code, name: exactMatch.name, status: exactMatch.status }
           : null,
       };
+    },
+  });
+
+  registerFunctionCall({
+    name: 'apiservice_filter_services',
+    description: '按页面过滤项检索 API 服务（code 前缀 + 状态 + 标签 + 数据库连接），返回全部命中项；面向检索而非分页浏览',
+    parameters: {
+      type: 'object',
+      properties: {
+        codePrefix: { type: 'string', description: 'code 前缀，如 equipment' },
+        status: { type: 'string', enum: ['draft', 'published', 'disabled'] },
+        tag: { type: 'string', description: '标签精确匹配' },
+        connectionId: { type: 'string' },
+      },
+    },
+    handler: async (args) => {
+      const res = await getApiServices({
+        codePrefix: args.codePrefix as string,
+        status: args.status as string,
+        tag: args.tag as string,
+        connectionId: args.connectionId as string,
+        size: -1,
+      });
+      const data = getApiData<API.ApiServiceListResult>(res);
+      const items = data?.items ?? parseApiListResponse(res).items;
+      return { items, total: items.length };
     },
   });
 
@@ -637,17 +664,17 @@ export function registerApiServiceTools() {
 
   registerFunctionCall({
     name: 'apiservice_navigate',
-    description: '在 API 服务相关页面间跳转：list / edit / test；可携带 autoRunTest 返回测试页后自动重测',
+    description: '在 API 服务相关页面间跳转：list / test；可携带 autoRunTest 返回测试页后自动重测',
     parameters: {
       type: 'object',
       properties: {
-        target: { type: 'string', enum: ['list', 'edit', 'test'], description: '目标页面' },
+        target: { type: 'string', enum: ['list', 'test'], description: '目标页面' },
         serviceId: { type: 'string' },
         code: { type: 'string' },
         autoRunTest: { type: 'boolean', description: '跳转到 test 页后是否自动执行测试' },
         fixContext: {
           type: 'object',
-          description: '传递给编辑/测试页的修复上下文，如 { errorMessage }',
+          description: '传递给测试页的修复上下文，如 { errorMessage }',
         },
       },
       required: ['target'],
@@ -663,12 +690,10 @@ export function registerApiServiceTools() {
           resolvedServiceId = await resolveApiServiceId(args as Record<string, unknown>);
         }
         let path = '/api_services/list';
-        if (target === 'edit' && resolvedServiceId) {
-          path = `/api_services/${resolvedServiceId}/edit`;
-        } else if (target === 'test' && resolvedServiceId) {
+        if (target === 'test' && resolvedServiceId) {
           path = `/api_services/${resolvedServiceId}/test`;
         } else if (target !== 'list' && !resolvedServiceId) {
-          throw new Error('跳转到 edit/test 需要提供 serviceId 或 code');
+          throw new Error('跳转到 test 需要提供 serviceId 或 code');
         }
 
         const payload = {

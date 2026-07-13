@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const { hasSsoSigningSecret, resolveSsoSigningSecret } = require('../utils/ssoSecret');
 const { getPublicApiCatalog } = require('../services/applicationApiCatalogService');
+const { getPublicApiOpenApi } = require('../services/applicationApiOpenApiService');
+const { existsBuiltinApiCode } = require('../services/builtinApi/catalog');
 
 const SYSTEM_APPLICATION_CODE = 'EADAF';
 
@@ -18,6 +20,30 @@ function normalizeBizdataScopeCodes(value) {
     throw err;
   }
   return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+/** 规范化应用可访问内置 API 授权：{ permissionCodes: [存在于清单的 code...] } */
+function normalizeBuiltinApiScope(value) {
+  if (value === undefined || value === null) return { permissionCodes: [] };
+  const input = typeof value === 'object' ? value : {};
+  const rawCodes = Array.isArray(input.permissionCodes) ? input.permissionCodes : [];
+  const permissionCodes = [];
+  const invalid = [];
+  rawCodes.forEach((c) => {
+    const code = String(c || '').trim();
+    if (!code) return;
+    if (existsBuiltinApiCode(code)) {
+      permissionCodes.push(code);
+    } else {
+      invalid.push(code);
+    }
+  });
+  if (invalid.length) {
+    const err = new Error(`内置 API code 不存在：${invalid.join(', ')}`);
+    err.status = 400;
+    throw err;
+  }
+  return { permissionCodes: Array.from(new Set(permissionCodes)) };
 }
 
 class ApplicationController {
@@ -359,18 +385,19 @@ class ApplicationController {
   static async update(ctx) {
     try {
       const { id } = ctx.params;
-      const { 
-        name, 
-        code, 
+      const {
+        name,
+        code,
         logo_url,
-        status, 
-        sso_enabled, 
-        sso_config, 
+        status,
+        sso_enabled,
+        sso_config,
         api_enabled,
         api_connect_config,
         api_data_scope,
+        builtin_api_scope,
         bizdata_scope_codes,
-        description 
+        description
       } = ctx.request.body;
 
       // UUID 校验
@@ -513,6 +540,17 @@ class ApplicationController {
         }
       }
 
+      let builtinApiScopeUpdate = application.builtin_api_scope;
+      if (builtin_api_scope !== undefined) {
+        try {
+          builtinApiScopeUpdate = normalizeBuiltinApiScope(builtin_api_scope);
+        } catch (scopeErr) {
+          ctx.status = scopeErr.status || 400;
+          ctx.body = { code: ctx.status, message: scopeErr.message, data: null };
+          return;
+        }
+      }
+
       await application.update({
         name,
         code: application.code === SYSTEM_APPLICATION_CODE ? application.code : code,
@@ -523,6 +561,7 @@ class ApplicationController {
         api_enabled,
         api_connect_config,
         api_data_scope,
+        builtin_api_scope: builtinApiScopeUpdate,
         bizdata_scope_codes: scopeCodesUpdate,
         description
       });
@@ -1021,6 +1060,27 @@ class ApplicationController {
         code: status,
         message: error.message || '获取 API 目录失败',
         data: null,
+      };
+    }
+  }
+
+  /**
+   * 返回 OpenAPI 3.0 JSON（纯 JSON，供 AI / 工具直接读取）。
+   * 不套 { code, message, data } 外壳，直接输出 OpenAPI 规范对象。
+   */
+  static async getPublicApiOpenApi(ctx) {
+    try {
+      const openapi = await getPublicApiOpenApi(ctx.params.key);
+      ctx.set('Content-Type', 'application/json; charset=utf-8');
+      ctx.body = openapi;
+    } catch (error) {
+      const status = error.status || 500;
+      ctx.status = status;
+      ctx.set('Content-Type', 'application/json; charset=utf-8');
+      ctx.body = {
+        openapi: '3.0.3',
+        error: error.message || '生成 OpenAPI 失败',
+        status,
       };
     }
   }

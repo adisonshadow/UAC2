@@ -1,4 +1,10 @@
 declare namespace API {
+  /** Per-model 限流配置（可留空，留空表示不限流） */
+  type ModelRateLimit = {
+    maxConcurrent?: number | null;
+    requestsPerMinute?: number | null;
+  };
+
   type AdminAiModel = {
     id?: string;
     providerId?: string;
@@ -6,6 +12,7 @@ declare namespace API {
     modelId?: string;
     displayName?: string;
     defaultParams?: Record<string, any>;
+    rateLimit?: ModelRateLimit | null;
     capabilities?: string[];
     inputTags?: string[];
     outputTags?: string[];
@@ -40,6 +47,11 @@ declare namespace API {
     serviceCodes?: string[];
   };
 
+  type BuiltinApiScope = {
+    /** 可访问内置 API 的清单 code（业务域:资源[:动作]） */
+    permissionCodes?: string[];
+  };
+
   type Application = {
     /** 应用ID */
     application_id?: string;
@@ -58,6 +70,8 @@ declare namespace API {
     api_enabled?: boolean;
     api_connect_config?: APIConnectConfig;
     api_data_scope?: APIDataScope;
+    /** 可访问内置 API 授权 */
+    builtin_api_scope?: BuiltinApiScope;
     /** 业务数据 Scope 编码列表 */
     bizdata_scope_codes?: string[];
     /** 应用描述 */
@@ -1269,5 +1283,55 @@ declare namespace API {
     operation?: string;
     mockParameters?: Record<string, unknown>;
     saved?: boolean;
+  };
+
+  // ===== 外部 API 提交（Outbound Webhook） =====
+  type OutboundWebhook = {
+    id?: string;
+    code?: string;
+    name?: string;
+    description?: string;
+    status?: 'draft' | 'published' | 'disabled' | 'deleted';
+    triggerType?: string;
+    triggerApiServiceId?: string;
+    triggerApiServiceCode?: string;
+    targetUrl?: string;
+    requestStructure?: string;
+    transformScript?: string;
+    mockData?: string;
+    version?: number;
+    publishedAt?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+
+  type OutboundWebhookTestProfile = OutboundWebhook & {
+    hint?: string;
+  };
+
+  type OutboundWebhookTestResult = {
+    runId: string;
+    webhookId: string;
+    runType: string;
+    transformedBody: Record<string, unknown> | null;
+    responseStatus: number;
+    responseBody: string | null;
+    status: 'success' | 'failed';
+    errorMessage: string | null;
+    durationMs: number;
+  };
+
+  type OutboundWebhookRun = {
+    id: string;
+    webhookId: string;
+    runType: string;
+    triggerData?: Record<string, unknown>;
+    transformedBody?: Record<string, unknown>;
+    responseStatus?: number;
+    responseBody?: string;
+    status: string;
+    errorMessage?: string;
+    durationMs?: number;
+    createdAt: string;
   };
 }

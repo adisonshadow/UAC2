@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS aibase.models (
     model_id VARCHAR(200) NOT NULL,
     display_name VARCHAR(200) NOT NULL,
     default_params JSONB,
+    rate_limit JSONB,
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,

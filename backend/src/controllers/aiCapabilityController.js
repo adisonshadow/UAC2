@@ -70,6 +70,7 @@ class AiCapabilityController {
             scopeSlug: item.scope?.slug || null,
             isGlobal: item.is_global === true,
             isDedicated: item.is_dedicated === true,
+            completionStrategy: item.completion_strategy || undefined,
             applicationIds: (item.applications || []).map((app) => app.application_id),
           })),
           tools: tools.map((item) => ({

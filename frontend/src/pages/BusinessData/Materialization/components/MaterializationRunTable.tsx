@@ -1,6 +1,7 @@
-import { ProTable } from '@ant-design/pro-components';
+import { Popover, Typography } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import React from 'react';
+import UrlSyncedProTable from '@/components/UrlSyncedProTable';
 import { materializationRunStatusEnum } from '@/enums';
 import { formatTableDateTime } from '@/utils/createdUpdatedAtColumn';
 import { renderStatusBadge } from '@/utils/statusBadge';
@@ -9,18 +10,42 @@ interface MaterializationRunTableProps {
   runs: API.MaterializationRun[];
   loading?: boolean;
   total?: number;
-  page?: number;
-  pageSize?: number;
-  onPageChange?: (page: number) => void;
+}
+
+function isFailedRunStatus(status?: string): boolean {
+  const normalized = String(status || '').toLowerCase();
+  return normalized === 'failed' || normalized === 'failure';
+}
+
+function renderRunStatus(run: API.MaterializationRun) {
+  const status = String(run.status || '').toLowerCase();
+  const badge = renderStatusBadge(status, materializationRunStatusEnum, run.status || '-');
+
+  if (!isFailedRunStatus(run.status)) return badge;
+
+  const errorContent = run.errorMessage?.trim() || '无详细错误信息';
+
+  return (
+    <Popover
+      title="失败原因"
+      content={
+        <Typography.Paragraph
+          style={{ margin: 0, maxWidth: 360, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        >
+          {errorContent}
+        </Typography.Paragraph>
+      }
+      trigger="click"
+    >
+      <span style={{ cursor: 'pointer' }}>{badge}</span>
+    </Popover>
+  );
 }
 
 const MaterializationRunTable: React.FC<MaterializationRunTableProps> = ({
   runs,
   loading,
   total = 0,
-  page = 1,
-  pageSize = 10,
-  onPageChange,
 }) => {
   const columns: ProColumns<API.MaterializationRun>[] = [
     { title: '连接', dataIndex: 'connectionName', width: 140, ellipsis: true },
@@ -39,14 +64,13 @@ const MaterializationRunTable: React.FC<MaterializationRunTableProps> = ({
       title: '状态',
       dataIndex: 'status',
       width: 90,
-      render: (_, r) =>
-        renderStatusBadge(String(r.status || '').toLowerCase(), materializationRunStatusEnum, r.status || '-'),
+      render: (_, r) => renderRunStatus(r),
     },
     { title: '时间', dataIndex: 'createdAt', width: 140, render: (_, r) => formatTableDateTime(r.createdAt) },
   ];
 
   return (
-    <ProTable<API.MaterializationRun>
+    <UrlSyncedProTable<API.MaterializationRun>
       size="small"
       rowKey="id"
       loading={loading}
@@ -54,13 +78,8 @@ const MaterializationRunTable: React.FC<MaterializationRunTableProps> = ({
       dataSource={runs}
       search={false}
       options={false}
-      pagination={{
-        current: page,
-        pageSize,
-        total,
-        onChange: onPageChange,
-        showSizeChanger: false,
-      }}
+      defaultPageSize={10}
+      pagination={{ total, showSizeChanger: false }}
     />
   );
 };

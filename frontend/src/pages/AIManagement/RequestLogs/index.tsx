@@ -1,5 +1,6 @@
 import { EyeOutlined } from '@ant-design/icons';
-import { ActionType, PageContainer, ProDescriptions, ProTable } from '@ant-design/pro-components';
+import { ActionType, PageContainer, ProDescriptions } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Drawer, Spin, message } from 'antd';
 import React, { useRef, useState } from 'react';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
@@ -36,18 +37,19 @@ const RequestLogsPage: React.FC = () => {
   };
 
   return (
-    <PageContainer>
+    <PageContainer pageHeaderRender={() => <></>}>
       {contextHolder}
-      <ProTable
+      <UrlSyncedProTable
+        headerTitle="请求日志"
         actionRef={actionRef}
         rowKey="id"
-        search={false}
+        search={{ labelWidth: 'auto' }}
         scroll={{ x: 'max-content' }}
         columns={[
           ...requestLogTableColumns,
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 80,
+            width: 50,
             render: (_, record) => (
               <TableActions>
                 <TableActionButton

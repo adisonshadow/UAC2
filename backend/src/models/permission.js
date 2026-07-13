@@ -42,6 +42,13 @@ Permission.init({
     field: 'status',
     comment: '权限状态'
   },
+  access_restriction: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: null,
+    field: 'access_restriction',
+    comment: '访问限制 {mode:none|role|department, roleIds:[], departmentIds:[]}；用于菜单/按钮运行时可见性'
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,

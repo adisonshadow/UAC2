@@ -53,7 +53,8 @@ CREATE TABLE uac.permissions (
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'DISABLED', 'ARCHIVED')),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    access_restriction JSONB
 );
 
 -- 添加权限表注释
@@ -349,6 +350,7 @@ COMMENT ON COLUMN uac.roles.deleted_at IS '软删除时间';
 
 COMMENT ON COLUMN uac.permissions.status IS '权限状态：ACTIVE-启用, DISABLED-停用, ARCHIVED-归档';
 COMMENT ON COLUMN uac.permissions.deleted_at IS '软删除时间';
+COMMENT ON COLUMN uac.permissions.access_restriction IS '访问限制 {mode:none|role|department, roleIds:[], departmentIds:[]}；用于菜单/按钮运行时可见性';
 
 COMMENT ON COLUMN uac.data_permission_rules.status IS '规则状态：ACTIVE-启用, DISABLED-停用, ARCHIVED-归档';
 COMMENT ON COLUMN uac.data_permission_rules.deleted_at IS '软删除时间';
@@ -380,6 +382,7 @@ CREATE TABLE uac.applications (
     api_connect_config JSONB,
     api_data_scope JSONB,
     bizdata_scope_codes JSONB NOT NULL DEFAULT '[]',
+    builtin_api_scope JSONB NOT NULL DEFAULT '{"permissionCodes":[]}'::jsonb,
     description TEXT,
     top_level_skill_markdown TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -404,11 +407,23 @@ COMMENT ON COLUMN uac.applications.api_enabled IS '是否启用API服务';
 COMMENT ON COLUMN uac.applications.api_connect_config IS 'API连接配置（JSON格式，包含app_secret和salt）';
 COMMENT ON COLUMN uac.applications.api_data_scope IS 'API数据权限范围（JSON格式，包含API编码和对应的权限值）';
 COMMENT ON COLUMN uac.applications.bizdata_scope_codes IS '业务数据 Scope 编码列表';
+COMMENT ON COLUMN uac.applications.builtin_api_scope IS '可访问内置API：{permissionCodes:[...]}';
 COMMENT ON COLUMN uac.applications.description IS '应用端描述';
 COMMENT ON COLUMN uac.applications.top_level_skill_markdown IS '应用顶层 Skill 说明（可选，描述本应用 Skill/Tool 用法）';
 COMMENT ON COLUMN uac.applications.created_at IS '创建时间';
 COMMENT ON COLUMN uac.applications.updated_at IS '更新时间';
 COMMENT ON COLUMN uac.applications.deleted_at IS '软删除时间';
+
+-- 内置 API 限制配置表（前向合并自 migrate-builtin-api-system.sql）
+CREATE TABLE uac.builtin_api_configs (
+    code VARCHAR(100) PRIMARY KEY,
+    access_restriction JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE uac.builtin_api_configs IS '内置 API 限制配置（code 对应代码常量 catalog 清单）';
+COMMENT ON COLUMN uac.builtin_api_configs.code IS '内置 API 清单 code（业务域:资源[:动作]）';
+COMMENT ON COLUMN uac.builtin_api_configs.access_restriction IS '访问限制 {mode:role|department, roleIds:[], departmentIds:[]}';
 
 -- 企业文件存储
 CREATE TABLE uac.storage_buckets (

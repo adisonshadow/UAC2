@@ -1,23 +1,31 @@
 import {
+  CheckSquareFilled,
   CloudUploadOutlined,
   DeleteOutlined,
   EditOutlined,
   PlayCircleOutlined,
   PlusOutlined,
-  StopOutlined,
 } from '@ant-design/icons';
-import { ActionType, PageContainer, ProTable } from '@ant-design/pro-components';
+import { ActionType } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { useAISurface } from '@EADAF/ai-base';
-import { Button, Popconfirm, Tag, message } from 'antd';
-import React, { useCallback, useRef } from 'react';
+import { Button, Popconfirm, Splitter, Tag, message } from 'antd';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
+import { useScopeFromUrl } from '@/hooks/useUrlQueryState';
+import { apiServiceStatusEnum } from '@/enums';
+import { renderStatusBadge } from '@/utils/statusBadge';
+import ApiServiceDomainTree from '@/pages/ApiServices/components/ApiServiceDomainTree';
+import {
+  buildApiServiceDomainTree,
+  type ApiServiceDomainTreeItem,
+} from '@/utils/buildApiServiceDomainTree';
 import {
   deleteCollectionPipeline,
   getCollectionPipelines,
-  postCollectionPipelineDisable,
   postCollectionPipelinePublish,
 } from '@/services/UAC/api/businessData';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
@@ -28,16 +36,15 @@ const PROTOCOL_LABEL: Record<string, string> = {
   modbus_tcp: 'Modbus TCP',
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  draft: 'default',
-  published: 'success',
-  disabled: 'warning',
-};
+const VIEWPORT_HEIGHT = 'calc(100vh - 56px)';
 
 const CollectionPipelineListPage: React.FC = () => {
   const navigate = useNavigate();
   const [messageApi, contextHolder] = message.useMessage();
-  const actionRef = useRef<ActionType>();
+  const actionRef = useRef<ActionType | undefined>(undefined);
+  const [domainPrefix, setDomainPrefix] = useScopeFromUrl();
+  const [allPipelines, setAllPipelines] = useState<API.CollectionPipeline[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useAISurface({
     id: 'bizdata.collection-pipelines.list',
@@ -47,23 +54,47 @@ const CollectionPipelineListPage: React.FC = () => {
     refresh: () => actionRef.current?.reload(),
   });
 
+  // 一次性拉取全部管道，供左侧域树 + 右侧过滤
+  const loadAllPipelines = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getCollectionPipelines({ page: 1, size: -1 });
+      const data = getApiData<API.CollectionPipelineList>(res);
+      setAllPipelines(data?.items || []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAllPipelines();
+  }, [loadAllPipelines]);
+
+  // 构建左侧域树（复用 ApiServiceDomainTree，code 冒号分层）
+  const domainTree = useMemo<ApiServiceDomainTreeItem[]>(() => {
+    const items = allPipelines.map((p) => ({
+      id: p.id || '',
+      code: p.code || '',
+      name: p.name,
+    }));
+    return buildApiServiceDomainTree(items);
+  }, [allPipelines]);
+
+  // 右侧表格按选中域过滤
+  const filteredPipelines = useMemo(() => {
+    if (!domainPrefix) return allPipelines;
+    return allPipelines.filter(
+      (p) => p.code === domainPrefix || p.code?.startsWith(`${domainPrefix}:`),
+    );
+  }, [allPipelines, domainPrefix]);
+
   const handlePublish = async (id: string) => {
     const res = await postCollectionPipelinePublish(id);
     if (isApiSuccess(res)) {
       messageApi.success('已发布');
-      actionRef.current?.reload();
+      await loadAllPipelines();
     } else {
       messageApi.error(getApiErrorMessage(res, '发布失败'));
-    }
-  };
-
-  const handleDisable = async (id: string) => {
-    const res = await postCollectionPipelineDisable(id);
-    if (isApiSuccess(res)) {
-      messageApi.success('已禁用');
-      actionRef.current?.reload();
-    } else {
-      messageApi.error(getApiErrorMessage(res, '禁用失败'));
     }
   };
 
@@ -71,7 +102,7 @@ const CollectionPipelineListPage: React.FC = () => {
     const res = await deleteCollectionPipeline(id);
     if (isApiSuccess(res)) {
       messageApi.success('已删除');
-      actionRef.current?.reload();
+      await loadAllPipelines();
     } else {
       messageApi.error(getApiErrorMessage(res, '删除失败'));
     }
@@ -99,12 +130,18 @@ const CollectionPipelineListPage: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (_, r) => <Tag color={STATUS_COLOR[r.status || '']}>{r.status}</Tag>,
+      valueType: 'select',
+      valueEnum: apiServiceStatusEnum,
+      render: (_, record) =>
+        renderStatusBadge(
+          record.status === 'disabled' ? 'draft' : (record.status || 'draft'),
+          apiServiceStatusEnum,
+        ),
     },
     {
       ...TABLE_ACTION_COLUMN_BASE,
       dataIndex: 'option',
-      width: 180,
+      width: 120,
       render: (_, record) => (
         <TableActions>
           <TableActionButton
@@ -126,9 +163,9 @@ const CollectionPipelineListPage: React.FC = () => {
           ) : null}
           {record.status === 'published' ? (
             <TableActionButton
-              title="禁用"
-              icon={<StopOutlined />}
-              onClick={() => void handleDisable(record.id!)}
+              title="已发布"
+              icon={<CheckSquareFilled style={{ color: '#52c41a' }} />}
+              disabled
             />
           ) : null}
           <Popconfirm title="确定删除该采集管道？" onConfirm={() => void handleDelete(record.id!)}>
@@ -139,40 +176,57 @@ const CollectionPipelineListPage: React.FC = () => {
     },
   ];
 
-  const request = useCallback(async (params: { current?: number; pageSize?: number; code?: string }) => {
-    const res = await getCollectionPipelines({
-      page: params.current,
-      size: params.pageSize,
-      codePrefix: params.code,
-    });
-    const data = getApiData<API.CollectionPipelineList>(res);
-    return {
-      data: data?.items || [],
-      success: isApiSuccess(res),
-      total: data?.total || 0,
-    };
-  }, []);
-
   return (
-    <PageContainer
-      title="采集数据结构化"
-      extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/api_services/collection-pipelines/create')}>
-          新建管道
-        </Button>
-      }
-    >
+    <>
       {contextHolder}
-      <ProTable<API.CollectionPipeline>
-        actionRef={actionRef}
-        rowKey="id"
-        scroll={{ x: 'max-content' }}
-        columns={columns}
-        request={request}
-        search={{ labelWidth: 'auto' }}
-        options={DEFAULT_PRO_TABLE_OPTIONS}
-      />
-    </PageContainer>
+      <div style={{ height: VIEWPORT_HEIGHT }}>
+        <Splitter style={{ height: '100%' }}>
+          <Splitter.Panel defaultSize={260} min={200} max="40%" collapsible>
+            <div style={{ height: '100%', overflow: 'auto', paddingRight: 8 }}>
+              <ApiServiceDomainTree
+                treeData={domainTree}
+                selectedDomain={domainPrefix}
+                onSelectDomain={setDomainPrefix}
+                loading={loading}
+              />
+            </div>
+          </Splitter.Panel>
+          <Splitter.Panel>
+            <div style={{ height: '100%', overflow: 'auto', paddingLeft: 4 }}>
+              <UrlSyncedProTable<API.CollectionPipeline>
+                headerTitle={
+                  domainPrefix ? (
+                    <span>当前域：<Tag>{domainPrefix}</Tag></span>
+                  ) : (
+                    '全部采集管道'
+                  )
+                }
+                actionRef={actionRef}
+                rowKey="id"
+                scroll={{ x: 'max-content' }}
+                columns={columns}
+                dataSource={filteredPipelines}
+                loading={loading}
+                search={false}
+                defaultPageSize={10}
+                options={DEFAULT_PRO_TABLE_OPTIONS}
+                toolBarRender={() => [
+                  <Button
+                    key="create"
+                    type="primary"
+                    className="btn-gradient-primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => navigate('/api_services/collection-pipelines/create')}
+                  >
+                    新建管道
+                  </Button>,
+                ]}
+              />
+            </div>
+          </Splitter.Panel>
+        </Splitter>
+      </div>
+    </>
   );
 };
 

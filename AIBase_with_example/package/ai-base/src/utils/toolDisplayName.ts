@@ -29,6 +29,7 @@ const FALLBACK_DISPLAY_NAMES: Record<string, string> = {
   bizdata_get_entity: '获取实体详情',
   bizdata_create_entity: '创建实体',
   bizdata_update_entity: '更新实体',
+  bizdata_rename_entity_code: '重命名实体 Code',
   bizdata_delete_entity: '删除实体',
   bizdata_create_enum: '创建枚举',
   bizdata_list_relations: '列出实体关系',

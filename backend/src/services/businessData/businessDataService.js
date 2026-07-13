@@ -5,11 +5,17 @@ const {
   BizdataEnum,
   BizdataRelation,
   BizdataSetting,
+  BizdataMaterializationEntity,
   sequelize
 } = require('../../models');
-const { resolveEntityTableName } = require('./entityTableName');
+const { defaultTableNameFromCode, resolveEntityTableName } = require('./entityTableName');
+const { cascadeEntityCodeChange } = require('./entityCodeCascadeService');
+const {
+  renameMaterializedPhysicalTables,
+  rollbackMaterializedPhysicalRenames,
+} = require('./materializedTableRenameService');
 
-async function assertErTableNameUnique(tableName, excludeEntityId = null) {
+async function assertErTableNameUnique(tableName, excludeEntityId = null, transaction = null) {
   const where = {
     entity_kind: 'er_table',
     table_name: tableName,
@@ -17,10 +23,29 @@ async function assertErTableNameUnique(tableName, excludeEntityId = null) {
   if (excludeEntityId) {
     where.id = { [Op.ne]: excludeEntityId };
   }
-  const existing = await BizdataEntity.findOne({ where });
+  const existing = await BizdataEntity.findOne({ where, transaction });
   if (existing) {
     throw new Error(`表名「${tableName}」已被实体「${existing.label}」（${existing.code}）使用`);
   }
+}
+
+async function assertEntityCodeUnique(code, excludeEntityId = null, transaction = null) {
+  const trimmed = String(code || '').trim();
+  if (!trimmed) {
+    throw new Error('code 不能为空');
+  }
+  if (!trimmed.includes(':')) {
+    throw new Error('code 须包含 Scope 层级，如 sales:order:Order');
+  }
+  const where = { code: trimmed };
+  if (excludeEntityId) {
+    where.id = { [Op.ne]: excludeEntityId };
+  }
+  const existing = await BizdataEntity.findOne({ where, transaction });
+  if (existing) {
+    throw new Error(`code「${trimmed}」已被实体「${existing.label}」使用`);
+  }
+  return trimmed;
 }
 
 function formatField(field) {
@@ -213,6 +238,7 @@ async function createEntity(payload) {
   }
 
   const trimmedCode = code.trim();
+  await assertEntityCodeUnique(trimmedCode);
   let resolvedTableName = null;
   if (entityKind === 'er_table') {
     resolvedTableName = resolveEntityTableName(trimmedCode, tableName);
@@ -238,41 +264,151 @@ async function createEntity(payload) {
   return getEntityById(entity.id);
 }
 
-async function updateEntity(id, payload) {
-  const entity = await BizdataEntity.findByPk(id);
-  if (!entity) return null;
-  if (entity.is_locked) {
-    const definedKeys = Object.keys(payload).filter((k) => payload[k] !== undefined);
-    const onlyLockToggle = definedKeys.length === 1 && definedKeys[0] === 'isLocked';
-    if (!onlyLockToggle) {
-      throw new Error('实体已锁定，无法修改');
-    }
-  }
+function resolveNextTableName(entity, payload, nextCode, codeChanged) {
+  const oldDefaultTable = defaultTableNameFromCode(entity.code);
+  const tableWasDerivedFromCode = !entity.table_name || entity.table_name === oldDefaultTable;
+  let nextTableName = entity.table_name;
 
-  const updates = {};
-  if (payload.label !== undefined) updates.label = payload.label;
-  if (payload.entityKind !== undefined) updates.entity_kind = payload.entityKind;
   if (payload.tableName !== undefined) {
     if (entity.entity_kind === 'er_table') {
-      const resolvedTableName = resolveEntityTableName(entity.code, payload.tableName);
-      await assertErTableNameUnique(resolvedTableName, id);
-      updates.table_name = resolvedTableName;
+      nextTableName = resolveEntityTableName(nextCode, payload.tableName);
     } else {
-      updates.table_name = payload.tableName || null;
+      nextTableName = payload.tableName || null;
     }
+  } else if (codeChanged && entity.entity_kind === 'er_table' && tableWasDerivedFromCode) {
+    nextTableName = defaultTableNameFromCode(nextCode);
   }
-  if (payload.status !== undefined) updates.status = payload.status;
-  if (payload.isLocked !== undefined) updates.is_locked = payload.isLocked;
-  if (payload.entityInfo !== undefined) updates.entity_info = payload.entityInfo;
-  if (payload.jsonSchema !== undefined) updates.json_schema = payload.jsonSchema;
-  if (payload.layout !== undefined) updates.layout = payload.layout;
+  return nextTableName;
+}
 
-  if (Object.keys(updates).length) {
-    updates.version = entity.version + 1;
-    await entity.update(updates);
+async function updateEntity(id, payload) {
+  const previewEntity = await BizdataEntity.findByPk(id);
+  if (!previewEntity) return null;
+
+  const previewNextCode = payload.code !== undefined
+    ? String(payload.code).trim()
+    : previewEntity.code;
+  const previewCodeChanged = payload.code !== undefined && previewNextCode !== previewEntity.code;
+  const previewNextTableName = resolveNextTableName(
+    previewEntity,
+    payload,
+    previewNextCode,
+    previewCodeChanged,
+  );
+  const tableNameChanged = previewEntity.entity_kind === 'er_table'
+    && previewNextTableName
+    && previewEntity.table_name
+    && previewNextTableName !== previewEntity.table_name;
+
+  let physicalRenameResult = null;
+  if (tableNameChanged) {
+    physicalRenameResult = await renameMaterializedPhysicalTables({
+      entityId: id,
+      oldTableName: previewEntity.table_name,
+      newTableName: previewNextTableName,
+    });
   }
 
-  return getEntityById(id);
+  try {
+    return await sequelize.transaction(async (transaction) => {
+      const entity = await BizdataEntity.findByPk(id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!entity) return null;
+      if (entity.is_locked) {
+        const definedKeys = Object.keys(payload).filter((k) => payload[k] !== undefined);
+        const onlyLockToggle = definedKeys.length === 1 && definedKeys[0] === 'isLocked';
+        if (!onlyLockToggle) {
+          throw new Error('实体已锁定，无法修改');
+        }
+      }
+
+      const updates = {};
+      let nextCode = entity.code;
+      let trimmedCode = entity.code;
+
+      if (payload.code !== undefined) {
+        trimmedCode = await assertEntityCodeUnique(payload.code, id, transaction);
+        if (trimmedCode !== entity.code) {
+          updates.code = trimmedCode;
+          nextCode = trimmedCode;
+          const currentInfo = entity.entity_info || {};
+          updates.entity_info = {
+            ...currentInfo,
+            code: trimmedCode,
+            modelValidated: false,
+          };
+        }
+      }
+
+      if (payload.label !== undefined) updates.label = payload.label;
+      if (payload.entityKind !== undefined) updates.entity_kind = payload.entityKind;
+
+      const codeChanged = updates.code !== undefined;
+      let nextTableName = resolveNextTableName(entity, payload, nextCode, codeChanged);
+
+      if (payload.tableName !== undefined) {
+        if (entity.entity_kind === 'er_table') {
+          await assertErTableNameUnique(nextTableName, id, transaction);
+          updates.table_name = nextTableName;
+        } else {
+          updates.table_name = nextTableName;
+        }
+      } else if (codeChanged && entity.entity_kind === 'er_table') {
+        const oldDefaultTable = defaultTableNameFromCode(entity.code);
+        const tableWasDerivedFromCode = !entity.table_name || entity.table_name === oldDefaultTable;
+        if (tableWasDerivedFromCode) {
+          await assertErTableNameUnique(nextTableName, id, transaction);
+          updates.table_name = nextTableName;
+        }
+      }
+
+      if (payload.status !== undefined) updates.status = payload.status;
+      if (payload.isLocked !== undefined) updates.is_locked = payload.isLocked;
+      if (payload.entityInfo !== undefined) {
+        updates.entity_info = {
+          ...(updates.entity_info || entity.entity_info || {}),
+          ...payload.entityInfo,
+        };
+      }
+      if (payload.jsonSchema !== undefined) updates.json_schema = payload.jsonSchema;
+      if (payload.layout !== undefined) updates.layout = payload.layout;
+
+      const effectiveTableNameChanged = entity.entity_kind === 'er_table'
+        && nextTableName
+        && entity.table_name
+        && nextTableName !== entity.table_name;
+
+      if (codeChanged) {
+        await cascadeEntityCodeChange({
+          entityId: id,
+          oldCode: entity.code,
+          newCode: trimmedCode,
+          oldTableName: entity.table_name,
+          newTableName: nextTableName,
+          transaction,
+        });
+      } else if (effectiveTableNameChanged) {
+        await BizdataMaterializationEntity.update(
+          { table_name: nextTableName },
+          { where: { entity_id: id }, transaction },
+        );
+      }
+
+      if (Object.keys(updates).length) {
+        updates.version = entity.version + 1;
+        await entity.update(updates, { transaction });
+      }
+
+      return getEntityById(id);
+    });
+  } catch (err) {
+    if (physicalRenameResult?.renamed?.length) {
+      await rollbackMaterializedPhysicalRenames(physicalRenameResult);
+    }
+    throw err;
+  }
 }
 
 async function deleteEntity(id) {

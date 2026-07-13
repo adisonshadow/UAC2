@@ -31,6 +31,7 @@ const UAC_DOMAIN = 'uac';
 
 const TOOL_NAMES = [
   'uac_list_users',
+  'uac_filter_users',
   'uac_get_user',
   'uac_create_user',
   'uac_update_user',
@@ -84,6 +85,37 @@ export function registerUacTools() {
         status: args.status as API.getUsersParams['status'],
       });
       return parseApiListResponse(res).items;
+    },
+  });
+
+  registerFunctionCall({
+    name: 'uac_filter_users',
+    description: '按页面过滤项检索用户（用户名/姓名/邮箱/电话/状态/部门/用户ID），返回全部命中项；面向检索而非分页浏览',
+    parameters: {
+      type: 'object',
+      properties: {
+        username: { type: 'string' },
+        name: { type: 'string' },
+        email: { type: 'string' },
+        phone: { type: 'string' },
+        status: { type: 'string', enum: ['ACTIVE', 'DISABLED', 'ARCHIVED'] },
+        departmentId: { type: 'string', description: '部门ID' },
+        userId: { type: 'string', description: '用户ID精确匹配' },
+      },
+    },
+    handler: async (args) => {
+      const res = await getUsers({
+        size: -1,
+        username: args.username as string,
+        name: args.name as string,
+        email: args.email as string,
+        phone: args.phone as string,
+        status: args.status as API.getUsersParams['status'],
+        department_id: args.departmentId as string,
+        user_id: args.userId as string,
+      });
+      const { items, total } = parseApiListResponse(res);
+      return { items, total };
     },
   });
 

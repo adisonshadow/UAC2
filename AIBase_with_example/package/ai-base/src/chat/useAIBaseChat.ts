@@ -12,7 +12,10 @@ import { upsertSegment, type AssistantSegment, type ChatToolStep } from './chatT
 import { createEADAFChatProvider, type EADAFChatMessage } from './EADAFChatProvider';
 import { streamChatRound } from './streamToolChat';
 import { resolveToolDisplayName } from '../utils/toolDisplayName';
+import { runWithConcurrency } from '../utils/runWithConcurrency';
+import { sleep } from '../utils/sleep';
 import { withToolInvokeLog } from '../utils/toolInvokeLogger';
+import { serializeToolResultForContext, resolveToolResultBudget } from '../utils/toolResultBudget';
 import {
   buildMultimodalUserContent,
   formatUserDisplayWithAttachments,
@@ -23,7 +26,7 @@ import {
   saveConversationMessages,
 } from '../storage/chatHistoryDb';
 import { useDebouncedEffect } from '../storage/useDebouncedEffect';
-import { extractAiChatErrorMessage } from '../utils/formatAiChatError';
+import { extractAiChatErrorMessage, friendlifyBurstError } from '../utils/formatAiChatError';
 import {
   compactHistoryForApi,
   getContextUsagePercent,
@@ -78,10 +81,21 @@ async function invokeToolByMeta(
   const toolMeta = tools.find((t) => t.functionName === functionName);
   const localDef = getFunctionCallDef(functionName);
 
-  if (toolMeta?.executionType === 'client' || localDef) {
+  // 1. 声明为 client → 本地执行（必经路径）
+  if (toolMeta?.executionType === 'client') {
+    if (!localDef) {
+      throw new Error(`Client Tool 未注册 handler: ${functionName}`);
+    }
     return invokeFunctionCall(functionName, args);
   }
 
+  // 2. 显式允许本地覆盖（allowClientOverride）且本地有 def → 本地执行
+  if (toolMeta?.allowClientOverride && localDef) {
+    return invokeFunctionCall(functionName, args);
+  }
+
+  // 3. server_http / server_builtin → 走后端（按声明执行，本地同名 def 不再隐式拦截）。
+  //    走到这里时 executionType 必非 'client'（已被分支 1 拦截），无需重复比较。
   if (toolMeta) {
     return withToolInvokeLog(
       'server',
@@ -93,6 +107,11 @@ async function invokeToolByMeta(
       },
       { executionType: toolMeta.executionType || 'server' },
     );
+  }
+
+  // 4. 无 meta 但本地有 def（exposeAllClientTools 场景）→ 本地执行
+  if (localDef) {
+    return invokeFunctionCall(functionName, args);
   }
 
   throw new Error(`Tool 不可用: ${functionName}`);
@@ -129,8 +148,6 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     return Array.from(map.values());
   }, [skills]);
 
-  const skillSlugs = useMemo(() => skills.map((skill) => skill.slug), [skills]);
-
   const allowedToolNames = useMemo(
     () => new Set(allTools.map((tool) => tool.functionName)),
     [allTools],
@@ -145,6 +162,15 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       : [];
     return mergeOpenAITools(skillTools, localTools);
   }, [allTools, config.exposeAllClientTools, localToolVersion]);
+
+  // exposeAllClientTools 逃生舱告警：仅在首次开启时输出一次，提醒不要用于生产。
+  const warnedExposeAllRef = useRef(false);
+  if (config.exposeAllClientTools && !warnedExposeAllRef.current) {
+    warnedExposeAllRef.current = true;
+    console.warn(
+      '[AIBase] exposeAllClientTools 已启用：将向 LLM 暴露全部本地 client Tool，忽略 Skill 关联限制。仅建议调试环境使用，生产请通过 Skill 关联 Tool 控制可见性。',
+    );
+  }
 
   useEffect(() => subscribeFunctionCalls(() => setLocalToolVersion((v) => v + 1)), []);
 
@@ -184,7 +210,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           content: messageInfo?.message?.content || '已取消回复',
         };
       }
-      const msg = extractAiChatErrorMessage(error);
+      const msg = friendlifyBurstError(extractAiChatErrorMessage(error));
       if (msg.includes('content-type') && msg.includes('not support')) {
         return {
           role: 'assistant' as const,
@@ -388,6 +414,11 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           currentRoundReasoning = '';
 
           if (round > 0) {
+            // 轮次间最小间隔：把"零间隔连发"打散成"每秒约 1-2 次"，
+            // 避免单次用户消息内的续接循环密集打穿上游 Provider 突发保护。
+            // 可被用户取消（abort）立即中断，不卡满整个 delay。
+            await sleep(config.roundDelayMs, abortRef.current?.signal);
+
             patchAssistantMessage(
               {
                 content: mergeRoundContent(''),
@@ -440,7 +471,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               : roundText || '（无文本回复）';
 
             const autoContinueCtx = {
-              skillSlugs,
+              skills,
               allowedToolNames,
               invokedToolNames,
               toolsExecuted: toolsExecutedThisTurn,
@@ -460,7 +491,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               if (roundText) upsertRoundTextSegment(round, roundText);
               loopMessages.push({
                 role: 'user',
-                content: buildAutoContinueNudge(allowedToolNames),
+                content: buildAutoContinueNudge(allowedToolNames, skills),
               });
               patchAssistantMessage(
                 {
@@ -522,7 +553,16 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
           loopMessages = [...loopMessages, result.assistantMessage as unknown as EADAFChatMessage];
 
-          for (const call of result.toolCalls) {
+          // 同一轮内多个 tool_calls 通常彼此独立，可并发执行（上限 TOOLS_CONCURRENCY），
+          // 显著降低多工具场景下的端到端延迟。每个 call 用唯一 stepId，upsertSegment 按 id
+          // 就地更新，并发不互相干扰。
+          const TOOLS_CONCURRENCY = 6;
+
+          // 把单条工具调用（loading → 执行 → success/error）封装为独立函数，
+          // 返回要回灌 loopMessages 的 role:'tool' 消息（按预算序列化结果）。
+          const executeOneToolCall = async (
+            call: { id?: string; function?: { name?: string; arguments?: string } },
+          ): Promise<EADAFChatMessage> => {
             const functionName = call.function?.name || 'unknown_tool';
             const stepId = call.id || `${functionName}-${Date.now()}`;
             const displayName = resolveToolDisplayName(functionName, allTools);
@@ -582,6 +622,14 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             const startedAt = Date.now();
             invokedToolNames.add(functionName);
             toolsExecutedThisTurn += 1;
+
+            const toolMeta = allTools.find((t) => t.functionName === functionName);
+            const budget = resolveToolResultBudget(
+              getFunctionCallDef(functionName),
+              toolMeta,
+              config.maxToolResultChars,
+            );
+
             try {
               const toolResult = await invokeToolByMeta(client, allTools, functionName, args);
               appendToolStep({
@@ -591,12 +639,12 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 status: 'success',
                 durationMs: Date.now() - startedAt,
               });
-              loopMessages.push({
+              return {
                 role: 'tool',
-                content: JSON.stringify(toolResult),
+                content: serializeToolResultForContext(toolResult, budget),
                 tool_call_id: call.id,
                 name: functionName,
-              });
+              };
             } catch (toolError) {
               const errorMessage =
                 toolError instanceof Error ? toolError.message : 'Tool 执行失败';
@@ -608,14 +656,21 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 durationMs: Date.now() - startedAt,
                 error: errorMessage,
               });
-              loopMessages.push({
+              return {
                 role: 'tool',
-                content: JSON.stringify({ error: errorMessage }),
+                content: serializeToolResultForContext({ error: errorMessage }, budget),
                 tool_call_id: call.id,
                 name: functionName,
-              });
+              };
             }
-          }
+          };
+
+          const toolMessages = await runWithConcurrency(
+            result.toolCalls,
+            TOOLS_CONCURRENCY,
+            executeOneToolCall,
+          );
+          loopMessages.push(...toolMessages);
         }
 
         const roundLimitNote = lastRoundHadToolCalls
@@ -630,7 +685,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         );
         return accumulatedContent;
       } catch (error) {
-        const message = extractAiChatErrorMessage(error);
+        const message = friendlifyBurstError(extractAiChatErrorMessage(error));
         const isAbort = error instanceof Error && error.name === 'AbortError';
 
         patchAssistantMessage(
@@ -654,7 +709,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       openaiTools,
       selectedSlug,
       setMessages,
-      skillSlugs,
+      skills,
       skillsLoading,
       systemPrompt,
     ],

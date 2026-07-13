@@ -1,12 +1,10 @@
-import { PageContainer } from '@ant-design/pro-components';
-import { Button, Drawer, Input, Select, Space, Splitter, Typography, message } from 'antd';
+import { Button, Input, Select, Space, Splitter } from 'antd';
 import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildMaterializationExecutePrompts } from '@/ai/pageChatPrompts';
-import DatabaseConnectionManager from '../components/DatabaseConnectionManager';
 import EntitySelector from '../components/EntitySelector';
-import MaterializationRunTable from '../components/MaterializationRunTable';
 import SqlPreviewPanel from '../components/SqlPreviewPanel';
+import { useUrlPagination } from '@/hooks/useUrlQueryState';
 import {
   useDatabaseConnections,
   useMaterializationActions,
@@ -19,7 +17,6 @@ const MaterializationExecutePage: React.FC = () => {
   const [connectionId, setConnectionId] = useState<string>();
   const [targetSchema, setTargetSchema] = useState('bizdata_mat');
   const [activeCodeTab, setActiveCodeTab] = useState('sql');
-  const [connDrawerOpen, setConnDrawerOpen] = useState(false);
 
   const selectedIdsRef = useRef(selectedIds);
   const connectionIdRef = useRef(connectionId);
@@ -28,9 +25,15 @@ const MaterializationExecutePage: React.FC = () => {
   connectionIdRef.current = connectionId;
   targetSchemaRef.current = targetSchema;
 
-  const { erEntities, groupedOptions, loading: entitiesLoading, loadEntities } = useMaterializationEntities();
+  const {
+    erEntities,
+    groupedOptions,
+    loading: entitiesLoading,
+    loadAll: loadEntities,
+  } = useMaterializationEntities(connectionId);
+  const { page, pageSize } = useUrlPagination(10);
   const { connections, defaultConnection, loading: connLoading, loadConnections } = useDatabaseConnections();
-  const { runs, total, page, pageSize, loading: runsLoading, loadRuns } = useMaterializationRuns(connectionId);
+  const { runs, total, loading: runsLoading, loadRuns } = useMaterializationRuns(connectionId, page, pageSize);
   const { executing, preview, handlePreview, handleExecute } = useMaterializationActions();
 
   const selectedConnection = connections.find((c) => c.id === connectionId) || defaultConnection;
@@ -95,31 +98,38 @@ const MaterializationExecutePage: React.FC = () => {
   };
 
   const leftPanel = (
-    <div style={{ height: '100%', overflow: 'auto', paddingRight: 8 }}>
-      <Space direction="vertical" size={16} style={{ width: '100%' }}>
-        <div>
-          <Typography.Text strong>物化配置</Typography.Text>
-          <Select
-            style={{ width: '100%', marginTop: 8 }}
-            placeholder="选择目标数据库连接"
-            value={connectionId}
-            loading={connLoading}
-            options={connections.map((c) => ({
-              label: `${c.name} (${c.dbType})`,
-              value: c.id,
-            }))}
-            onChange={(id) => {
-              setConnectionId(id);
-              const conn = connections.find((c) => c.id === id);
-              if (conn?.targetSchema) setTargetSchema(conn.targetSchema);
-            }}
-          />
-          <Input
-            addonBefore={dbType === 'redis' ? 'Key 前缀' : dbType === 'mongodb' ? '数据库' : '目标 Schema'}
-            value={targetSchema}
-            onChange={(e) => setTargetSchema(e.target.value)}
-            style={{ marginTop: 8 }}
-          />
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        paddingRight: 8,
+      }}
+    >
+      <div style={{ flexShrink: 0, padding: 10 }}>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="选择目标数据库连接"
+          value={connectionId}
+          loading={connLoading}
+          options={connections.map((c) => ({
+            label: `${c.name} (${c.dbType})`,
+            value: c.id,
+          }))}
+          onChange={(id) => {
+            setConnectionId(id);
+            const conn = connections.find((c) => c.id === id);
+            if (conn?.targetSchema) setTargetSchema(conn.targetSchema);
+          }}
+        />
+        <Input
+          addonBefore={dbType === 'redis' ? 'Key 前缀' : dbType === 'mongodb' ? '数据库' : '目标 Schema'}
+          value={targetSchema}
+          onChange={(e) => setTargetSchema(e.target.value)}
+          style={{ marginTop: 8 }}
+        />
+        {selectedIds.length > 0 && (
           <Space style={{ marginTop: 8 }} wrap>
             <Button loading={executing} onClick={() => void handlePreview(actionOptions)}>
               预览
@@ -127,69 +137,50 @@ const MaterializationExecutePage: React.FC = () => {
             <Button type="primary" loading={executing} onClick={() => void handleExecute(actionOptions)}>
               执行物化
             </Button>
-            <Button onClick={() => setConnDrawerOpen(true)}>管理连接</Button>
           </Space>
-        </div>
+        )}
+      </div>
 
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+        }}
+      >
         <EntitySelector
           groupedOptions={groupedOptions}
           erEntities={erEntities}
           selectedIds={selectedIds}
           onChange={setSelectedIds}
         />
-      </Space>
+      </div>
     </div>
   );
 
   const rightPanel = (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 12, paddingLeft: 4 }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', paddingLeft: 4 }}>
       <SqlPreviewPanel
         preview={preview}
         activeTab={activeCodeTab}
         onTabChange={setActiveCodeTab}
         dbType={dbType}
+        runs={runs}
+        runsLoading={runsLoading || entitiesLoading}
+        runsTotal={total}
       />
-      <div>
-        <Typography.Text strong>物化历史</Typography.Text>
-        <div style={{ marginTop: 8 }}>
-          <MaterializationRunTable
-            runs={runs}
-            loading={runsLoading || entitiesLoading}
-            total={total}
-            page={page}
-            pageSize={pageSize}
-            onPageChange={(p) => void loadRuns(p)}
-          />
-        </div>
-      </div>
     </div>
   );
 
   return (
-    <PageContainer pageHeaderRender={() => <></>}>
-      <Splitter style={{ height: 'calc(100vh - 120px)', minHeight: 520 }}>
-        <Splitter.Panel defaultSize="36%" min="280px" max="46%">
+    <div style={{ height: 'calc(100vh - 56px)' }}>
+      <Splitter style={{ height: '100%', minHeight: 520 }}>
+        <Splitter.Panel defaultSize="360px" min="280px" max="460px">
           {leftPanel}
         </Splitter.Panel>
         <Splitter.Panel>{rightPanel}</Splitter.Panel>
       </Splitter>
-
-      <Drawer
-        title="数据库连接管理"
-        width={720}
-        open={connDrawerOpen}
-        onClose={() => setConnDrawerOpen(false)}
-      >
-        <DatabaseConnectionManager
-          connections={connections}
-          loading={connLoading}
-          onRefresh={() => {
-            void loadConnections();
-            message.success('连接列表已刷新');
-          }}
-        />
-      </Drawer>
-    </PageContainer>
+    </div>
   );
 };
 

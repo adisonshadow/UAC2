@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const UserController = require('../controllers/userController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 const router = new Router({
   prefix: '/api/v1/users'
 });
@@ -360,7 +361,7 @@ const router = new Router({
  *                   type: null
  *                   example: null
  */
-router.post('/', auth, UserController.create);
+router.post('/', authWithBuiltinApiGuard, UserController.create);
 
 /**
  * @swagger
@@ -496,7 +497,7 @@ router.post('/', auth, UserController.create);
  *                   type: null
  *                   example: null
  */
-router.get('/', auth, UserController.list);
+router.get('/', authWithBuiltinApiGuard, UserController.list);
 
 /**
  * @swagger
@@ -581,7 +582,7 @@ router.get('/', auth, UserController.list);
  *                   type: null
  *                   example: null
  */
-router.get('/:user_id', auth, UserController.getById);
+router.get('/:user_id', authWithBuiltinApiGuard, UserController.getById);
 
 /**
  * @swagger
@@ -706,7 +707,7 @@ router.get('/:user_id', auth, UserController.getById);
  *                   type: null
  *                   example: null
  */
-router.put('/:user_id', auth, UserController.update);
+router.put('/:user_id', authWithBuiltinApiGuard, UserController.update);
 
 /**
  * @swagger
@@ -791,7 +792,7 @@ router.put('/:user_id', auth, UserController.update);
  *                   type: null
  *                   example: null
  */
-router.delete('/:user_id', auth, UserController.delete);
+router.delete('/:user_id', authWithBuiltinApiGuard, UserController.delete);
 
 /**
  * @swagger
@@ -905,7 +906,7 @@ router.delete('/:user_id', auth, UserController.delete);
  *                   type: null
  *                   example: null
  */
-router.put('/:user_id/roles', auth, UserController.assignRoles);
+router.put('/:user_id/roles', authWithBuiltinApiGuard, UserController.assignRoles);
 
 /**
  * @swagger
@@ -944,7 +945,7 @@ router.put('/:user_id/roles', auth, UserController.assignRoles);
  *       500:
  *         description: 服务器错误
  */
-router.put('/:user_id/status', auth, UserController.updateStatus);
+router.put('/:user_id/status', authWithBuiltinApiGuard, UserController.updateStatus);
 
 /**
  * @swagger
@@ -983,7 +984,7 @@ router.put('/:user_id/status', auth, UserController.updateStatus);
  *       500:
  *         description: 服务器错误
  */
-router.post('/:user_id/avatar', auth, UserController.update);
+router.post('/:user_id/avatar', authWithBuiltinApiGuard, UserController.update);
 
 /**
  * @swagger
@@ -1007,7 +1008,7 @@ router.post('/:user_id/avatar', auth, UserController.update);
  *       500:
  *         description: 服务器错误
  */
-router.post('/:user_id/restore', auth, UserController.restore);
+router.post('/:user_id/restore', authWithBuiltinApiGuard, UserController.restore);
 
 /**
  * @swagger
@@ -1128,7 +1129,7 @@ router.post('/:user_id/restore', auth, UserController.restore);
  *                   type: null
  *                   example: null
  */
-router.post('/:user_id/change-password', auth, UserController.changePassword);
+router.post('/:user_id/change-password', authWithBuiltinApiGuard, UserController.changePassword);
 
 /**
  * @swagger

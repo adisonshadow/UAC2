@@ -1,5 +1,10 @@
 import type { AIBaseClient } from '../sdk/client';
 import type { AIBaseSkill, ResolvedAIChatConfig } from '../types';
+import {
+  buildSkillCacheKey,
+  getCachedSkillContext,
+  setCachedSkillContext,
+} from './skillCache';
 
 async function loadSkill(client: AIBaseClient, slug: string): Promise<AIBaseSkill | null> {
   try {
@@ -9,11 +14,24 @@ async function loadSkill(client: AIBaseClient, slug: string): Promise<AIBaseSkil
   }
 }
 
+/**
+ * 批量加载 Skill：优先走批量接口（单请求），失败时降级为逐个请求。
+ */
 async function loadSkillsBySlugs(
   client: AIBaseClient,
   slugs: string[],
 ): Promise<AIBaseSkill[]> {
   if (!slugs.length) return [];
+
+  try {
+    const skills = await client.loadSkills(slugs);
+    if (Array.isArray(skills) && skills.length) {
+      return skills;
+    }
+    // 批量接口返回空（可能全部不存在），逐个兜底以区分「不存在」与「批量接口异常」
+  } catch {
+    // 批量接口异常时降级为逐个请求，保证加载鲁棒性
+  }
 
   const results = await Promise.all(slugs.map((slug) => loadSkill(client, slug)));
   return results.filter(Boolean) as AIBaseSkill[];
@@ -45,20 +63,34 @@ export interface ChatSkillContext {
  * - 配置了 applicationId：远端（全局 + 绑定该应用的专用）+ 本地 fallbackSkillSlugs
  * - 未配置 applicationId：仅本地 fallbackSkillSlugs
  * - topLevelSkillMarkdown：config 非空优先，否则从 capabilities 读取
+ *
+ * 带内存缓存（按 apiBase + applicationId + scopeSlug + fallbackSlugs 维度，TTL 5 分钟），
+ * 避免每次进页面/切路由全量重拉；远端 Skill 用批量接口一次性加载（解决 N+1）。
  */
 export async function loadChatSkillContext(
   client: AIBaseClient,
   config: ResolvedAIChatConfig,
   scopeSlug?: string,
 ): Promise<ChatSkillContext> {
+  const cacheKey = buildSkillCacheKey({
+    apiBase: config.apiBase,
+    applicationId: config.applicationId,
+    scopeSlug: scopeSlug || config.scopeSlug,
+    fallbackSlugs: config.fallbackSkillSlugs,
+  });
+  const cached = getCachedSkillContext(cacheKey);
+  if (cached) return cached;
+
   const localTopLevel = config.topLevelSkillMarkdown.trim();
   const localSkills = await loadSkillsBySlugs(client, config.fallbackSkillSlugs);
 
   if (!config.applicationId) {
-    return {
+    const ctx: ChatSkillContext = {
       skills: localSkills,
       topLevelSkillMarkdown: localTopLevel,
     };
+    setCachedSkillContext(cacheKey, ctx);
+    return ctx;
   }
 
   try {
@@ -70,21 +102,24 @@ export async function loadChatSkillContext(
       localTopLevel || extractTopLevelFromCapabilities(caps as Record<string, unknown>);
 
     const skillMetas = ((caps as Record<string, unknown>)?.skills as Array<{ slug: string }>) || [];
+    // 批量加载远端 Skill（单请求替代 N 次），失败时降级为逐个请求
+    const remoteSkillSlugs = skillMetas.map((item) => item.slug);
     const remoteSkills = skillMetas.length
-      ? ((await Promise.all(skillMetas.map((item) => loadSkill(client, item.slug)))).filter(
-          Boolean,
-        ) as AIBaseSkill[])
+      ? await loadSkillsBySlugs(client, remoteSkillSlugs)
       : [];
 
-    return {
+    const ctx: ChatSkillContext = {
       skills: mergeSkillsBySlug(remoteSkills, localSkills),
       topLevelSkillMarkdown,
     };
+    setCachedSkillContext(cacheKey, ctx);
+    return ctx;
   } catch {
-    return {
+    const ctx: ChatSkillContext = {
       skills: localSkills,
       topLevelSkillMarkdown: localTopLevel,
     };
+    return ctx;
   }
 }
 

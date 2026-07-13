@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const { UniqueConstraintError } = require('sequelize');
 const {
   AiModel,
   Provider,
@@ -23,6 +24,7 @@ function formatAiModel(model, includeProvider = false) {
     modelId: data.model_id,
     displayName: data.display_name,
     defaultParams: data.default_params || {},
+    rateLimit: data.rate_limit || null,
     isActive: data.is_active,
     capabilities: (data.capabilities || []).map((item) => item.capability),
     inputTags: (data.ioTags || [])
@@ -44,6 +46,44 @@ function formatAiModel(model, includeProvider = false) {
   }
 
   return result;
+}
+
+/**
+ * 校验并规范化 rateLimit 配置。
+ * 入参可为 undefined（未传）、null（显式清空）、对象 { maxConcurrent, requestsPerMinute }。
+ * 返回 { valid, message?, normalized }：normalized 为 null 表示不限流，两字段皆正整数或 null。
+ */
+function normalizeRateLimit(rateLimit) {
+  if (rateLimit === undefined) {
+    return { valid: true, normalized: undefined };
+  }
+  if (rateLimit === null) {
+    return { valid: true, normalized: null };
+  }
+
+  const { maxConcurrent, requestsPerMinute } = rateLimit || {};
+  const isPositiveInt = (v) =>
+    v === null || v === undefined || (Number.isInteger(v) && v > 0);
+
+  if (!isPositiveInt(maxConcurrent) || !isPositiveInt(requestsPerMinute)) {
+    return {
+      valid: false,
+      message: 'rateLimit 的 maxConcurrent / requestsPerMinute 必须为正整数或留空',
+      normalized: null
+    };
+  }
+
+  const normalized = {
+    maxConcurrent: maxConcurrent ?? null,
+    requestsPerMinute: requestsPerMinute ?? null
+  };
+
+  // 两字段皆空视为不限流，存 null
+  const effective = normalized.maxConcurrent || normalized.requestsPerMinute
+    ? normalized
+    : null;
+
+  return { valid: true, normalized: effective };
 }
 
 async function replaceTags(modelId, capabilities, inputTags, outputTags, transaction) {
@@ -128,6 +168,7 @@ class AiModelController {
       modelId,
       displayName,
       defaultParams,
+      rateLimit,
       capabilities,
       inputTags,
       outputTags
@@ -136,6 +177,13 @@ class AiModelController {
     if (!providerId || !modelId || !displayName) {
       ctx.status = 400;
       ctx.body = { code: 400, message: 'providerId、modelId、displayName 为必填项', data: null };
+      return;
+    }
+
+    const rateLimitCheck = normalizeRateLimit(rateLimit);
+    if (!rateLimitCheck.valid) {
+      ctx.status = 400;
+      ctx.body = { code: 400, message: rateLimitCheck.message, data: null };
       return;
     }
 
@@ -197,6 +245,7 @@ class AiModelController {
         model_id: modelId,
         display_name: displayName,
         default_params: defaultParams || null,
+        rate_limit: rateLimitCheck.normalized ?? null,
         is_active: true
       }, { transaction });
 
@@ -213,6 +262,21 @@ class AiModelController {
       };
     } catch (error) {
       await transaction.rollback();
+      if (error instanceof UniqueConstraintError) {
+        const fields = Object.keys(error.fields || {}).join(', ');
+        logger.warn('创建模型失败：唯一约束冲突', { fields, message: error.message });
+        ctx.status = 400;
+        ctx.body = {
+          code: 400,
+          message: fields.includes('model_id')
+            ? '该模型 ID 在此服务商下已存在'
+            : fields.includes('slug')
+              ? 'slug 已存在'
+              : '唯一约束冲突，请检查模型 ID 或 slug 是否重复',
+          data: null,
+        };
+        return;
+      }
       logger.error('创建模型失败', { error: error.message });
       ctx.status = 500;
       ctx.body = { code: 500, message: '创建模型失败', data: null };
@@ -247,6 +311,7 @@ class AiModelController {
       modelId,
       displayName,
       defaultParams,
+      rateLimit,
       capabilities,
       inputTags,
       outputTags,
@@ -261,6 +326,14 @@ class AiModelController {
         await transaction.rollback();
         ctx.status = 404;
         ctx.body = { code: 404, message: '模型不存在', data: null };
+        return;
+      }
+
+      const rateLimitCheck = normalizeRateLimit(rateLimit);
+      if (!rateLimitCheck.valid) {
+        await transaction.rollback();
+        ctx.status = 400;
+        ctx.body = { code: 400, message: rateLimitCheck.message, data: null };
         return;
       }
 
@@ -306,6 +379,7 @@ class AiModelController {
         ...(modelId !== undefined && { model_id: modelId }),
         ...(displayName !== undefined && { display_name: displayName }),
         ...(defaultParams !== undefined && { default_params: defaultParams }),
+        ...(rateLimitCheck.normalized !== undefined && { rate_limit: rateLimitCheck.normalized }),
         ...(isActive !== undefined && { is_active: isActive })
       }, { transaction });
 
@@ -334,6 +408,21 @@ class AiModelController {
       };
     } catch (error) {
       await transaction.rollback();
+      if (error instanceof UniqueConstraintError) {
+        const fields = Object.keys(error.fields || {}).join(', ');
+        logger.warn('更新模型失败：唯一约束冲突', { fields, message: error.message });
+        ctx.status = 400;
+        ctx.body = {
+          code: 400,
+          message: fields.includes('model_id')
+            ? '该模型 ID 在此服务商下已存在'
+            : fields.includes('slug')
+              ? 'slug 已存在'
+              : '唯一约束冲突，请检查模型 ID 或 slug 是否重复',
+          data: null,
+        };
+        return;
+      }
       logger.error('更新模型失败', { error: error.message });
       ctx.status = 500;
       ctx.body = { code: 500, message: '更新模型失败', data: null };

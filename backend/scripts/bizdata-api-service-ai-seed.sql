@@ -218,10 +218,10 @@ VALUES
         'API 服务页面跳转',
         'apiservice-navigate',
         'apiservice_navigate',
-        '在 list / edit / test 页面间跳转，支持返回测试页后 autoRunTest',
+        '在 list / test 页面间跳转，支持返回测试页后 autoRunTest',
         'client',
-        '{"type":"object","properties":{"target":{"type":"string","enum":["list","edit","test"]},"serviceId":{"type":"string"},"code":{"type":"string"},"autoRunTest":{"type":"boolean"},"fixContext":{"type":"object"}},"required":["target"]}'::jsonb,
-        E'## apiservice_navigate\n\n- target=edit：跳转 `/api_services/{id}/edit`，可传 fixContext.errorMessage\n- target=test：跳转测试页；autoRunTest=true 时落地后自动执行测试\n- target=list：服务列表\n\n配置/SQL 修复流程：edit → update_service → test(autoRunTest=true)',
+        '{"type":"object","properties":{"target":{"type":"string","enum":["list","test"]},"serviceId":{"type":"string"},"code":{"type":"string"},"autoRunTest":{"type":"boolean"},"fixContext":{"type":"object"}},"required":["target"]}'::jsonb,
+        E'## apiservice_navigate\n\n- target=test：跳转测试页；autoRunTest=true 时落地后自动执行测试\n- target=list：服务列表\n\n配置/SQL 修复流程：update_service（执行后自动跳转至服务列表） → test(autoRunTest=true)',
         '{}'::jsonb,
         true
     ),
@@ -235,6 +235,19 @@ VALUES
         'client',
         '{"type":"object","properties":{"serviceId":{"type":"string"},"code":{"type":"string"},"operation":{"type":"string"},"parameters":{"type":"object"},"mockParameters":{"type":"object"}}}'::jsonb,
         E'## apiservice_set_test_params\n\n传 operation（必填）+ parameters 或 mockParameters（完整 JSON 对象）。\n\n### 作用\n- **持久化**到服务 security_config.testMockParameters（按 operation 存储）\n- mutation 同步到 surfaceId=api-services.test 的表单\n\n### 调用时机（重要）\n- 参数类问题：`run_test` **执行成功后**必须调用本 Tool 保存已通过测试的 mock\n- 生成/完善 mock 后测试通过，同样必须保存\n- 禁止仅 run_test 成功就结束而不保存 mock',
+        '{}'::jsonb,
+        true
+    ),
+    (
+        '66666666-6666-4666-8666-666666666636',
+        '55555555-5555-4555-8555-555555555501',
+        '过滤 API 服务',
+        'apiservice-filter-services',
+        'apiservice_filter_services',
+        '按页面过滤项检索 API 服务：code 前缀 + 状态 + 标签 + 数据库连接，返回全部命中项（size=-1）。',
+        'client',
+        '{"type":"object","properties":{"codePrefix":{"type":"string","description":"code 前缀，如 equipment"},"status":{"type":"string","enum":["draft","published","disabled"]},"tag":{"type":"string","description":"标签精确匹配"},"connectionId":{"type":"string"}}}'::jsonb,
+        E'## apiservice_filter_services\n\n参数全可选；不传则返回全部。返回 { items, total }。与 list 区别：面向检索而非分页浏览。',
         '{}'::jsonb,
         true
     )
@@ -266,7 +279,7 @@ VALUES
         'API 服务管理',
         'bizdata-api-service-manage',
         '查看、发布、禁用与维护 API 服务',
-        E'# API 服务管理助手\n\n你是 EADAF API 服务管理助手，帮助用户维护已创建的 API 服务。\n\n## 常用操作\n1. `apiservice_list_services` / `apiservice_get_tree` 浏览服务\n2. `apiservice_get_service` 查看详情与 SQL\n3. `apiservice_update_service` 修改配置\n4. `apiservice_publish_service` 发布 draft\n5. `apiservice_disable_service` 禁用已发布服务\n6. `apiservice_delete_service` 删除服务\n\n## API 测试协助\n- 用户打开测试页或要求测试 API 时：\n  1. `aibase_read_surfaces`（surfaceId=api-services.test）读取当前 operation 与参数\n  2. `apiservice_get_test_profile` 获取参数结构与 mock\n  3. `apiservice_suggest_test_params` 或 `apiservice_set_test_params` 写入 mock\n  4. `apiservice_run_test` 执行测试并解读 preview / rolledBack / error\n\n## 测试失败自动修复（重要）\n用户点击「自动修复」或粘贴测试错误时：\n- **mock/参数错误** → `apiservice_set_test_params` + `apiservice_run_test`\n- **SQL/配置错误** → `apiservice_navigate`(edit) → `apiservice_update_service` → `apiservice_navigate`(test, autoRunTest=true)\n\n必须调用 Tool 完成修复，禁止只输出文字方案。\n\n## 状态\n- draft：草稿，未对外暴露\n- published：已发布\n- disabled：已禁用\n\n## 页面上下文\n- 用 `aibase_read_surfaces` 读取列表/测试/编辑页状态\n\n## UI 同步\n- 写操作成功后列表会自动刷新，**不要**提示用户手动刷新\n\n## AI 完善 / 编辑页（重要）\n用户点击「AI 完善」或要求优化 SQL/配置时，须按下列 **Todo 逐项执行**，禁止跳过：\n\n### 完善前\n1. `aibase_read_surfaces`（api-services.edit）+ `apiservice_get_service` 读取当前脚本与 operation\n2. `bizdata_get_entity`（若有 entityCode）了解表结构与字段\n\n### 脚本要求\n- **禁止** `SELECT 1`、`SELECT 1 AS result` 等占位 SQL\n- create 类：物化表结构参考 SQL（`WHERE 1=0`）或合理业务 SQL；须绑定实体表\n- find 类：完整查询 SQL + 命名参数\n\n### 完善后校验 Todo（全部完成才可汇报成功）\n- [ ] `apiservice_update_service` 保存后，`apiservice_get_service` 回读脚本，确认非占位\n- [ ] `apiservice_get_test_profile`：目标 operation 的 `executable=true`（若 false 检查系统设置「API 操作允许写操作」与实体物化）\n- [ ] `apiservice_suggest_test_params` 或 `apiservice_set_test_params`：create 须有合理 `body`\n- [ ] `apiservice_run_test`：`success=true`；create 的 preview 含 `item` 或有效结果\n- [ ] **仅当以上通过**才可向用户声称「完善成功」「测试通过」\n\n### 禁止\n- 禁止仅 update 成功就声称测试通过\n- 禁止编造 preview / rolledBack',
+        E'# API 服务管理助手\n\n你是 EADAF API 服务管理助手，帮助用户维护已创建的 API 服务。\n\n## 常用操作\n1. `apiservice_list_services` / `apiservice_get_tree` 浏览服务\n2. `apiservice_get_service` 查看详情与 SQL\n3. `apiservice_update_service` 修改配置\n4. `apiservice_publish_service` 发布 draft\n5. `apiservice_disable_service` 禁用已发布服务\n6. `apiservice_delete_service` 删除服务\n\n## API 测试协助\n- 用户打开测试页或要求测试 API 时：\n  1. `aibase_read_surfaces`（surfaceId=api-services.test）读取当前 operation 与参数\n  2. `apiservice_get_test_profile` 获取参数结构与 mock\n  3. `apiservice_suggest_test_params` 或 `apiservice_set_test_params` 写入 mock\n  4. `apiservice_run_test` 执行测试并解读 preview / rolledBack / error\n\n## 测试失败自动修复（重要）\n用户点击「自动修复」或粘贴测试错误时：\n- **mock/参数错误** → `apiservice_set_test_params` + `apiservice_run_test`\n- **SQL/配置错误** → `apiservice_update_service`（执行后自动跳转至服务列表） → `apiservice_navigate`(test, autoRunTest=true)\n\n必须调用 Tool 完成修复，禁止只输出文字方案。\n\n## 状态\n- draft：草稿，未对外暴露\n- published：已发布\n- disabled：已禁用\n\n## 页面上下文\n- 用 `aibase_read_surfaces` 读取列表/测试/编辑页状态\n\n## UI 同步\n- 写操作成功后列表会自动刷新，**不要**提示用户手动刷新\n\n## AI 完善 / 编辑页（重要）\n用户点击「AI 完善」或要求优化 SQL/配置时，须按下列 **Todo 逐项执行**，禁止跳过：\n\n### 完善前\n1. `aibase_read_surfaces`（api-services.edit）+ `apiservice_get_service` 读取当前脚本与 operation\n2. `bizdata_get_entity`（若有 entityCode）了解表结构与字段\n\n### 脚本要求\n- **禁止** `SELECT 1`、`SELECT 1 AS result` 等占位 SQL\n- create 类：物化表结构参考 SQL（`WHERE 1=0`）或合理业务 SQL；须绑定实体表\n- find 类：完整查询 SQL + 命名参数\n\n### 完善后校验 Todo（全部完成才可汇报成功）\n- [ ] `apiservice_update_service` 保存后，`apiservice_get_service` 回读脚本，确认非占位\n- [ ] `apiservice_get_test_profile`：目标 operation 的 `executable=true`（若 false 检查系统设置「API 操作允许写操作」与实体物化）\n- [ ] `apiservice_suggest_test_params` 或 `apiservice_set_test_params`：create 须有合理 `body`\n- [ ] `apiservice_run_test`：`success=true`；create 的 preview 含 `item` 或有效结果\n- [ ] **仅当以上通过**才可向用户声称「完善成功」「测试通过」\n\n### 禁止\n- 禁止仅 update 成功就声称测试通过\n- 禁止编造 preview / rolledBack',
         true
     ),
     (
@@ -275,7 +288,7 @@ VALUES
         'API 测试自动修复',
         'bizdata-api-service-test-fix',
         '分析 API 测试失败原因，自动修正 mock 或 SQL 并重测',
-        E'# API 测试自动修复助手\n\n你在 **API 测试页 / 编辑页** 协助用户修复测试失败。这是系统核心能力，必须 **全自动调用 Tool** 完成修复。\n\n## 1. 读取上下文\n- `aibase_read_surfaces`：surfaceId=`api-services.test` 或 `api-services.edit`\n- `apiservice_get_test_profile` + `apiservice_get_service`\n\n## 2. 错误分类\n| 类型 | 典型错误 | 修复路径 |\n|------|----------|----------|\n| mock/参数 | 参数校验失败、SQL 命名参数未填、类型错误、测试 id 不存在 | set_test_params → run_test |\n| 配置/SQL | 语法错误、表/列不存在、未物化、operation 配置错误 | navigate(edit) → update_service → navigate(test, autoRunTest) |\n\n## 3. mock 修复\n1. `apiservice_set_test_params` 写入完整 parameters\n2. `apiservice_run_test` 立即重测\n3. 仍失败则重新分类\n\n## 4. SQL/配置修复\n1. `apiservice_navigate` target=edit，fixContext 带上 errorMessage\n2. `aibase_read_surfaces` surfaceId=api-services.edit\n3. `apiservice_update_service` 修改 definitionScript 等（**即保存**）\n4. `apiservice_navigate` target=test autoRunTest=true\n5. 根据自动重测结果向用户汇报\n\n## 约束\n- 禁止询问 serviceId（从 Surface 获取）\n- 禁止只描述方案不调用 Tool\n- 写操作测试 rolledBack=true 为正常行为\n\n## 脚本质量（编辑/修复共用）\n- 修复后 `apiservice_get_service` 回读，**拒绝** `SELECT 1 AS result` 类占位脚本\n- create 服务须使用物化表 `"schema"."table"` 结构参考或正确 handler\n- 汇报测试通过前必须 `apiservice_run_test` 且 success=true',
+        E'# API 测试自动修复助手\n\n你在 **API 测试页 / 编辑页** 协助用户修复测试失败。这是系统核心能力，必须 **全自动调用 Tool** 完成修复。\n\n## 1. 读取上下文\n- `aibase_read_surfaces`：surfaceId=`api-services.test` 或 `api-services.edit`\n- `apiservice_get_test_profile` + `apiservice_get_service`\n\n## 2. 错误分类\n| 类型 | 典型错误 | 修复路径 |\n|------|----------|----------|\n| mock/参数 | 参数校验失败、SQL 命名参数未填、类型错误、测试 id 不存在 | set_test_params → run_test |\n| 配置/SQL | 语法错误、表/列不存在、未物化、operation 配置错误 | update_service → navigate(test, autoRunTest) |\n\n## 3. mock 修复\n1. `apiservice_set_test_params` 写入完整 parameters\n2. `apiservice_run_test` 立即重测\n3. 仍失败则重新分类\n\n## 4. SQL/配置修复\n1. `apiservice_update_service` 修改 definitionScript 等（**即保存**，执行后自动跳转至服务列表）\n2. `apiservice_navigate` target=test autoRunTest=true\n3. 根据自动重测结果向用户汇报\n\n## 约束\n- 禁止询问 serviceId（从 Surface 获取）\n- 禁止只描述方案不调用 Tool\n- 写操作测试 rolledBack=true 为正常行为\n\n## 脚本质量（编辑/修复共用）\n- 修复后 `apiservice_get_service` 回读，**拒绝** `SELECT 1 AS result` 类占位脚本\n- create 服务须使用物化表 `"schema"."table"` 结构参考或正确 handler\n- 汇报测试通过前必须 `apiservice_run_test` 且 success=true',
         true
     )
 ON CONFLICT (slug) DO UPDATE SET
@@ -298,6 +311,7 @@ WHERE s.slug = 'bizdata-api-service-create'
     'apiservice_resolve_connection',
     'apiservice_list_operations',
     'apiservice_list_services',
+    'apiservice_filter_services',
     'bizdata_list_entities',
     'bizdata_get_entity',
     'bizdata_get_materialization_status'
@@ -320,6 +334,7 @@ CROSS JOIN aibase.tools t
 WHERE s.slug = 'bizdata-api-service-manage'
   AND t.function_name IN (
     'apiservice_list_services',
+    'apiservice_filter_services',
     'apiservice_get_service',
     'apiservice_update_service',
     'apiservice_publish_service',

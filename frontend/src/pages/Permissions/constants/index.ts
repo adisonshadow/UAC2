@@ -10,7 +10,7 @@ export const RESOURCE_TYPES: Record<ResourceType, { label: string; actions: Acti
     actions: ['read'],
   },
   API: {
-    label: 'API权限',
+    label: '内置API权限',
     actions: ['read', 'create', 'update', 'delete'],
   },
 };

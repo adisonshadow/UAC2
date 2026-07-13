@@ -1,11 +1,34 @@
-import { Checkbox, Typography } from 'antd';
+import { Checkbox, Tag, Tooltip, Typography } from 'antd';
 import React, { useCallback } from 'react';
+import type { EntitySelectorItem } from '../hooks/useMaterializationData';
 
 interface EntitySelectorProps {
-  groupedOptions: Array<{ scope: string; options: { label: string; value: string }[] }>;
+  groupedOptions: Array<{ scope: string; options: EntitySelectorItem[] }>;
   erEntities: API.BusinessDataEntity[];
   selectedIds: string[];
   onChange: (ids: string[]) => void;
+}
+
+function getMaterializationTagColor(
+  staleStatus?: API.MaterializationStatusItem['staleStatus'],
+): string {
+  if (staleStatus === 'latest') return 'green';
+  if (staleStatus === 'stale') return 'orange';
+  return 'magenta';
+}
+
+function formatVersionTagText(currentVersion?: number, materializedVersion?: number | null): string {
+  const modelText = currentVersion != null ? `v${currentVersion}` : '-';
+  const materializedText = materializedVersion != null ? `v${materializedVersion}` : '-';
+  return `${modelText}/${materializedText}`;
+}
+
+function getMaterializationTagTooltip(item: EntitySelectorItem): string | undefined {
+  if (item.staleStatus === 'latest') return '物化版本为最新';
+  if (item.staleStatus === 'stale') {
+    return `模型已更新至 v${item.currentVersion}，物化仍为 v${item.materializedVersion}，建议重新物化`;
+  }
+  return '尚未物化';
 }
 
 const EntitySelector: React.FC<EntitySelectorProps> = ({
@@ -38,9 +61,8 @@ const EntitySelector: React.FC<EntitySelectorProps> = ({
   );
 
   return (
-    <div>
-      <Typography.Text strong>选择 ER 实体</Typography.Text>
-      <div style={{ marginTop: 8 }}>
+    <div style={{ padding: 16 }}>
+      <div>
         <Checkbox
           indeterminate={selectedIds.length > 0 && selectedIds.length < allEntityIds.length}
           checked={selectedIds.length === allEntityIds.length && allEntityIds.length > 0}
@@ -70,8 +92,27 @@ const EntitySelector: React.FC<EntitySelectorProps> = ({
               style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6, marginLeft: 24 }}
               value={selectedIds.filter((id) => scopeEntityIds.includes(id))}
               onChange={(vals) => toggleEntityInScope(scopeEntityIds, vals as string[])}
-              options={options}
-            />
+            >
+              {options.map((item) => (
+                <Checkbox key={item.value} value={item.value}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span>
+                      {item.label}
+                      {item.codeLeaf ? ` (${item.codeLeaf})` : ''}
+                    </span>
+                    <Tooltip title={getMaterializationTagTooltip(item)}>
+                      <Tag
+                        variant="outlined"
+                        color={getMaterializationTagColor(item.staleStatus)}
+                        style={{ margin: 0 }}
+                      >
+                        {formatVersionTagText(item.currentVersion, item.materializedVersion)}
+                      </Tag>
+                    </Tooltip>
+                  </span>
+                </Checkbox>
+              ))}
+            </Checkbox.Group>
           </div>
         );
       })}

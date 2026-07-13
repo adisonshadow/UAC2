@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const SkillController = require('../controllers/skillController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({ prefix: '/api/v1/admin/skills' });
 
@@ -60,8 +61,8 @@ const router = new Router({ prefix: '/api/v1/admin/skills' });
  *       201:
  *         description: 创建成功
  */
-router.get('/', auth, SkillController.list);
-router.post('/', auth, SkillController.create);
+router.get('/', authWithBuiltinApiGuard, SkillController.list);
+router.post('/', authWithBuiltinApiGuard, SkillController.create);
 
 /**
  * @swagger
@@ -103,8 +104,8 @@ router.post('/', auth, SkillController.create);
  *       200:
  *         description: 删除成功
  */
-router.get('/:id', auth, SkillController.getById);
-router.patch('/:id', auth, SkillController.update);
-router.delete('/:id', auth, SkillController.remove);
+router.get('/:id', authWithBuiltinApiGuard, SkillController.getById);
+router.patch('/:id', authWithBuiltinApiGuard, SkillController.update);
+router.delete('/:id', authWithBuiltinApiGuard, SkillController.remove);
 
 module.exports = router;

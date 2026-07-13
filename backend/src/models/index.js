@@ -38,6 +38,9 @@ const BizdataSetting = require('./bizdata_setting');
 const BizdataApiService = require('./bizdata_api_service');
 const BizdataApiServiceOperation = require('./bizdata_api_service_operation');
 const BizdataApiServicePermission = require('./bizdata_api_service_permission');
+const BuiltinApiConfig = require('./builtin_api_config');
+const OutboundWebhook = require('./outbound_webhook');
+const OutboundWebhookRun = require('./outbound_webhook_run');
 const BizdataMetric = require('./bizdata_metric');
 const BizdataMetricRun = require('./bizdata_metric_run');
 const BizdataMetricValue = require('./bizdata_metric_value');
@@ -173,6 +176,9 @@ StorageBucket.hasMany(StorageObject, { foreignKey: 'bucket_id', as: 'objects' })
 StorageObject.belongsTo(Application, { foreignKey: 'application_id', as: 'Application' });
 StorageObject.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
+OutboundWebhook.hasMany(OutboundWebhookRun, { foreignKey: 'webhook_id', as: 'runs' });
+OutboundWebhookRun.belongsTo(OutboundWebhook, { foreignKey: 'webhook_id', as: 'webhook' });
+
 module.exports = {
   sequelize,
   User,
@@ -212,6 +218,7 @@ module.exports = {
   BizdataApiService,
   BizdataApiServiceOperation,
   BizdataApiServicePermission,
+  BuiltinApiConfig,
   BizdataMetric,
   BizdataMetricRun,
   BizdataMetricValue,
@@ -223,4 +230,6 @@ module.exports = {
   BizdataCollectionPipelineRun,
   StorageBucket,
   StorageObject,
+  OutboundWebhook,
+  OutboundWebhookRun,
 }; 

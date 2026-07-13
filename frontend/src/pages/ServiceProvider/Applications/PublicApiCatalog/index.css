@@ -12,6 +12,18 @@
   color: #fff;
   padding: 16px 24px;
   border-bottom: 3px solid #49cc90;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.application-api-catalog__header-main {
+  min-width: 0;
+}
+
+.application-api-catalog__header-actions {
+  flex-shrink: 0;
 }
 
 .application-api-catalog__header-title {

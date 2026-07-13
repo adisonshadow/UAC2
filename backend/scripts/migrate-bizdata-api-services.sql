@@ -9,12 +9,20 @@ CREATE TABLE IF NOT EXISTS bizdata.api_services (
     tags JSONB NOT NULL DEFAULT '[]'::jsonb,
     status VARCHAR(20) NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft', 'published', 'disabled')),
-    entity_id UUID NOT NULL REFERENCES bizdata.entities(id) ON DELETE RESTRICT,
-    entity_code VARCHAR(255) NOT NULL,
+    -- 以下三项对「跨实体 SQL 脚本」模式可选（migrate-bizdata-api-services-optional-entity.sql 前向合并）
+    entity_id UUID REFERENCES bizdata.entities(id) ON DELETE RESTRICT,
+    entity_code VARCHAR(255),
     connection_id UUID NOT NULL REFERENCES bizdata.database_connections(id) ON DELETE RESTRICT,
-    table_name VARCHAR(128) NOT NULL,
+    table_name VARCHAR(128),
     target_schema VARCHAR(64) NOT NULL DEFAULT 'bizdata_mat',
     base_path VARCHAR(256),
+    -- form v2 / 可选实体 / 传输协议字段（前向合并自对应增量迁移）
+    scope_code VARCHAR(255),
+    script_mode VARCHAR(16) NOT NULL DEFAULT 'sql',
+    definition_script TEXT,
+    handler_script TEXT,
+    request_parameter_interface TEXT,
+    transport_protocols JSONB NOT NULL DEFAULT '["http"]'::jsonb,
     enabled_operations JSONB NOT NULL DEFAULT '[]'::jsonb,
     security_config JSONB NOT NULL DEFAULT '{}'::jsonb,
     script_overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -29,6 +37,15 @@ CREATE INDEX IF NOT EXISTS idx_api_services_code ON bizdata.api_services (code);
 CREATE INDEX IF NOT EXISTS idx_api_services_status ON bizdata.api_services (status);
 CREATE INDEX IF NOT EXISTS idx_api_services_entity ON bizdata.api_services (entity_id);
 CREATE INDEX IF NOT EXISTS idx_api_services_connection ON bizdata.api_services (connection_id);
+CREATE INDEX IF NOT EXISTS idx_api_services_scope_code ON bizdata.api_services (scope_code);
+
+COMMENT ON COLUMN bizdata.api_services.scope_code IS '绑定的数据模型 Scope（单选）';
+COMMENT ON COLUMN bizdata.api_services.script_mode IS 'sql | typescript';
+COMMENT ON COLUMN bizdata.api_services.definition_script IS '服务主 SQL/脚本，可跨表 JOIN、聚合等';
+COMMENT ON COLUMN bizdata.api_services.handler_script IS 'TypeScript/JavaScript Handler 源码';
+COMMENT ON COLUMN bizdata.api_services.request_parameter_interface IS '设计期请求参数 TypeScript interface 文本';
+COMMENT ON COLUMN bizdata.api_services.entity_id IS '可选：单实体 CRUD 模板时使用';
+COMMENT ON COLUMN bizdata.api_services.transport_protocols IS '访问协议清单：http | sse | websocket';
 
 CREATE TABLE IF NOT EXISTS bizdata.api_service_operations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

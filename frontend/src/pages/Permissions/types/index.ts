@@ -4,6 +4,13 @@ export type ResourceType = 'MENU' | 'BUTTON' | 'API';
 
 export type ActionType = 'read' | 'create' | 'update' | 'delete';
 
+/** 访问限制（菜单/按钮运行时可见性） */
+export interface AccessRestriction {
+  mode: 'none' | 'role' | 'department';
+  roleIds?: string[];
+  departmentIds?: string[];
+}
+
 export interface Permission {
   permission_id: string;
   code: string;
@@ -13,6 +20,7 @@ export interface Permission {
   actions: ActionType[];
   parent_id?: string;
   status?: 'ACTIVE' | 'DISABLED';
+  access_restriction?: AccessRestriction | null;
   created_at?: string;
   updated_at?: string;
   children?: Permission[];

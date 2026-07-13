@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Modal, message } from 'antd';
 import { buildScopeTree, flattenScopeTree } from '../../utils/buildScopeTree';
+import { getEntityCodeLeaf } from './useMaterializationData';
 import {
   getBusinessDataSchema,
   getDatabaseConnections,
@@ -46,7 +47,7 @@ export function useMaterializationExecute() {
       const scopePath = (entity.code || '').split(':').slice(0, -1).join(':') || 'root';
       const list = groups.get(scopePath) || [];
       list.push({
-        label: `${entity.label} (${entity.code}) v${entity.version}`,
+        label: `${entity.label} (${getEntityCodeLeaf(entity.code)}) v${entity.version}`,
         value: entity.id!,
       });
       groups.set(scopePath, list);

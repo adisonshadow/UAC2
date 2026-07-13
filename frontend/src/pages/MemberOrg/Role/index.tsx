@@ -5,7 +5,7 @@ import {
   ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
-import { Button, message, Space, Modal, Drawer, Spin, Radio, Typography } from 'antd';
+import { Button, message, Space, Modal, Drawer, Spin, Typography } from 'antd';
 import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from "@ant-design/icons";
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -24,7 +24,6 @@ import { tableColumns, formFields, editFormFields, detailFields } from "./schema
 import { buildRoleTree } from "./utils";
 import type { Role } from "./types";
 import { useSetState } from "ahooks";
-import SearchForm from '@/components/SearchForm';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { Form } from 'antd';
@@ -39,12 +38,10 @@ const Page: React.FC = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
-  const [searchText, setSearchText] = useState('');
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [isHighlighted, setIsHighlighted] = useState(false);
   const highlightTimerRef = useRef<number | undefined>(undefined);
   const [editform] = Form.useForm();
-  const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildRolePrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -62,18 +59,29 @@ const Page: React.FC = () => {
     }, []);
   };
 
-  // 递归处理数据，添加搜索文本
-  const processDataWithSearch = (data: Role[], searchText: string): Role[] => {
-    return data.map(item => {
-      const processedItem = {
-        ...item,
-        _searchText: searchText,
-      };
-      if (item.children && item.children.length > 0) {
-        processedItem.children = processDataWithSearch(item.children, searchText);
+  // 按关键词/状态过滤角色树（保留命中节点的祖先链以便树形展示）
+  const filterRoleTree = (roles: Role[], keyword?: string, status?: string): Role[] => {
+    const matchNode = (role: Role): boolean => {
+      if (role.role_id.startsWith('virtual-')) return false;
+      if (status && role.status !== status) return false;
+      if (keyword) {
+        const nameMatch = (role.role_name || '').toLowerCase().includes(keyword);
+        const codeMatch = (role.code || '').toLowerCase().includes(keyword);
+        if (!nameMatch && !codeMatch) return false;
       }
-      return processedItem;
-    });
+      return true;
+    };
+    const walk = (nodes: Role[]): Role[] => {
+      const result: Role[] = [];
+      nodes.forEach((node) => {
+        const children = node.children?.length ? walk(node.children) : [];
+        if (matchNode(node) || children.length) {
+          result.push({ ...node, children: children.length ? children : undefined });
+        }
+      });
+      return result;
+    };
+    return walk(roles);
   };
 
   const [state, setState] = useSetState<{
@@ -97,20 +105,6 @@ const Page: React.FC = () => {
     isDetailsEditable,
     detailsValue,
   } = state;
-
-  const handleSearch = (value: string) => {
-    setSearchText(value);
-    if (actionRef.current) {
-      actionRef.current.reload();
-    }
-  };
-
-  const handleReset = () => {
-    setSearchText('');
-    if (actionRef.current) {
-      actionRef.current.reload();
-    }
-  };
 
   // 获取权限列表
   const fetchPermissions = async () => {
@@ -226,32 +220,10 @@ const Page: React.FC = () => {
       width: 300,
       render: (dom: React.ReactNode, record: Role) => {
         const text = String(dom || '');
-        const searchText = record._searchText || '';
-        
-        // 如果是虚拟节点，直接返回文本
         if (record.role_id.startsWith('virtual-')) {
           return text;
         }
-
-        let nameContent: React.ReactNode = text;
-        // 如果有搜索文本，添加高亮
-        if (searchText) {
-          const index = text.toLowerCase().indexOf(searchText.toLowerCase());
-          if (index !== -1) {
-            const beforeStr = text.substring(0, index);
-            const matchStr = text.substring(index, index + searchText.length);
-            const afterStr = text.substring(index + searchText.length);
-            nameContent = (
-              <span>
-                {beforeStr}
-                <span style={{ color: '#f50', backgroundColor: '#ffd591' }}>{matchStr}</span>
-                {afterStr}
-              </span>
-            );
-          }
-        }
-
-        return wrapWithChatReference(nameContent, record, buildRoleReference);
+        return wrapWithChatReference(text, record, buildRoleReference);
       },
     },
     {
@@ -260,65 +232,21 @@ const Page: React.FC = () => {
       width: 160,
       render: (dom: React.ReactNode, record: Role) => {
         const text = String(dom || '');
-        const searchText = record._searchText || '';
-        
-        // 如果是虚拟节点，直接返回文本
         if (record.role_id.startsWith('virtual-')) {
           return text;
         }
-
-        // 获取当前节点的层级
-        const getNodeLevel = (node: Role): number => {
-          let level = 0;
-          let current = node;
-          while (current.code.includes(':')) {
-            level++;
-            current = {
-              ...current,
-              code: current.code.substring(0, current.code.lastIndexOf(':')),
-            };
-          }
-          return level;
-        };
-
-        // 获取当前层级对应的编码部分
-        const getCurrentLevelCode = (code: string, level: number): string => {
-          const parts = code.split(':');
-          return parts[level] || code;
-        };
-
-        const nodeLevel = getNodeLevel(record);
-        const displayCode = getCurrentLevelCode(text, nodeLevel);
-
-        // 如果是禁用状态，添加删除线
-        const content = record.status === 'ARCHIVED' ? (
+        const nodeLevel = record.code.split(':').length - 1;
+        const displayCode = text.split(':')[nodeLevel] || text;
+        return record.status === 'ARCHIVED' ? (
           <Typography.Text delete>{displayCode}</Typography.Text>
         ) : displayCode;
-
-        // 如果有搜索文本，添加高亮
-        if (!searchText) return content;
-        
-        const index = displayCode.toLowerCase().indexOf(searchText.toLowerCase());
-        if (index === -1) return content;
-        
-        const beforeStr = displayCode.substring(0, index);
-        const matchStr = displayCode.substring(index, index + searchText.length);
-        const afterStr = displayCode.substring(index + searchText.length);
-        
-        return (
-          <span>
-            {beforeStr}
-            <span style={{ color: '#f50', backgroundColor: '#ffd591' }}>{matchStr}</span>
-            {afterStr}
-          </span>
-        );
       },
     },
     ...tableColumns.filter((col: any) => !['role_name', 'code'].includes(col.dataIndex)),
     {
       ...TABLE_ACTION_COLUMN_BASE,
       dataIndex: 'option',
-      width: 100,
+      width: 70,
       render: (_: unknown, record: Role) => {
         // 虚拟节点不显示操作按钮
         if (record.role_id.startsWith('virtual-')) {
@@ -430,32 +358,14 @@ const Page: React.FC = () => {
               opacity: record.status === 'ARCHIVED' ? 0.8 : 1,
             },
           })}
-          search={false}
-          headerTitle={
-            <SearchForm
-              key="search"
-              onSearch={handleSearch}
-              onReset={handleReset}
-              placeholder="请输入角色名称"
-            />
-          }
+          search={{
+            labelWidth: 'auto',
+            defaultCollapsed: false,
+          }}
+          headerTitle="角色管理"
           toolBarRender={() => [
-            <Radio.Group
-              key="status-filter"
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                if (actionRef.current) {
-                  actionRef.current.reload();
-                }
-              }}
-              style={{ marginRight: 16 }}
-            >
-              <Radio.Button value="ACTIVE">有效角色</Radio.Button>
-              <Radio.Button value="ALL">全部角色</Radio.Button>
-            </Radio.Group>,
             <Button
-              type="primary"
+              type="primary" className="btn-gradient-primary"
               key="create"
               icon={<PlusOutlined />}
               loading={createLoading}
@@ -471,16 +381,13 @@ const Page: React.FC = () => {
               新建
             </Button>
           ]}
-          request={async () => {
+          request={async (params) => {
             try {
-              console.log('开始请求角色数据...');
               setLoading(true);
-              const response = await getRoles({
-                status: statusFilter === 'ALL' ? undefined : statusFilter,
-              });
+              // 始终拉取全部角色，按搜索参数在前端过滤（树形全量数据）
+              const response = await getRoles({});
 
               if (response.code === 200 && response.data?.items) {
-                // 转换 API 返回的数据格式，确保所有必需字段都有值
                 const roles = response.data.items.map(item => ({
                   role_id: item.role_id || '',
                   role_name: item.role_name || '',
@@ -494,63 +401,32 @@ const Page: React.FC = () => {
                   })) || [],
                 }));
 
-                if (roles.length === 0) {
-                  console.log('警告: API 返回的 items 数组为空');
+                let treeData = buildRoleTree(roles);
+
+                // ProTable 内置 search 过滤：角色名称 / 状态
+                const keyword = (params.role_name as string | undefined)?.trim().toLowerCase();
+                const statusParam = params.status as string | undefined;
+                if (keyword || statusParam) {
+                  treeData = filterRoleTree(treeData, keyword, statusParam);
                 }
 
-                // 构建树形数据
-                const treeData = buildRoleTree(roles);
-                console.log('树形数据构建完成:', treeData);
-                
-                if (treeData.length === 0) {
-                  console.log('警告: 构建的树形数据为空');
-                }
-
-                // 设置所有角色的 ID 为展开状态
                 const allIds = getAllRoleIds(treeData);
                 setExpandedRowKeys(allIds);
 
-                // 处理数据，添加搜索文本
-                const processedData = processDataWithSearch(treeData, searchText);
-
                 return {
-                  data: processedData,
+                  data: treeData,
                   success: true,
-                  total: processedData.length,
+                  total: treeData.length,
                 };
               }
-              
-              console.log('API 响应异常:', {
-                code: response.code,
-                message: response.message,
-                hasData: !!response.data,
-                hasItems: !!response.data?.items,
-              });
-              
+
               messageApi.error(response.message || '获取角色列表失败');
-              return {
-                data: [],
-                success: false,
-                total: 0,
-              };
+              return { data: [], success: false, total: 0 };
             } catch (error) {
-              console.error('获取角色数据时发生错误:', error);
-              if (error instanceof Error) {
-                console.error('错误详情:', {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                });
-              }
               messageApi.error('获取角色列表失败');
-              return {
-                data: [],
-                success: false,
-                total: 0,
-              };
+              return { data: [], success: false, total: 0 };
             } finally {
               setLoading(false);
-              console.log('请求完成，loading 状态已重置');
             }
           }}
           columns={columns}

@@ -19,7 +19,7 @@ const OrganizationFormPage = lazy(() => import('@/pages/MemberOrg/Organization/F
 const Role = lazy(() => import('@/pages/MemberOrg/Role'));
 const PermissionsMenu = lazy(() => import('@/pages/Permissions/Menu'));
 const PermissionsButton = lazy(() => import('@/pages/Permissions/Button'));
-const PermissionsAPI = lazy(() => import('@/pages/Permissions/API'));
+const PermissionsAPI = lazy(() => import('@/pages/Permissions/BuiltinApi'));
 const Applications = lazy(() => import('@/pages/ServiceProvider/Applications'));
 const ApplicationFormPage = lazy(() => import('@/pages/ServiceProvider/Applications/FormPage'));
 const ApplicationTopLevelSkillPage = lazy(() => import('@/pages/ServiceProvider/Applications/TopLevelSkillPage'));
@@ -28,6 +28,7 @@ const FileStorageBuckets = lazy(() => import('@/pages/FileStorage/Buckets'));
 const FileStorageBrowser = lazy(() => import('@/pages/FileStorage/Browser'));
 const ModelDesigner = lazy(() => import('@/pages/BusinessData/ModelDesigner'));
 const MaterializationExecute = lazy(() => import('@/pages/BusinessData/Materialization/Execute'));
+const DatabaseConnections = lazy(() => import('@/pages/BusinessData/Materialization/Connections'));
 const MaterializedDatabase = lazy(() => import('@/pages/BusinessData/Materialization/Database'));
 const MaterializedTableSchema = lazy(() => import('@/pages/BusinessData/Materialization/TableBrowse/Schema'));
 const MaterializedTableData = lazy(() => import('@/pages/BusinessData/Materialization/TableBrowse/Data'));
@@ -41,6 +42,9 @@ const ApiServiceCreate = lazy(() => import('@/pages/ApiServices/Create'));
 const ApiServiceList = lazy(() => import('@/pages/ApiServices/List'));
 const ApiServiceEdit = lazy(() => import('@/pages/ApiServices/Edit'));
 const ApiServiceTest = lazy(() => import('@/pages/ApiServices/Test'));
+const OutboundWebhookList = lazy(() => import('@/pages/ApiServices/OutboundWebhooks'));
+const OutboundWebhookFormPage = lazy(() => import('@/pages/ApiServices/OutboundWebhooks/FormPage'));
+const OutboundWebhookTest = lazy(() => import('@/pages/ApiServices/OutboundWebhooks/Test'));
 const AIProviders = lazy(() => import('@/pages/AIManagement/Providers'));
 const ProviderFormPage = lazy(() => import('@/pages/AIManagement/Providers/FormPage'));
 const AIModels = lazy(() => import('@/pages/AIManagement/AiModels'));
@@ -124,6 +128,7 @@ export default function AppRoutes() {
                 element={<Navigate to="/business_data/materialization/execute" replace />}
               />
               <Route path="/business_data/materialization/execute" element={<MaterializationExecute />} />
+              <Route path="/business_data/database-connections" element={<DatabaseConnections />} />
               <Route path="/business_data/database" element={<MaterializedDatabase />} />
               <Route
                 path="/business_data/database/tables/:entityId/schema"
@@ -165,6 +170,10 @@ export default function AppRoutes() {
               <Route path="/api_services/list" element={<ApiServiceList />} />
               <Route path="/api_services/:id/edit" element={<ApiServiceEdit />} />
               <Route path="/api_services/:id/test" element={<ApiServiceTest />} />
+              <Route path="/api_services/outbound-webhooks" element={<OutboundWebhookList />} />
+              <Route path="/api_services/outbound-webhooks/create" element={<OutboundWebhookFormPage mode="create" />} />
+              <Route path="/api_services/outbound-webhooks/:id/edit" element={<OutboundWebhookFormPage mode="edit" />} />
+              <Route path="/api_services/outbound-webhooks/:id/test" element={<OutboundWebhookTest />} />
             </Route>
 
             <Route path="/ai_management" element={<Navigate to="/ai_management/providers" replace />} />

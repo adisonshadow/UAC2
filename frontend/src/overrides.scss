@@ -28,3 +28,13 @@
         display: none !important;
     }
 }
+
+.ant-pro-query-filter-container .ant-btn-primary{
+    background-color: #d9dfeb !important;
+    color: var(--ant-button-default-color);
+
+    &:hover{
+        background-color: #dfe8f9 !important;
+        color: #2a4e96 !important;
+    }
+}

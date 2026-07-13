@@ -25,6 +25,7 @@ export async function postAdminModels(
     modelId: string;
     displayName: string;
     defaultParams?: Record<string, any>;
+    rateLimit?: API.ModelRateLimit;
     capabilities: string[];
     inputTags?: string[];
     outputTags?: string[];
@@ -79,6 +80,7 @@ export async function patchAdminModelsId(
     modelId?: string;
     displayName?: string;
     defaultParams?: Record<string, any>;
+    rateLimit?: API.ModelRateLimit;
     capabilities?: string[];
     inputTags?: string[];
     outputTags?: string[];

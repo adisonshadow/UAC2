@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const RoleController = require('../controllers/roleController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 const router = new Router({
   prefix: '/api/v1/roles'
 });
@@ -218,7 +219,7 @@ const router = new Router({
  *                   type: null
  *                   example: null
  */
-router.post('/', auth, RoleController.create);
+router.post('/', authWithBuiltinApiGuard, RoleController.create);
 
 /**
  * @swagger
@@ -300,7 +301,7 @@ router.post('/', auth, RoleController.create);
  *       500:
  *         description: 服务器错误
  */
-router.get('/', auth, RoleController.list);
+router.get('/', authWithBuiltinApiGuard, RoleController.list);
 
 /**
  * @swagger
@@ -331,7 +332,7 @@ router.get('/', auth, RoleController.list);
  *       500:
  *         description: 服务器错误
  */
-router.get('/:role_id', auth, RoleController.getById);
+router.get('/:role_id', authWithBuiltinApiGuard, RoleController.getById);
 
 /**
  * @swagger
@@ -373,7 +374,7 @@ router.get('/:role_id', auth, RoleController.getById);
  *       500:
  *         description: 服务器错误
  */
-router.put('/:role_id', auth, RoleController.update);
+router.put('/:role_id', authWithBuiltinApiGuard, RoleController.update);
 
 /**
  * @swagger
@@ -409,7 +410,7 @@ router.put('/:role_id', auth, RoleController.update);
  *       500:
  *         description: 服务器错误
  */
-router.delete('/:role_id', auth, RoleController.delete);
+router.delete('/:role_id', authWithBuiltinApiGuard, RoleController.delete);
 
 /**
  * @swagger
@@ -464,7 +465,7 @@ router.delete('/:role_id', auth, RoleController.delete);
  *       500:
  *         description: 服务器错误
  */
-router.post('/:role_id/permissions', auth, RoleController.assignPermissions);
+router.post('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.assignPermissions);
 
 /**
  * @swagger
@@ -526,7 +527,7 @@ router.post('/:role_id/permissions', auth, RoleController.assignPermissions);
  *       500:
  *         description: 服务器错误
  */
-router.put('/:role_id/permissions', auth, RoleController.updatePermissions);
+router.put('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.updatePermissions);
 
 /**
  * @swagger
@@ -570,6 +571,6 @@ router.put('/:role_id/permissions', auth, RoleController.updatePermissions);
  *       500:
  *         description: 服务器错误
  */
-router.post('/check-permission', auth, RoleController.checkUserPermission);
+router.post('/check-permission', authWithBuiltinApiGuard, RoleController.checkUserPermission);
 
 module.exports = router; 

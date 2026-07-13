@@ -272,7 +272,7 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
             )}
           </Col>
           <Col span={24} style={{ marginTop: 8 }}>
-            {resolveLoading && <Spin size="small" tip="正在推断数据库连接…" />}
+            {resolveLoading && <Spin size="small" description="正在推断数据库连接…" />}
             {!resolveLoading && scopeCode && resolvedConnection && (
               <Text type="secondary">
                 将使用连接：{resolvedConnection.connectionName}（{resolvedConnection.dbType}，自动推断）

@@ -5,6 +5,7 @@ const config = require('../config');
 const { resolveSsoSigningSecret, hasSsoSigningSecret } = require('../utils/ssoSecret');
 const logger = require('../utils/logger');
 const User = require('../models/user');
+const Role = require('../models/role');
 const Captcha = require('../models/captcha');
 const LoginAttempt = require('../models/loginAttempt');
 const RefreshToken = require('../models/refreshToken');
@@ -502,11 +503,20 @@ class AuthController {
       
       // 从 ctx.state.user 中获取用户信息（由 auth 中间件注入）
       const user = await User.findOne({
-        where: { 
+        where: {
           user_id: ctx.state.user.user_id,
           status: 'ACTIVE'
         },
-        attributes: ['user_id', 'username', 'name', 'avatar', 'gender', 'email', 'phone', 'status', 'department_id', 'must_change_password']
+        attributes: ['user_id', 'username', 'name', 'avatar', 'gender', 'email', 'phone', 'status', 'department_id', 'must_change_password'],
+        include: [
+          {
+            model: Role,
+            as: 'Roles',
+            through: { attributes: [] },
+            attributes: ['role_id', 'role_name', 'code'],
+            required: false,
+          },
+        ],
       });
 
       if (!user) {
@@ -520,11 +530,22 @@ class AuthController {
         return;
       }
 
+      // 展平角色信息（role_ids / role_codes），供前端按 access_restriction 过滤菜单/按钮可见性
+      const roles = (user.Roles || []).map((r) => ({
+        role_id: r.role_id,
+        role_name: r.role_name,
+        code: r.code,
+      }));
+      const userData = user.toJSON();
+      userData.role_ids = roles.map((r) => String(r.role_id));
+      userData.role_codes = roles.map((r) => r.code).filter(Boolean);
+      userData.roles = roles;
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
         message: 'success',
-        data: user
+        data: userData
       };
     } catch (error) {
       logger.error('Error checking auth status', {

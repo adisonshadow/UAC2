@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const CollectionPipelineController = require('../controllers/collectionPipelineController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({ prefix: '/api/v1/business-data/collection-pipelines' });
 
@@ -60,8 +61,8 @@ const router = new Router({ prefix: '/api/v1/business-data/collection-pipelines'
  *       201:
  *         description: 创建成功
  */
-router.get('/', auth, CollectionPipelineController.list);
-router.post('/', auth, CollectionPipelineController.create);
+router.get('/', authWithBuiltinApiGuard, CollectionPipelineController.list);
+router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
 
 /**
  * @swagger
@@ -108,9 +109,9 @@ router.post('/', auth, CollectionPipelineController.create);
  *       200:
  *         description: 删除成功
  */
-router.get('/:id', auth, CollectionPipelineController.getById);
-router.patch('/:id', auth, CollectionPipelineController.update);
-router.delete('/:id', auth, CollectionPipelineController.remove);
+router.get('/:id', authWithBuiltinApiGuard, CollectionPipelineController.getById);
+router.patch('/:id', authWithBuiltinApiGuard, CollectionPipelineController.update);
+router.delete('/:id', authWithBuiltinApiGuard, CollectionPipelineController.remove);
 
 /**
  * @swagger
@@ -128,7 +129,7 @@ router.delete('/:id', auth, CollectionPipelineController.remove);
  *       200:
  *         description: 发布成功
  */
-router.post('/:id/publish', auth, CollectionPipelineController.publish);
+router.post('/:id/publish', authWithBuiltinApiGuard, CollectionPipelineController.publish);
 
 /**
  * @swagger
@@ -146,7 +147,7 @@ router.post('/:id/publish', auth, CollectionPipelineController.publish);
  *       200:
  *         description: 禁用成功
  */
-router.post('/:id/disable', auth, CollectionPipelineController.disable);
+router.post('/:id/disable', authWithBuiltinApiGuard, CollectionPipelineController.disable);
 
 /**
  * @swagger
@@ -170,7 +171,7 @@ router.post('/:id/disable', auth, CollectionPipelineController.disable);
  *       200:
  *         description: 获取成功
  */
-router.get('/:id/runs', auth, CollectionPipelineController.listRuns);
+router.get('/:id/runs', authWithBuiltinApiGuard, CollectionPipelineController.listRuns);
 
 /**
  * @swagger
@@ -188,7 +189,7 @@ router.get('/:id/runs', auth, CollectionPipelineController.listRuns);
  *       200:
  *         description: 获取成功
  */
-router.get('/:id/test-profile', auth, CollectionPipelineController.getTestProfile);
+router.get('/:id/test-profile', authWithBuiltinApiGuard, CollectionPipelineController.getTestProfile);
 
 /**
  * @swagger
@@ -214,6 +215,6 @@ router.get('/:id/test-profile', auth, CollectionPipelineController.getTestProfil
  *       200:
  *         description: 测试成功
  */
-router.post('/:id/test', auth, CollectionPipelineController.test);
+router.post('/:id/test', authWithBuiltinApiGuard, CollectionPipelineController.test);
 
 module.exports = router;

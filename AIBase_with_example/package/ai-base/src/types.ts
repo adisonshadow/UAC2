@@ -45,6 +45,18 @@ export interface AIChatConfig {
   exposeAllClientTools?: boolean;
   /** A2UI 下一步 Action id → 用户消息（点击按钮时发送） */
   nextStepPrompts?: Record<string, string | ((context: Record<string, unknown>) => string)>;
+  /**
+   * 单次 Tool 结果回灌上下文时的字符预算上限（全局默认值）。
+   * 单个 Tool 可通过 resultBudget.maxChars 覆盖此默认。
+   * 默认 8000 字符。
+   */
+  maxToolResultChars?: number;
+  /**
+   * 续接循环（tool-round / auto-continue）每轮 LLM 请求之间的最小间隔（毫秒）。
+   * 防止单次用户消息内密集连发请求打穿上游 Provider 的突发保护。
+   * 默认 600ms；对 DeepSeek 等容忍较高的 Provider 可设为 0 关闭节流。
+   */
+  roundDelayMs?: number;
 }
 
 export interface ResolvedAIChatConfig {
@@ -64,6 +76,10 @@ export interface ResolvedAIChatConfig {
   hiddenPaths: string[];
   exposeAllClientTools: boolean;
   nextStepPrompts: Record<string, string | ((context: Record<string, unknown>) => string)>;
+  /** 单次 Tool 结果回灌上下文时的字符预算上限（全局默认值） */
+  maxToolResultChars: number;
+  /** 续接循环每轮 LLM 请求之间的最小间隔（毫秒），默认 600 */
+  roundDelayMs: number;
 }
 
 export interface AIBaseScope {
@@ -83,6 +99,14 @@ export interface AIBaseTool {
   parametersSchema?: Record<string, unknown>;
   reviewMarkdown?: string;
   openaiTool?: OpenAIToolDefinition;
+  /**
+   * 是否允许本地同名 client Tool handler 覆盖 server 类型（server_http/server_builtin）的执行。
+   * 默认 false：按 executionType 声明分派，本地同名 def 不再隐式拦截 server 工具。
+   * 显式 true 时，本地存在同名 def 则改由本地执行。
+   */
+  allowClientOverride?: boolean;
+  /** 该 Tool 结果回灌上下文时的字符预算（覆盖 AIChatConfig.maxToolResultChars） */
+  resultBudget?: { maxChars: number };
 }
 
 export interface OpenAIToolDefinition {
@@ -104,6 +128,26 @@ export interface AIBaseSkill {
   scopeSlug?: string | null;
   tools?: AIBaseTool[];
   openaiTools?: OpenAIToolDefinition[];
+  /**
+   * 声明式 auto-continue 策略（取代 SDK 内硬编码的业务判定）。
+   * 可由后端 Skill 元数据下发，也可由前端 registerSkillCompletionPolicy 覆盖。
+   */
+  completionStrategy?: SkillCompletionStrategy;
+}
+
+/**
+ * Skill 完成策略 —— 声明式驱动 auto-continue，取代 SDK 内硬编码的业务正则与工具名集合。
+ * 由业务方（而非 SDK）声明：哪些 Tool 必须调用、什么文本算任务完成、是否连续执行。
+ */
+export interface SkillCompletionStrategy {
+  /** 必须全部调用过才算完成的关键 Tool functionName 列表 */
+  requiredTools?: string[];
+  /** 文本中出现这些关键词时视为「任务完成」，停止 auto-continue */
+  completionKeywords?: string[];
+  /** 文本中出现这些关键词时禁止 auto-continue（如收尾建议句） */
+  blockKeywords?: string[];
+  /** 连续执行型 Skill（如 test-fix 循环），不受「一次一事」限制 */
+  continuousExecution?: boolean;
 }
 
 export interface AIBaseModelInfo {
@@ -131,4 +175,6 @@ export interface FunctionCallDef<TArgs = Record<string, unknown>, TResult = unkn
   description: string;
   parameters: object;
   handler: (args: TArgs) => Promise<TResult>;
+  /** 该 Tool 结果回灌上下文时的字符预算（覆盖 AIChatConfig.maxToolResultChars） */
+  resultBudget?: { maxChars: number };
 }

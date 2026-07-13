@@ -4,6 +4,7 @@ import {
   getBusinessDataSchema,
   getDatabaseConnections,
   getMaterializationRuns,
+  getMaterializationStatus,
   postMaterializationExecute,
   postMaterializationPreview,
 } from '@/services/UAC/api/businessData';
@@ -18,8 +19,22 @@ import {
 } from '@/utils/apiResponse';
 import { buildScopeTree, flattenScopeTree } from '../../utils/buildScopeTree';
 
-export function useMaterializationEntities() {
+export type EntitySelectorItem = {
+  value: string;
+  label: string;
+  codeLeaf: string;
+  currentVersion?: number;
+  materializedVersion?: number | null;
+  staleStatus?: API.MaterializationStatusItem['staleStatus'];
+};
+
+export function getEntityCodeLeaf(code?: string): string {
+  return (code || '').split(':').slice(-1)[0] || code || '';
+}
+
+export function useMaterializationEntities(connectionId?: string) {
   const [entities, setEntities] = useState<API.BusinessDataEntity[]>([]);
+  const [statusItems, setStatusItems] = useState<API.MaterializationStatusItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   const erEntities = useMemo(
@@ -28,23 +43,31 @@ export function useMaterializationEntities() {
   );
 
   const groupedOptions = useMemo(() => {
+    const statusByEntityId = new Map(
+      statusItems.filter((item) => item.entityId).map((item) => [item.entityId!, item]),
+    );
     const tree = buildScopeTree(erEntities);
     const flat = flattenScopeTree(tree).filter((node) => !node.isScopeNode && node.entity);
-    const groups = new Map<string, { label: string; value: string }[]>();
+    const groups = new Map<string, EntitySelectorItem[]>();
 
     flat.forEach((node) => {
       const entity = node.entity!;
+      const status = statusByEntityId.get(entity.id!);
       const scopePath = (entity.code || '').split(':').slice(0, -1).join(':') || 'root';
       const list = groups.get(scopePath) || [];
       list.push({
-        label: `${entity.label} (${entity.code}) v${entity.version}`,
         value: entity.id!,
+        label: entity.label || '',
+        codeLeaf: getEntityCodeLeaf(entity.code),
+        currentVersion: status?.currentVersion ?? entity.version,
+        materializedVersion: status?.materializedVersion,
+        staleStatus: status?.staleStatus ?? 'not_materialized',
       });
       groups.set(scopePath, list);
     });
 
     return Array.from(groups.entries()).map(([scope, options]) => ({ scope, options }));
-  }, [erEntities]);
+  }, [erEntities, statusItems]);
 
   const loadEntities = useCallback(async () => {
     setLoading(true);
@@ -63,11 +86,35 @@ export function useMaterializationEntities() {
     }
   }, []);
 
+  const loadStatus = useCallback(async () => {
+    if (!connectionId) {
+      setStatusItems([]);
+      return;
+    }
+    try {
+      const res = await getMaterializationStatus({ connectionId });
+      const data = getApiData<API.MaterializationStatusItem[]>(res);
+      if (isApiSuccess(res)) {
+        setStatusItems(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      message.error(getApiErrorMessage(error, '加载物化状态失败'));
+    }
+  }, [connectionId]);
+
+  const loadAll = useCallback(async () => {
+    await Promise.all([loadEntities(), loadStatus()]);
+  }, [loadEntities, loadStatus]);
+
   useEffect(() => {
     void loadEntities();
   }, [loadEntities]);
 
-  return { entities, erEntities, groupedOptions, loading, loadEntities };
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  return { entities, erEntities, groupedOptions, loading, loadEntities, loadStatus, loadAll };
 }
 
 export function useDatabaseConnections() {
@@ -101,12 +148,10 @@ export function useDatabaseConnections() {
   return { connections, defaultConnection, loading, loadConnections };
 }
 
-export function useMaterializationRuns(connectionId?: string) {
+export function useMaterializationRuns(connectionId?: string, page = 1, pageSize = 10) {
   const [runs, setRuns] = useState<API.MaterializationRun[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const pageSize = 10;
 
   const loadRuns = useCallback(async (nextPage = page) => {
     setLoading(true);
@@ -119,20 +164,18 @@ export function useMaterializationRuns(connectionId?: string) {
       const { items, total: count } = parseApiListResponse<API.MaterializationRun>(res);
       setRuns(items);
       setTotal(count);
-      setPage(nextPage);
     } catch (error) {
       message.error(getApiErrorMessage(error, '加载物化历史失败'));
     } finally {
       setLoading(false);
     }
-  }, [connectionId, page]);
+  }, [connectionId, page, pageSize]);
 
   useEffect(() => {
-    void loadRuns(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId]);
+    void loadRuns(page);
+  }, [connectionId, page, pageSize, loadRuns]);
 
-  return { runs, total, page, pageSize, loading, loadRuns, setPage };
+  return { runs, total, page, pageSize, loading, loadRuns };
 }
 
 interface PreviewExecuteOptions {

@@ -10,6 +10,8 @@ export const APP_ENV = {
   devApiBaseUrl: 'http://localhost:9526',
 
   /** 生产环境：后端 API 地址（跨域部署填完整 URL；同源 Nginx 代理 /api 时留空） */
+  prodApiBaseUrl: '',
+
   /** 与后端 SYSTEM_STORAGE_BUCKET_CODE 保持一致 */
   systemStorageBucketCode: process.env.SYSTEM_STORAGE_BUCKET_CODE || 'eadaf-system',
 } as const;

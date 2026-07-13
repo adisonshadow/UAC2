@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const AiRequestLogController = require('../controllers/aiRequestLogController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({ prefix: '/api/v1/admin/ai-request-logs' });
 
@@ -28,7 +29,7 @@ const router = new Router({ prefix: '/api/v1/admin/ai-request-logs' });
  *       200:
  *         description: 获取成功
  */
-router.get('/', auth, AiRequestLogController.list);
+router.get('/', authWithBuiltinApiGuard, AiRequestLogController.list);
 
 /**
  * @swagger
@@ -46,6 +47,6 @@ router.get('/', auth, AiRequestLogController.list);
  *       200:
  *         description: 获取成功
  */
-router.get('/:id', auth, AiRequestLogController.getById);
+router.get('/:id', authWithBuiltinApiGuard, AiRequestLogController.getById);
 
 module.exports = router;

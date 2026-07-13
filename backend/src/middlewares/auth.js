@@ -104,8 +104,38 @@ module.exports = async (ctx, next) => {
     }
     
     const payload = jwt.verify(token, jwtSecret);
-    
-    // 确保 payload 包含必要的用户信息
+
+    // 应用令牌（type=application）：外部系统通过 app_secret 换取的 JWT，用于调用内置 API。
+    // 校验应用启用 API 且状态为 ACTIVE，设置 ctx.state.application（不设 user），
+    // 后续由 requireBuiltinApiPermission 中间件按 builtin_api_scope 鉴权。
+    if (payload && payload.type === 'application' && payload.application_id) {
+      const application = await Application.findOne({
+        where: { application_id: payload.application_id, status: 'ACTIVE' },
+      });
+      if (!application || !application.api_enabled) {
+        logger.warn('应用令牌认证失败：应用不存在、已停用或未启用 API', {
+          method: ctx.method,
+          url: ctx.url,
+          application_id: payload.application_id,
+        });
+        ctx.status = 401;
+        ctx.body = { code: 401, message: '无效的应用令牌', data: null };
+        return;
+      }
+      ctx.state.application = application;
+      ctx.state.isApplicationToken = true;
+      ctx.state.isSsoAuth = false;
+      logger.debug('应用令牌认证成功', {
+        method: ctx.method,
+        url: ctx.url,
+        application_id: application.application_id,
+        application_code: application.code,
+      });
+      await next();
+      return;
+    }
+
+    // 用户令牌：确保 payload 包含必要的用户信息
     if (!payload || !payload.user_id) {
       logger.warn('认证失败：令牌载荷无效', {
         method: ctx.method,

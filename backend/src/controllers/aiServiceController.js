@@ -3,6 +3,7 @@ const { AiModel, Provider, ModelCapability, ModelIoTag, ApiRequestLog } = requir
 const { resolveModel } = require('../services/ai/modelResolver');
 const { validateRequest } = require('../services/ai/capabilityValidator');
 const { forwardChat, buildUpstreamUrl } = require('../services/ai/llmGateway');
+const { acquire: acquireModelSlot } = require('../services/ai/modelRateLimiter');
 const { AIBaseError, sendAiError } = require('../utils/aiErrors');
 const { extractErrorMessage } = require('../utils/upstreamErrorMessage');
 const logger = require('../utils/logger');
@@ -118,6 +119,17 @@ class AiServiceController {
     const body = ctx.request.body || {};
     const slug = body.slug;
 
+    // Per-model 限流状态：提升到 try 外，使 catch 也能释放并发位。
+    // 无配置时 acquire 返回 no-op；超限则抛 RATE_LIMITED。
+    let releaseSlot = () => {};
+    let slotReleased = false;
+    const releaseSlotOnce = () => {
+      if (!slotReleased) {
+        slotReleased = true;
+        releaseSlot();
+      }
+    };
+
     try {
       const resolved = await resolveModel({
         slug: body.slug,
@@ -127,10 +139,13 @@ class AiServiceController {
 
       validateRequest(resolved, body, traceId);
 
+      releaseSlot = await acquireModelSlot(resolved.slug, resolved.rateLimit, traceId);
+
       const { response, stream } = await forwardChat(resolved, body, traceId);
       const durationMs = Date.now() - startedAt;
 
       if (response.status === 429) {
+        releaseSlotOnce();
         await writeRequestLog({
           traceId,
           slug: resolved.slug,
@@ -166,6 +181,7 @@ class AiServiceController {
           extractErrorMessage(errorText),
           traceId,
         );
+        releaseSlotOnce();
         return;
       }
 
@@ -196,6 +212,7 @@ class AiServiceController {
             extractErrorMessage(errorText),
             traceId,
           );
+          releaseSlotOnce();
           return;
         }
 
@@ -237,6 +254,8 @@ class AiServiceController {
               durationMs: Date.now() - startedAt,
               errorCode: 'UPSTREAM_ERROR'
             });
+          } finally {
+            releaseSlotOnce();
           }
         })();
         return;
@@ -250,9 +269,12 @@ class AiServiceController {
         durationMs,
         errorCode: null
       });
+      releaseSlotOnce();
       ctx.body = result;
     } catch (error) {
       const durationMs = Date.now() - startedAt;
+      // 无论何种失败，只要已 acquire 就必须释放并发位（RPM 令牌已在 acquire 时扣除）。
+      releaseSlotOnce();
 
       if (error instanceof AIBaseError) {
         await writeRequestLog({
@@ -262,6 +284,11 @@ class AiServiceController {
           durationMs,
           errorCode: error.code
         });
+        // 本地 per-model 限流器抛出的 RATE_LIMITED 携带 Retry-After 提示，
+        // 透传给前端供其退避重试使用。
+        if (error.code === 'RATE_LIMITED' && error.retryAfter) {
+          ctx.set('Retry-After', String(error.retryAfter));
+        }
         sendAiError(ctx, error.code, error.message, traceId);
         return;
       }

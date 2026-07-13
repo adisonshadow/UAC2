@@ -28,6 +28,10 @@ const AiModel = sequelize.define('AiModel', {
     type: DataTypes.JSONB,
     allowNull: true
   },
+  rate_limit: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
   is_active: {
     type: DataTypes.BOOLEAN,
     allowNull: false,

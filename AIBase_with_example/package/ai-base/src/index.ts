@@ -53,8 +53,28 @@ export {
   unregisterFunctionCall,
   getFunctionCallDef,
   getAllFunctionCalls,
+  invokeFunctionCall,
+  clearFunctionCalls,
   subscribeFunctionCalls,
 } from './registry/functionRegistry';
+export type { RegisterFunctionCallOptions } from './registry/functionRegistry';
+
+export {
+  registerSkillCompletionPolicy,
+  unregisterSkillCompletionPolicy,
+  clearSkillCompletionPolicies,
+  getSkillCompletionStrategy,
+} from './registry/skillPolicyRegistry';
+export type { SkillCompletionPolicyOverride } from './registry/skillPolicyRegistry';
+
+// Skill 加载缓存失效：管理后台编辑 Skill 后调用以刷新前端缓存（见 p2-skill-tool-caching.md）
+export { invalidateSkillCache } from './registry/skillCache';
+
+export { useFunctionCall } from './hooks/useFunctionCall';
+export type { UseFunctionCallOptions } from './hooks/useFunctionCall';
+
+export { serializeToolResultForContext, resolveToolResultBudget } from './utils/toolResultBudget';
+export type { TrimmedToolResult } from './utils/toolResultBudget';
 
 export { AIBaseClient } from './sdk';
 
@@ -71,6 +91,7 @@ export type {
   AIBaseClientOptions,
   ToolInvokeResult,
   FunctionCallDef,
+  SkillCompletionStrategy,
 } from './types';
 export type {
   AIMutation,

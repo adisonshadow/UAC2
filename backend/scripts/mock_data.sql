@@ -59,22 +59,9 @@ perm_data AS (
   ('550e8400-e29b-41d4-a716-446655440016', 'role:assign', '分配权限', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('550e8400-e29b-41d4-a716-446655440017', 'department:create', '创建部门', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('550e8400-e29b-41d4-a716-446655440018', 'department:edit', '编辑部门', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440019', 'department:delete', '删除部门', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  
-  -- API类型权限（可以有create、read、update、delete操作）
-  ('550e8400-e29b-41d4-a716-446655440020', 'api:user:list', '获取用户列表', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440021', 'api:user:create', '创建用户', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440022', 'api:user:update', '更新用户', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440023', 'api:user:delete', '删除用户', 'API', '["delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440024', 'api:role:list', '获取角色列表', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440025', 'api:role:create', '创建角色', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440026', 'api:role:update', '更新角色', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440027', 'api:role:delete', '删除角色', 'API', '["delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440028', 'api:permission:list', '获取权限列表', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440029', 'api:department:list', '获取部门列表', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440030', 'api:department:create', '创建部门', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440031', 'api:department:update', '更新部门', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('550e8400-e29b-41d4-a716-446655440032', 'api:department:delete', '删除部门', 'API', '["delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  ('550e8400-e29b-41d4-a716-446655440019', 'department:delete', '删除部门', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  -- 注：内置 API 权限已迁移至独立清单（backend/src/services/builtinApi/catalog.js）
+  --     及限制配置表 uac.builtin_api_configs，不再由 permissions(resource_type='API') 承载
   RETURNING permission_id
 )
 SELECT 1;

@@ -123,6 +123,102 @@ useEffect(() => {
 
 注册/注销后通过 `subscribeFunctionCalls` 自动刷新当前会话可用 Tool 列表。
 
+### 同一轮 Tool 并行执行
+
+当模型在一轮回复中返回多个 `tool_calls` 时，SDK 会**并发执行**（上限 6 个）而非串行，
+显著降低多工具场景下的端到端延迟。每个工具的 ThoughtChain 步骤仍按输出顺序渲染。
+工具间存在数据依赖时，模型会拆成多轮（下一轮依赖上一轮结果），多轮之间仍为串行。
+
+### Tool 分派规则（executionType）
+
+| `executionType` | 本地有同名 handler | 行为 |
+|-----------------|-------------------|------|
+| `client` | ✅ | 本地执行（`functionRegistry`） |
+| `client` | ❌ | 抛错（Client Tool 未注册 handler） |
+| `server_http` / `server_builtin` | 任意 | **走后端**（按声明执行） |
+| `server_*` 且 `allowClientOverride: true` | ✅ | 本地执行（显式覆盖） |
+| 无 meta（仅 `exposeAllClientTools`） | ✅ | 本地执行 |
+
+> ⚠️ **行为变更**：历史上「只要本地有同名 handler 就拦截 server 工具」的隐式行为已移除。
+> 如需让本地 handler 接管 server 类型工具，必须在 Tool 元数据上显式声明 `allowClientOverride: true`。
+
+### Tool 结果体积管控
+
+Tool 结果在回灌对话历史前会按**字符预算**裁剪，避免大结果撑爆上下文。预算优先级：
+
+**本地 def `resultBudget` > 远端 Tool `resultBudget` > `AIChatConfig.maxToolResultChars`（默认 8000）**
+
+```tsx
+// 全局默认
+<AIChatProvider config={{ maxToolResultChars: 6000 }}>
+
+// 单个 Tool 级覆盖（本地 handler）
+registerFunctionCall({
+  name: 'search_orders',
+  resultBudget: { maxChars: 2000 }, // 这个工具结果很大，进一步收紧
+  // …
+});
+```
+
+超预算时保留头部并追加 `[truncated: original N chars, budget M]` 标注，模型可据此换更聚焦的查询。
+
+### 命名空间与生命周期
+
+`registerFunctionCall` 支持按 `namespace` 隔离（默认 `'default'`，向后兼容）。
+微前端 / 多面板场景可按应用或路由 scope 注册，避免同名 Tool 互相覆盖：
+
+```tsx
+registerFunctionCall(def, { namespace: 'sales-app' });
+getFunctionCallDef('search_orders', 'sales-app'); // 先查 sales-app，回退 default
+unregisterFunctionCall('search_orders', 'sales-app');
+clearFunctionCalls('sales-app'); // 清空某命名空间
+```
+
+组件级注册推荐用 `useFunctionCall` Hook，**卸载即自动注销**：
+
+```tsx
+import { useFunctionCall } from '@EADAF/ai-base';
+
+function PageWithTools({ entityId }) {
+  useFunctionCall(
+    {
+      name: 'page_only_tool',
+      description: '…',
+      parameters: { type: 'object', properties: {} },
+      handler: async (args) => { /* … */ },
+    },
+    { enabled: Boolean(entityId) },
+  );
+  // …
+}
+```
+
+### Skill 完成策略（声明式 auto-continue）
+
+当模型「只输出步骤说明、却没真正调用 Tool」时，SDK 会按各 Skill 声明的**完成策略**
+决定是否自动注入续调指令。策略可由后端 Skill 元数据（`completion_strategy` 字段）下发，
+也可由前端注册表覆盖：
+
+```tsx
+import { registerSkillCompletionPolicy } from '@EADAF/ai-base';
+
+registerSkillCompletionPolicy('bizdata-model-design', {
+  requiredTools: ['bizdata_validate_model'], // 完成前必须调用过
+  completionKeywords: ['建模完成', '校验通过'], // 文本命中即视为完成
+  blockKeywords: ['接下来您可以', '建议您'],    // 文本命中即禁止续调
+  continuousExecution: false,                  // 连续执行型（如 test-fix 循环）
+});
+```
+
+| 字段 | 作用 |
+|------|------|
+| `requiredTools` | 本轮结束若仍有未调用的关键 Tool → 续调 |
+| `completionKeywords` | 文本命中 → 视为任务完成，停止续调 |
+| `blockKeywords` | 文本命中（如收尾建议句）→ 停止续调 |
+| `continuousExecution` | 连续执行型 Skill，不受「一次一事」限制 |
+
+SDK 自身不包含任何业务工具名集合或中文正则，新业务接入只需声明策略，无需改 SDK 源码。
+
 ---
 
 ## AISurface 与 UI 联动（Mutation）
@@ -314,6 +410,8 @@ EADAF_frontend 在 `App.tsx` 中通过 `setupAiToolDevLogger()` 接入。失败�
 | `headerOffset` | 否 | 面板 top 偏移，默认 `64` |
 | `defaultOpen` | 否 | 初始是否展开，默认 `true` |
 | `hiddenPaths` | 否 | 匹配路径下隐藏 AI UI |
+| `exposeAllClientTools` | 否 | 调试：向 LLM 暴露全部本地 client Tool（忽略 Skill 关联限制） |
+| `maxToolResultChars` | 否 | 单次 Tool 结果回灌上下文的字符预算上限，默认 `8000` |
 
 ---
 
@@ -322,12 +420,14 @@ EADAF_frontend 在 `App.tsx` 中通过 `setupAiToolDevLogger()` 接入。失败�
 | 分类 | 导出 |
 |------|------|
 | Provider | `AIChatProvider`, `AIChatPageScope`, `AIChatDisplay`, `ChatReferenceProvider` |
-| Hooks | `useAIChatLayout`, `useAIChatDisplayMode`, `useEffectiveAIChatConfig`, `useChatReference`, `useAIChatPrompts`, `useSetAIChatPrompts`, `useAISurface`, `useAIMutationHandler` |
-| Tool 注册 | `registerFunctionCall`, `unregisterFunctionCall`, `getAllFunctionCalls`, `subscribeFunctionCalls` |
+| Hooks | `useAIChatLayout`, `useAIChatDisplayMode`, `useEffectiveAIChatConfig`, `useChatReference`, `useAIChatPrompts`, `useSetAIChatPrompts`, `useAISurface`, `useAIMutationHandler`, `useFunctionCall` |
+| Tool 注册 | `registerFunctionCall`, `unregisterFunctionCall`, `getFunctionCallDef`, `getAllFunctionCalls`, `invokeFunctionCall`, `clearFunctionCalls`, `subscribeFunctionCalls` |
+| Skill 策略 | `registerSkillCompletionPolicy`, `unregisterSkillCompletionPolicy`, `clearSkillCompletionPolicies`, `getSkillCompletionStrategy` |
+| 结果预算 | `serializeToolResultForContext`, `resolveToolResultBudget` |
 | 消息 / 引用 | `sendMockUserMessage`, `sendAIChatMessage`, `formatMessageWithReferences` |
 | 日志 | `setToolInvokeLogger`, `logToolInvoke`, `formatToolInvokeError` |
 | SDK | `AIBaseClient` |
-| 类型 | `AIChatConfig`, `AIChatPromptItem`, `FunctionCallDef`, `AIBaseSkill`, `AIBaseTool`, … |
+| 类型 | `AIChatConfig`, `AIChatPromptItem`, `FunctionCallDef`, `AIBaseSkill`, `AIBaseTool`, `SkillCompletionStrategy`, … |
 
 ---
 

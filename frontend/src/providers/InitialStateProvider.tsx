@@ -3,6 +3,7 @@ import defaultSettings from '../../config/defaultSettings';
 import { getDepartments } from '@/services/UAC/api/departments';
 import { getAuthCheck } from '@/services/UAC/api/auth';
 import { getSystemFeatures } from '@/services/UAC/api/system';
+import { getPermissions } from '@/services/UAC/api/permissions';
 import { clearAuth, getAuth, parseAuthUser, type CurrentUser } from '@/utils/auth';
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 import {
@@ -31,6 +32,12 @@ interface Department {
   deleted_at: string | null;
 }
 
+export interface MenuPermissionItem {
+  permission_id: string;
+  code: string;
+  access_restriction?: { mode: 'none' | 'role' | 'department'; roleIds?: string[]; departmentIds?: string[] } | null;
+}
+
 export interface InitialState {
   fetchUserInfo: () => Promise<CurrentUser | undefined>;
   fetchDepartments: () => Promise<
@@ -44,6 +51,8 @@ export interface InitialState {
   departments?: Department[];
   departmentsTreeData?: DepartmentTreeOption[];
   departmentsLastUpdate?: number;
+  /** 菜单权限（含 access_restriction），用于运行时过滤菜单可见性 */
+  menuPermissions?: MenuPermissionItem[];
   name: string;
   settings: typeof defaultSettings;
   appBranding?: AppBranding;
@@ -118,6 +127,19 @@ async function fetchDepartments() {
   }
 }
 
+async function fetchMenuPermissions(): Promise<MenuPermissionItem[] | undefined> {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return undefined;
+    const res = await getPermissions({ page: 1, size: -1, resource_type: 'MENU', status: 'ACTIVE' });
+    if (!isApiSuccess(res)) return undefined;
+    const items = (res.data?.items || []) as unknown as MenuPermissionItem[];
+    return items.filter((i) => i && i.code);
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadInitialState(): Promise<InitialState> {
   const [currentUser, appBranding, featuresRes] = await Promise.all([
     fetchUserInfo(),
@@ -125,8 +147,10 @@ async function loadInitialState(): Promise<InitialState> {
     getSystemFeatures().catch(() => null),
   ]);
   let departmentsResult;
+  let menuPermissions: MenuPermissionItem[] | undefined;
   if (currentUser) {
     departmentsResult = await fetchDepartments();
+    menuPermissions = await fetchMenuPermissions();
   }
 
   const brandingDisplay = resolveBrandingDisplay(appBranding);
@@ -142,6 +166,7 @@ async function loadInitialState(): Promise<InitialState> {
     departments: departmentsResult?.departments,
     departmentsTreeData: departmentsResult?.departmentsTreeData,
     departmentsLastUpdate: departmentsResult?.departments ? Date.now() : undefined,
+    menuPermissions,
     name: currentUser?.username || '未有效登录',
     appBranding,
     systemFeatures,

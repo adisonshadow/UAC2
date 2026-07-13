@@ -33,5 +33,7 @@ export function resolveConfig(config: AIChatConfig = {}): ResolvedAIChatConfig {
     hiddenPaths: config.hiddenPaths ?? [],
     exposeAllClientTools: config.exposeAllClientTools ?? false,
     nextStepPrompts: config.nextStepPrompts ?? {},
+    maxToolResultChars: config.maxToolResultChars ?? 8000,
+    roundDelayMs: config.roundDelayMs ?? 600,
   };
 }

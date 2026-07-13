@@ -1,5 +1,6 @@
 import { DownloadOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons';
-import { ActionType, PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
+import { ActionType, PageContainer, ProColumns } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Image, Modal, Space, Upload, message, Tooltip } from 'antd';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -105,16 +106,17 @@ const BrowserPage: React.FC = () => {
   };
 
   return (
-    <>
+    <PageContainer pageHeaderRender={() => <></>}>
       {contextHolder}
-      <ProTable<ObjectRecord>
+      <UrlSyncedProTable<ObjectRecord>
+        headerTitle="文件浏览器"
         actionRef={actionRef}
         rowKey="objectId"
         scroll={{ x: 1280 }}
         search={search}
         {...DEFAULT_PRO_TABLE_OPTIONS}
         toolBarRender={() => [
-          <Button key="upload" type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+          <Button key="upload" type="primary" className="btn-gradient-primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
             上传文件
           </Button>,
         ]}
@@ -144,7 +146,7 @@ const BrowserPage: React.FC = () => {
           { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime', width: 170 },
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 100,
+            width: 70,
             render: (_, record) => (
               <TableActions>
                 {record.mimeType?.startsWith('image/') ? (
@@ -251,7 +253,7 @@ const BrowserPage: React.FC = () => {
           />
         </Space>
       </Modal>
-    </>
+    </PageContainer>
   );
 };
 

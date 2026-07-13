@@ -1,5 +1,5 @@
 import { Badge, Button, Space, Tooltip } from 'antd';
-import { ProTable } from '@ant-design/pro-components';
+import UrlSyncedProTable from '@/components/UrlSyncedProTable';
 import type { ProColumns } from '@ant-design/pro-components';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +12,8 @@ interface MaterializedTableListProps {
   showConnectionInfo?: boolean;
   selectedRowKeys?: React.Key[];
   onSelectionChange?: (keys: React.Key[], rows: API.MaterializationStatusItem[]) => void;
+  headerTitle?: React.ReactNode;
+  headerExtra?: React.ReactNode;
 }
 
 function renderStaleBadge(item: API.MaterializationStatusItem) {
@@ -47,6 +49,8 @@ const MaterializedTableList: React.FC<MaterializedTableListProps> = ({
   showConnectionInfo,
   selectedRowKeys,
   onSelectionChange,
+  headerTitle,
+  headerExtra,
 }) => {
   const navigate = useNavigate();
 
@@ -128,15 +132,17 @@ const MaterializedTableList: React.FC<MaterializedTableListProps> = ({
   ];
 
   return (
-    <ProTable<API.MaterializationStatusItem>
+    <UrlSyncedProTable<API.MaterializationStatusItem>
       size="small"
+      headerTitle={headerTitle}
+      toolBarRender={headerExtra ? () => [headerExtra] : undefined}
       rowKey={materializedRowKey}
       loading={loading}
       columns={columns}
       dataSource={items.filter((i) => i.entityId)}
       search={false}
       options={false}
-      pagination={{ pageSize: 20, showSizeChanger: true }}
+      defaultPageSize={20}
       rowSelection={
         onSelectionChange
           ? {

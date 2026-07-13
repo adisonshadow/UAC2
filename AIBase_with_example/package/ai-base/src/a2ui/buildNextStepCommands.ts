@@ -16,7 +16,7 @@ export function buildNextStepCommands(steps: NextStepItem[]): XAgentCommand_v0_9
     {
       id: 'title',
       component: 'Text',
-      text: '下一步建议',
+      text: '下一步建议 ✨',
       variant: 'caption',
     },
     {

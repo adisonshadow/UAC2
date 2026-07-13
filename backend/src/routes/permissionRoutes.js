@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const PermissionController = require('../controllers/permissionController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 const router = new Router({
   prefix: '/api/v1/permissions'
 });
@@ -133,7 +134,7 @@ const router = new Router({
  *                   type: null
  *                   example: null
  */
-router.post('/', auth, PermissionController.create);
+router.post('/', authWithBuiltinApiGuard, PermissionController.create);
 
 /**
  * @swagger
@@ -221,7 +222,7 @@ router.post('/', auth, PermissionController.create);
  *       500:
  *         description: 服务器错误
  */
-router.get('/', auth, PermissionController.list);
+router.get('/', authWithBuiltinApiGuard, PermissionController.list);
 
 /**
  * @swagger
@@ -265,7 +266,7 @@ router.get('/', auth, PermissionController.list);
  *       500:
  *         description: 服务器错误
  */
-router.get('/check', auth, PermissionController.checkPermission);
+router.get('/check', authWithBuiltinApiGuard, PermissionController.checkPermission);
 
 /**
  * @swagger
@@ -308,7 +309,7 @@ router.get('/check', auth, PermissionController.checkPermission);
  *       500:
  *         description: 服务器错误
  */
-router.post('/rules', auth, PermissionController.createRule);
+router.post('/rules', authWithBuiltinApiGuard, PermissionController.createRule);
 
 /**
  * @swagger
@@ -368,7 +369,7 @@ router.post('/rules', auth, PermissionController.createRule);
  *       500:
  *         description: 服务器错误
  */
-router.get('/rules', auth, PermissionController.getRules);
+router.get('/rules', authWithBuiltinApiGuard, PermissionController.getRules);
 
 /**
  * @swagger
@@ -478,7 +479,7 @@ router.get('/rules', auth, PermissionController.getRules);
  *                   type: null
  *                   example: null
  */
-router.get('/:permission_id', auth, PermissionController.getById);
+router.get('/:permission_id', authWithBuiltinApiGuard, PermissionController.getById);
 
 /**
  * @swagger
@@ -558,7 +559,7 @@ router.get('/:permission_id', auth, PermissionController.getById);
  *       500:
  *         description: 服务器错误
  */
-router.put('/:permission_id', auth, PermissionController.update);
+router.put('/:permission_id', authWithBuiltinApiGuard, PermissionController.update);
 
 /**
  * @swagger
@@ -594,7 +595,7 @@ router.put('/:permission_id', auth, PermissionController.update);
  *       500:
  *         description: 服务器错误
  */
-router.delete('/:permission_id', auth, PermissionController.delete);
+router.delete('/:permission_id', authWithBuiltinApiGuard, PermissionController.delete);
 
 /**
  * @swagger
@@ -649,7 +650,7 @@ router.delete('/:permission_id', auth, PermissionController.delete);
  *       500:
  *         description: 服务器错误
  */
-router.post('/:permission_id/roles', auth, PermissionController.assignRole);
+router.post('/:permission_id/roles', authWithBuiltinApiGuard, PermissionController.assignRole);
 
 /**
  * @swagger
@@ -700,6 +701,6 @@ router.post('/:permission_id/roles', auth, PermissionController.assignRole);
  *       500:
  *         description: 服务器错误
  */
-router.get('/users/:user_id', auth, PermissionController.getUserPermissions);
+router.get('/users/:user_id', authWithBuiltinApiGuard, PermissionController.getUserPermissions);
 
 module.exports = router; 

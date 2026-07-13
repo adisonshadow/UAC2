@@ -22,6 +22,8 @@ const apiServiceAdminRoutes = require('./apiServiceAdminRoutes');
 const apiServiceDataRoutes = require('./apiServiceDataRoutes');
 const apiServiceStreamRoutes = require('./apiServiceStreamRoutes');
 const collectionPipelineAdminRoutes = require('./collectionPipelineAdminRoutes');
+const builtinApiRoutes = require('./builtinApiRoutes');
+const outboundWebhookRoutes = require('./outboundWebhookRoutes');
 const systemRoutes = require('./systemRoutes');
 
 const router = new Router();
@@ -382,6 +384,8 @@ router.use(apiServiceAdminRoutes.routes());
 router.use(apiServiceDataRoutes.routes());
 router.use(apiServiceStreamRoutes.routes());
 router.use(collectionPipelineAdminRoutes.routes());
+router.use(builtinApiRoutes.routes());
+router.use(outboundWebhookRoutes.routes());
 router.use(systemRoutes.routes());
 
 module.exports = router; 

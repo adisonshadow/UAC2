@@ -12,8 +12,8 @@ import {
   ProFormSelect,
   ProFormText,
   ProFormTextArea,
-  ProTable,
 } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Checkbox, Form, Modal, Select, Space, Tag, message } from 'antd';
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -141,16 +141,16 @@ const BucketsPage: React.FC = () => {
   };
 
   return (
-    <PageContainer title="Bucket 管理">
+    <PageContainer pageHeaderRender={() => <></>}>
       {contextHolder}
-      <ProTable<BucketRecord>
+      <UrlSyncedProTable<BucketRecord>
         actionRef={actionRef}
         rowKey="bucketId"
         scroll={{ x: 'max-content' }}
         search={search}
         {...DEFAULT_PRO_TABLE_OPTIONS}
         toolBarRender={() => [
-          <Button key="create" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button key="create" type="primary" className="btn-gradient-primary" icon={<PlusOutlined />} onClick={openCreate}>
             新建 Bucket
           </Button>,
         ]}
@@ -193,7 +193,7 @@ const BucketsPage: React.FC = () => {
           },
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 120,
+            width: 70,
             render: (_, record) =>
               record.isSystem ? (
                 <TableActions>

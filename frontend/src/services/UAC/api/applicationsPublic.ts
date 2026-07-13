@@ -39,6 +39,17 @@ export interface ApplicationApiCatalogTreeNode {
   children?: ApplicationApiCatalogTreeNode[];
 }
 
+/** 内置 API 明细（公开目录展示用） */
+export interface BuiltinApiCatalogItem {
+  code: string;
+  domain: string;
+  label: string;
+  routePath: string;
+  httpMethods: string[];
+  actions: string[];
+  description: string;
+}
+
 export interface ApplicationApiCatalogResult {
   application: {
     application_id: string;
@@ -49,6 +60,8 @@ export interface ApplicationApiCatalogResult {
   };
   tree: ApplicationApiCatalogTreeNode[];
   services: ApplicationApiCatalogService[];
+  builtinApis?: BuiltinApiCatalogItem[];
+  builtinApiTree?: ApplicationApiCatalogTreeNode[];
   generatedAt?: string;
 }
 

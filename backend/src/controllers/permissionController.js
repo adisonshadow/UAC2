@@ -1,6 +1,19 @@
 const { Permission, Role, User, RolePermission, DataPermissionRule, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
+const { normalizeAccessRestriction } = require('../services/builtinApi/builtinApiPermissionService');
+
+/**
+ * 规范化菜单/按钮权限的访问限制。
+ * - mode=none：无限制（任意已认证用户可见）
+ * - mode=role：限制用户角色（roleIds 非空）
+ * - mode=department：限制用户组织（departmentIds 非空）
+ * 返回 null 表示清空限制（无限制等价于 mode=none，存 {mode:'none'}）。
+ */
+function normalizePermissionAccessRestriction(input) {
+  if (input === null || input === undefined) return { mode: 'none', roleIds: [], departmentIds: [] };
+  return normalizeAccessRestriction(input) || { mode: 'none', roleIds: [], departmentIds: [] };
+}
 
 class PermissionController {
   // 分配角色
@@ -280,7 +293,7 @@ class PermissionController {
 
   // 创建权限
   static async create(ctx) {
-    const { code, description, resource_type, actions } = ctx.request.body;
+    const { code, description, resource_type, actions, access_restriction } = ctx.request.body;
 
     // 验证必填字段
     if (!code || !resource_type || !actions || !Array.isArray(actions)) {
@@ -326,6 +339,7 @@ class PermissionController {
         description,
         resource_type,
         actions,
+        access_restriction: normalizePermissionAccessRestriction(access_restriction),
         status: 'ACTIVE'
       });
 
@@ -390,7 +404,7 @@ class PermissionController {
   static async update(ctx) {
     try {
       const { permission_id } = ctx.params;
-      const { description, resource_type, actions } = ctx.request.body;
+      const { description, resource_type, actions, access_restriction } = ctx.request.body;
 
       // 检查权限是否存在
       const permission = await Permission.findByPk(permission_id);
@@ -429,7 +443,8 @@ class PermissionController {
       const updateData = {
         description,
         resource_type,
-        ...(actions && { actions })
+        ...(actions && { actions }),
+        ...(access_restriction !== undefined && { access_restriction: normalizePermissionAccessRestriction(access_restriction) }),
       };
 
       await permission.update(updateData);

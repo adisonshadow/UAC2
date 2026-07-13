@@ -22,27 +22,33 @@ function renderNodeTitle(node: ApiServiceDomainTreeItem) {
       </span>
     );
   }
+  // 域节点：name 与 code 相同，仅显示名称 + 服务数
   return (
     <span>
       <PartitionOutlined style={{ marginRight: 6 }} />
       <Text strong>{node.name}</Text>
-      <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-        {node.code}
-        {node.serviceCount != null ? ` (${node.serviceCount})` : ''}
-      </Text>
+      {node.serviceCount != null ? (
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          ({node.serviceCount})
+        </Text>
+      ) : null}
     </span>
   );
 }
 
 function toTreeNodes(items: ApiServiceDomainTreeItem[]): DataNode[] {
-  return items.map((item) => ({
-    key: item.code,
-    title: renderNodeTitle(item),
-    selectable: item.isApiNode ? false : true,
-    checkable: true,
-    isLeaf: !!item.isApiNode,
-    children: item.children?.length ? toTreeNodes(item.children) : undefined,
-  }));
+  return items.map((item) => {
+    const hasChildren = Boolean(item.children?.length);
+    return {
+      key: item.code,
+      title: renderNodeTitle(item),
+      selectable: item.isApiNode ? false : true,
+      checkable: true,
+      // 叶子节点（API 节点，或无子级的域节点）不显示折叠图标 [规范 1.10]
+      isLeaf: !!item.isApiNode || !hasChildren,
+      children: hasChildren ? toTreeNodes(item.children!) : undefined,
+    };
+  });
 }
 
 const ApiDomainTreePicker: React.FC<ApiDomainTreePickerProps> = ({

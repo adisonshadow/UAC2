@@ -5,7 +5,7 @@ import { ApiServiceSettingsTab, BackupSettingsTab, MetadataSettingsTab } from '.
 
 const SystemSettingsPage: React.FC = () => {
   return (
-    <PageContainer title="系统设置">
+    <PageContainer title={<></>}>
       <Tabs
         items={[
           { key: 'metadata', label: '元数据', children: <MetadataSettingsTab /> },

@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS aibase.skills (
     is_active BOOLEAN NOT NULL DEFAULT true,
     is_global BOOLEAN NOT NULL DEFAULT false,
     is_dedicated BOOLEAN NOT NULL DEFAULT false,
+    completion_strategy JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );

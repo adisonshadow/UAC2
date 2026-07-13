@@ -4,6 +4,22 @@ const apiServiceExecutionService = require('./apiServiceExecutionService');
 const { assertTransportAllowed } = require('./apiServiceTransport');
 const { isReadOperation } = require('./operationParameterSchemas');
 const { assertAccessAllowed } = require('./apiServicePermissionService');
+const logger = require('../../utils/logger');
+
+let _triggerByApiService = null;
+/**
+ * 延迟加载 outboundWebhookService（避免循环依赖）
+ */
+function getTriggerFn() {
+  if (_triggerByApiService === null) {
+    try {
+      _triggerByApiService = require('../outboundWebhook/outboundWebhookService').triggerByApiService;
+    } catch {
+      _triggerByApiService = false;
+    }
+  }
+  return _triggerByApiService || null;
+}
 
 function buildAuthContext(ctx) {
   const user = ctx.state?.user;
@@ -64,12 +80,26 @@ async function invokePublished(routePath, ctx, transport) {
   const authContext = buildAuthContext(ctx);
   assertAccessAllowed(service, authContext, { bypass: false });
 
-  return apiServiceExecutionService.testService(service.id, {
+  const result = await apiServiceExecutionService.testService(service.id, {
     operation,
     parameters,
     bypassAccessControl: false,
     authContext,
   });
+
+  // 业务 API 成功后，同步触发绑定的外部 API 提交（仅 HTTP 传输，不影响主流程）
+  if (transport === 'http' && result) {
+    try {
+      const triggerFn = getTriggerFn();
+      if (triggerFn) {
+        await triggerFn(service.id, result.preview || result);
+      }
+    } catch (e) {
+      logger.warn('外部 API 提交触发失败（不影响业务 API 主流程）', { error: e.message });
+    }
+  }
+
+  return result;
 }
 
 async function streamPublishedSse(routePath, ctx) {

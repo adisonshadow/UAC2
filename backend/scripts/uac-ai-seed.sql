@@ -265,6 +265,19 @@ VALUES
         '## uac_list_data_rules',
         '{}'::jsonb,
         true
+    ),
+    (
+        '77777777-7777-4777-8777-777777777724',
+        '77777777-7777-4777-8777-777777777710',
+        '过滤用户',
+        'uac-filter-users',
+        'uac_filter_users',
+        '按页面过滤项检索用户：用户名/姓名/邮箱/电话/状态/部门/用户ID，返回全部命中项。与 list 区别：面向检索而非分页浏览。',
+        'client',
+        '{"type":"object","properties":{"username":{"type":"string"},"name":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"status":{"type":"string","enum":["ACTIVE","DISABLED","ARCHIVED"]},"departmentId":{"type":"string","description":"部门ID"},"userId":{"type":"string","description":"用户ID精确匹配"}}}'::jsonb,
+        E'## uac_filter_users\n\n参数全可选；不传则返回全部。返回 { items, total }。字段名用 camelCase（departmentId/userId）。',
+        '{}'::jsonb,
+        true
     )
 ON CONFLICT (slug) DO UPDATE SET
     name = EXCLUDED.name,
@@ -311,7 +324,7 @@ CROSS JOIN aibase.tools t
 WHERE s.slug = 'uac-access-control'
   AND t.scope_id = '77777777-7777-4777-8777-777777777710'
   AND t.function_name IN (
-    'uac_list_users', 'uac_get_user', 'uac_create_user', 'uac_update_user', 'uac_delete_user',
+    'uac_list_users', 'uac_filter_users', 'uac_get_user', 'uac_create_user', 'uac_update_user', 'uac_delete_user',
     'uac_assign_user_roles', 'uac_list_roles', 'uac_get_role', 'uac_create_role', 'uac_update_role',
     'uac_delete_role', 'uac_set_role_permissions', 'uac_list_permissions', 'uac_create_permission',
     'uac_update_permission', 'uac_list_departments_tree', 'uac_list_bizdata_scopes',

@@ -7,6 +7,25 @@ export function resolveEntityTableName(code: string, tableName?: string | null):
   return trimmed || defaultTableNameFromCode(code);
 }
 
+export function createEntityCodeUniqueRule(
+  entities: API.BusinessDataEntity[],
+  excludeEntityId?: string,
+) {
+  return async (_: unknown, value?: string) => {
+    const code = value?.trim();
+    if (!code) return;
+    if (!code.includes(':')) {
+      throw new Error('Code 须包含 Scope 层级，如 sales:order:Order');
+    }
+    const conflict = entities.find(
+      (entity) => entity.id !== excludeEntityId && entity.code?.trim() === code,
+    );
+    if (conflict) {
+      throw new Error(`Code「${code}」已被「${conflict.label}」（${conflict.code}）使用`);
+    }
+  };
+}
+
 export function createTableNameUniqueRule(
   entities: API.BusinessDataEntity[],
   excludeEntityId?: string,

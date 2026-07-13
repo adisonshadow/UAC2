@@ -37,11 +37,9 @@ export function buildApiServiceTestAutoFixPrompt(ctx: ApiServiceTestAutoFixConte
 3. 仍失败则重新分类；成功则简要说明改了哪些参数
 
 ### 4. 配置修复（SQL/脚本问题）
-1. \`apiservice_navigate\` target=edit，serviceId=${ctx.serviceId || '（从 profile 获取）'}
-2. \`aibase_read_surfaces\`（surfaceId=api-services.edit）读取当前 SQL
-3. \`apiservice_update_service\` 修改 definitionScript / enabledOperations / connectionId 等（**自动保存**）
-4. \`apiservice_navigate\` target=test autoRunTest=true
-5. 解读自动重测结果；成功则告知用户；失败则继续修复直至成功或明确阻塞原因
+1. \`apiservice_update_service\` 修改 definitionScript / enabledOperations / connectionId 等（**自动保存**，执行后自动跳转至服务列表）
+2. \`apiservice_navigate\` target=test autoRunTest=true
+3. 解读自动重测结果；成功则告知用户；失败则继续修复直至成功或明确阻塞原因
 
 ## 约束
 - 禁止向用户索要 serviceId（从 Surface / profile 获取）

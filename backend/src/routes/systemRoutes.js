@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const SystemController = require('../controllers/systemController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({ prefix: '/api/v1/system' });
 
@@ -31,8 +32,8 @@ const router = new Router({ prefix: '/api/v1/system' });
  *       200:
  *         description: 更新成功
  */
-router.get('/features', auth, SystemController.getFeatures);
-router.put('/features', auth, SystemController.updateFeatures);
+router.get('/features', authWithBuiltinApiGuard, SystemController.getFeatures);
+router.put('/features', authWithBuiltinApiGuard, SystemController.updateFeatures);
 
 /**
  * @swagger
@@ -45,7 +46,7 @@ router.put('/features', auth, SystemController.updateFeatures);
  *       200:
  *         description: 获取成功
  */
-router.get('/backups', auth, SystemController.listBackups);
+router.get('/backups', authWithBuiltinApiGuard, SystemController.listBackups);
 
 /**
  * @swagger
@@ -58,6 +59,6 @@ router.get('/backups', auth, SystemController.listBackups);
  *       200:
  *         description: 备份已触发
  */
-router.post('/backups/run', auth, SystemController.runBackup);
+router.post('/backups/run', authWithBuiltinApiGuard, SystemController.runBackup);
 
 module.exports = router;

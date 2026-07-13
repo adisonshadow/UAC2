@@ -43,7 +43,19 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const { initialState } = useInitialState();
   const routeMeta = findRouteMeta(location.pathname);
-  const menuData = decorateMenuIcons(buildMenuData(initialState?.systemFeatures));
+  const currentUser = initialState?.currentUser;
+  const menuData = decorateMenuIcons(
+    buildMenuData(
+      initialState?.systemFeatures,
+      initialState?.menuPermissions as Parameters<typeof buildMenuData>[1],
+      {
+        roleIds: currentUser?.role_ids,
+        roleCodes: currentUser?.role_codes,
+        departmentId: currentUser?.department_id,
+        isSuperAdmin: currentUser?.role_codes?.includes('SUPER_ADMIN'),
+      },
+    ),
+  );
 
   return (
     <ProLayout

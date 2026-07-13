@@ -1,6 +1,6 @@
 /**
- * 运行时 API 地址（值来自 config/env.ts，经 Umi define 注入）
- * 修改请前往 config/env.ts
+ * 运行时 API 地址（值由 vite define 注入 process.env.APP_API_BASE_URL）
+ * 配置请前往 vite.config.ts 的 define 字段
  */
 export const API_BASE_URL = process.env.APP_API_BASE_URL || '';
 

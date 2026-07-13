@@ -3,6 +3,7 @@ const AiServiceController = require('../controllers/aiServiceController');
 const AiCapabilityController = require('../controllers/aiCapabilityController');
 const SkillController = require('../controllers/skillController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({
   prefix: '/api/v1/ai'
@@ -73,7 +74,7 @@ const router = new Router({
  *                   items:
  *                     $ref: '#/components/schemas/ModelInfo'
  */
-router.get('/models', auth, AiServiceController.listModels);
+router.get('/models', authWithBuiltinApiGuard, AiServiceController.listModels);
 
 /**
  * @swagger
@@ -130,7 +131,7 @@ router.get('/models', auth, AiServiceController.listModels);
  *             schema:
  *               $ref: '#/components/schemas/AIBaseErrorResponse'
  */
-router.post('/chat/completions', auth, AiServiceController.chatCompletions);
+router.post('/chat/completions', authWithBuiltinApiGuard, AiServiceController.chatCompletions);
 
 /**
  * @swagger
@@ -153,7 +154,7 @@ router.post('/chat/completions', auth, AiServiceController.chatCompletions);
  *       200:
  *         description: 获取成功
  */
-router.get('/capabilities', auth, AiCapabilityController.getCapabilities);
+router.get('/capabilities', authWithBuiltinApiGuard, AiCapabilityController.getCapabilities);
 
 /**
  * @swagger
@@ -171,7 +172,29 @@ router.get('/capabilities', auth, AiCapabilityController.getCapabilities);
  *       200:
  *         description: 获取成功
  */
-router.get('/scopes/:slug/tools', auth, AiCapabilityController.getScopeTools);
+router.get('/scopes/:slug/tools', authWithBuiltinApiGuard, AiCapabilityController.getScopeTools);
+
+/**
+ * @swagger
+ * /api/v1/ai/skills:
+ *   get:
+ *     tags: [AI-Service]
+ *     summary: 批量获取 Skill 详情（含 Tool 列表） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: slugs
+ *         required: true
+ *         schema: { type: string }
+ *         description: 逗号分隔的 slug 列表，单次最多 50 个
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *       304:
+ *         description: 未修改（命中 If-None-Match）
+ */
+// 注意：必须放在 /skills/:slug 之前，避免该动态路由拦截批量请求
+router.get('/skills', authWithBuiltinApiGuard, SkillController.getPublicBySlugs);
 
 /**
  * @swagger
@@ -188,8 +211,10 @@ router.get('/scopes/:slug/tools', auth, AiCapabilityController.getScopeTools);
  *     responses:
  *       200:
  *         description: 获取成功
+ *       304:
+ *         description: 未修改（命中 If-None-Match）
  */
-router.get('/skills/:slug', auth, SkillController.getPublicBySlug);
+router.get('/skills/:slug', authWithBuiltinApiGuard, SkillController.getPublicBySlug);
 
 /**
  * @swagger
@@ -212,6 +237,6 @@ router.get('/skills/:slug', auth, SkillController.getPublicBySlug);
  *       200:
  *         description: 执行成功
  */
-router.post('/tools/invoke', auth, AiCapabilityController.invokeTool);
+router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.invokeTool);
 
 module.exports = router;

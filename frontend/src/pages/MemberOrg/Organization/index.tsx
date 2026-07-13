@@ -9,14 +9,13 @@ import {
   ProTable,
 } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { useMemoizedFn, useSetState } from "ahooks";
+import { useSetState } from "ahooks";
 import { Button, Modal, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildDepartmentPrompts } from '@/ai/pageChatPrompts';
 import { tableColumns } from "./Schemas";
 import { getDepartmentsTree, deleteDepartmentsDepartmentId } from "@/services/UAC/api/departments";
-import SearchForm from '@/components/SearchForm';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { augmentColumnsWithChatReference } from '@/utils/augmentColumnsWithChatReference';
@@ -35,7 +34,6 @@ interface DepartmentRecord {
 
 interface DepartmentWithChildren extends API.Department {
   children?: DepartmentWithChildren[];
-  _searchText?: string;
 }
 
 const getAllDepartmentIds = (departments: DepartmentWithChildren[]): string[] =>
@@ -45,25 +43,12 @@ const getAllDepartmentIds = (departments: DepartmentWithChildren[]): string[] =>
     return acc;
   }, []);
 
-const processDataWithSearch = (
-  data: DepartmentWithChildren[],
-  text: string,
-): DepartmentWithChildren[] =>
-  data.map((item) => {
-    const processedItem = { ...item, _searchText: text };
-    if (item.children?.length) {
-      processedItem.children = processDataWithSearch(item.children, text);
-    }
-    return processedItem;
-  });
-
 const Page: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [messageApi, contextHolder] = message.useMessage();
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
-  const [searchText, setSearchText] = useState('');
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [isHighlighted, setIsHighlighted] = useState(false);
   const highlightTimerRef = useRef<number | undefined>(undefined);
@@ -79,7 +64,7 @@ const Page: React.FC = () => {
         {
           ...TABLE_ACTION_COLUMN_BASE,
           dataIndex: "option",
-          width: 100,
+          width: 70,
           render: (_: unknown, record: DepartmentRecord) => (
             <TableActions>
               <TableActionButton
@@ -166,17 +151,29 @@ const Page: React.FC = () => {
     };
   }, [highlightedRowId]);
 
-  const handleSearch = useMemoizedFn((value: string) => {
-    setSearchText(value);
-    actionRef.current?.reload();
-  });
+  /** 按关键词过滤部门树（保留命中节点的祖先链） */
+  const filterDepartmentTree = (
+    nodes: DepartmentWithChildren[],
+    keyword?: string,
+  ): DepartmentWithChildren[] => {
+    if (!keyword) return nodes;
+    const lower = keyword.toLowerCase();
+    const walk = (list: DepartmentWithChildren[]): DepartmentWithChildren[] => {
+      const result: DepartmentWithChildren[] = [];
+      list.forEach((node) => {
+        const children = node.children?.length ? walk(node.children) : [];
+        const nameMatch = (node.name || '').toLowerCase().includes(lower);
+        const codeMatch = (node.code || '').toLowerCase().includes(lower);
+        if (nameMatch || codeMatch || children.length) {
+          result.push({ ...node, children: children.length ? children : undefined });
+        }
+      });
+      return result;
+    };
+    return walk(nodes);
+  };
 
-  const handleReset = useMemoizedFn(() => {
-    setSearchText('');
-    actionRef.current?.reload();
-  });
-
-  const loadDepartments = useCallback(async () => {
+  const loadDepartments = useCallback(async (params) => {
     try {
       const response = await getDepartmentsTree();
       if (!isApiSuccess(response)) {
@@ -185,7 +182,13 @@ const Page: React.FC = () => {
       }
 
       const data = getApiData<{ items?: DepartmentWithChildren[] }>(response);
-      const items = data?.items ?? [];
+      let items = data?.items ?? [];
+
+      // ProTable 内置 search 过滤：部门名称
+      const keyword = (params?.name as string | undefined)?.trim().toLowerCase();
+      if (keyword) {
+        items = filterDepartmentTree(items, keyword);
+      }
 
       if (!initialExpandDoneRef.current && items.length > 0) {
         initialExpandDoneRef.current = true;
@@ -193,39 +196,20 @@ const Page: React.FC = () => {
       }
 
       return {
-        data: processDataWithSearch(items, searchText),
+        data: items,
         success: true,
       };
     } catch (error) {
       messageApi.error(getApiErrorMessage(error, '获取部门列表失败'));
       return { data: [], success: false };
     }
-  }, [messageApi, searchText]);
+  }, [messageApi]);
 
   const proTableColumns = useMemo((): ProColumns<DepartmentWithChildren>[] => {
     const nameColumn: ProColumns<DepartmentWithChildren> = {
       title: '部门名称',
       dataIndex: 'name',
       width: 240,
-      render: (text: string, record: DepartmentWithChildren) => {
-        const keyword = record._searchText || '';
-        if (!keyword) return text;
-
-        const index = text.toLowerCase().indexOf(keyword.toLowerCase());
-        if (index === -1) return text;
-
-        const beforeStr = text.substring(0, index);
-        const matchStr = text.substring(index, index + keyword.length);
-        const afterStr = text.substring(index + keyword.length);
-
-        return (
-          <span>
-            {beforeStr}
-            <span style={{ color: '#f50', backgroundColor: '#ffd591' }}>{matchStr}</span>
-            {afterStr}
-          </span>
-        );
-      },
     };
 
     return [
@@ -253,19 +237,15 @@ const Page: React.FC = () => {
               transition: 'background-color 0.3s',
             },
           })}
-          headerTitle={
-            <SearchForm
-              key="search"
-              onSearch={handleSearch}
-              onReset={handleReset}
-              placeholder="请输入部门名称"
-            />
-          }
-          search={false}
+          headerTitle="组织架构管理"
+          search={{
+            labelWidth: 'auto',
+            defaultCollapsed: false,
+          }}
           columns={proTableColumns}
           toolBarRender={() => [
             <Button
-              type="primary"
+              type="primary" className="btn-gradient-primary"
               key="create"
               icon={<PlusOutlined />}
               onClick={() => navigate('/member_org/organization/create')}

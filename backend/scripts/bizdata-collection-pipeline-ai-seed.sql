@@ -128,10 +128,23 @@ VALUES
         '采集管道页面跳转',
         'collection-pipeline-navigate',
         'collection_pipeline_navigate',
-        '在 list / create / edit / test 页面间跳转',
+        '在 list / test 页面间跳转',
         'client',
-        '{"type":"object","properties":{"target":{"type":"string","enum":["list","create","edit","test"]},"pipelineId":{"type":"string"}},"required":["target"]}'::jsonb,
-        E'## collection_pipeline_navigate\n\n页面路径前缀 `/api_services/collection-pipelines`：\n- list → 列表\n- create → 新建\n- edit → `/api_services/collection-pipelines/{id}/edit`\n- test → `/api_services/collection-pipelines/{id}/test`',
+        '{"type":"object","properties":{"target":{"type":"string","enum":["list","test"]},"pipelineId":{"type":"string"}},"required":["target"]}'::jsonb,
+        E'## collection_pipeline_navigate\n\n页面路径前缀 `/api_services/collection-pipelines`：\n- list → 列表\n- test → `/api_services/collection-pipelines/{id}/test`',
+        '{}'::jsonb,
+        true
+    ),
+    (
+        '66666666-6666-4666-8666-66666666665a',
+        '55555555-5555-4555-8555-555555555501',
+        '过滤采集管道',
+        'collection-pipeline-filter',
+        'collection_pipeline_filter',
+        '按页面过滤项检索采集管道：code 前缀 + 状态 + 协议类型，返回全部命中项（size=-1）。',
+        'client',
+        '{"type":"object","properties":{"codePrefix":{"type":"string","description":"code 前缀"},"status":{"type":"string","enum":["draft","published","disabled"]},"protocolType":{"type":"string","enum":["serial","modbus_rtu","modbus_tcp"]}}}'::jsonb,
+        E'## collection_pipeline_filter\n\n参数全可选；不传则返回全部。返回 { items, total }。',
         '{}'::jsonb,
         true
     )
@@ -173,6 +186,7 @@ WHERE s.slug = 'api-services-collection-pipeline'
   AND t.function_name IN (
     'aibase_read_surfaces',
     'collection_pipeline_list',
+    'collection_pipeline_filter',
     'collection_pipeline_get',
     'collection_pipeline_upsert',
     'collection_pipeline_publish',

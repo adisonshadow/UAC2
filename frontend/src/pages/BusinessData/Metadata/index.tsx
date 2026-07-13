@@ -1,6 +1,5 @@
 import { DatabaseOutlined } from '@ant-design/icons';
-import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, Col, Form, Input, Row, Select, Space, Table, message } from 'antd';
+import { Button, Card, Col, Form, Input, Row, Select, Space, Splitter, Table, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildMetadataPrompts } from '@/ai/pageChatPrompts';
@@ -18,12 +17,6 @@ import {
   buildMetadataTableReference,
 } from '@/ai/chatReferenceBuilders';
 import { useDataStandardOptions } from '../components/useDataStandardOptions';
-
-const TARGET_TYPE_MAP: Record<string, string> = {
-  entity: '数据实体',
-  metric: '指标',
-  enum: '枚举',
-};
 
 const MetadataCatalogPage: React.FC = () => {
   const [allTables, setAllTables] = useState<API.BizdataMetadataTable[]>([]);
@@ -178,10 +171,10 @@ const MetadataCatalogPage: React.FC = () => {
   };
 
   return (
-    <PageContainer title="元数据">
-      <Row gutter={16}>
-        <Col span={10}>
-          <Card styles={{ body: { paddingTop: 0 } }}>
+    <div style={{ height: 'calc(100vh - 56px)' }}>
+      <Splitter style={{ height: '100%' }}>
+        <Splitter.Panel defaultSize="40%" min={300} max="50%">
+          <div style={{ height: '100%', overflow: 'auto', paddingRight: 8 }}>
             <CodePathTreeTable<API.BizdataMetadataTable>
               items={filteredTables}
               loading={listLoading}
@@ -222,135 +215,127 @@ const MetadataCatalogPage: React.FC = () => {
                   </Button>
                 </Space>
               }
-              extraColumns={[
-                {
-                  title: '类型',
-                  width: 90,
-                  render: (_, item) => {
-                    if (!item) return null;
-                    return TARGET_TYPE_MAP[item.targetType || ''] || item.targetType || '-';
-                  },
-                },
-              ]}
             />
-          </Card>
-        </Col>
-        <Col span={14}>
-          <Card
-            title={detail ? `元数据：${detail.code}` : '元数据详情'}
-            loading={detailLoading}
-            extra={
-              detail && (
-                <Space>
-                  <Button onClick={() => void handleSaveTable()} loading={saving}>
-                    保存表级
-                  </Button>
-                  <Button type="primary" onClick={() => void handleSaveFields()} loading={saving}>
-                    保存字段
-                  </Button>
-                </Space>
-              )
-            }
-          >
-            {!detail ? (
-              <div style={{ color: '#888' }}>请从左侧选择一条逻辑元数据记录</div>
-            ) : (
-              <>
-                <Form form={tableForm} layout="vertical">
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item name="metadataCode" label="表级元数据编码">
-                        <Input />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item name="standardId" label="数据标准">
-                        <Select allowClear options={standardOptions} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={24}>
-                      <Form.Item name="businessMeaning" label="业务释义">
-                        <Input.TextArea rows={2} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item name="status" label="状态">
-                        <Select
-                          options={[
-                            { label: '启用', value: 'enabled' },
-                            { label: '停用', value: 'disabled' },
-                          ]}
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Form>
+          </div>
+        </Splitter.Panel>
+        <Splitter.Panel>
+          <div style={{ height: '100%', overflow: 'auto', paddingLeft: 4 }}>
+            <Card
+              title={detail ? `元数据：${detail.code}` : '元数据详情'}
+              loading={detailLoading}
+              extra={
+                detail && (
+                  <Space>
+                    <Button onClick={() => void handleSaveTable()} loading={saving}>
+                      保存表级
+                    </Button>
+                    <Button type="primary" onClick={() => void handleSaveFields()} loading={saving}>
+                      保存字段
+                    </Button>
+                  </Space>
+                )
+              }
+            >
+              {!detail ? (
+                <div style={{ color: '#888' }}>请从左侧选择一条逻辑元数据记录</div>
+              ) : (
+                <>
+                  <Form form={tableForm} layout="vertical">
+                    <Row gutter={16}>
+                      <Col span={12}>
+                        <Form.Item name="metadataCode" label="表级元数据编码">
+                          <Input />
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item name="standardId" label="数据标准">
+                          <Select allowClear options={standardOptions} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={24}>
+                        <Form.Item name="businessMeaning" label="业务释义">
+                          <Input.TextArea rows={2} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={12}>
+                        <Form.Item name="status" label="状态">
+                          <Select
+                            options={[
+                              { label: '启用', value: 'enabled' },
+                              { label: '停用', value: 'disabled' },
+                            ]}
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Form>
 
-                <Table
-                  size="small"
-                  rowKey="id"
-                  style={{ marginTop: 16 }}
-                  dataSource={detail.fields || []}
-                  pagination={false}
-                  columns={[
-                    { title: '字段', dataIndex: 'fieldKey', width: 120 },
-                    {
-                      title: '元数据编码',
-                      dataIndex: 'metadataCode',
-                      render: (v, _, index) => (
-                        <Input
-                          size="small"
-                          value={v}
-                          onChange={(e) => updateField(index, { metadataCode: e.target.value })}
-                        />
-                      ),
-                    },
-                    {
-                      title: '数据标准',
-                      dataIndex: 'standardId',
-                      width: 200,
-                      render: (v, _, index) => (
-                        <Select
-                          size="small"
-                          allowClear
-                          style={{ width: '100%' }}
-                          value={v}
-                          options={standardOptions}
-                          onChange={(val) => updateField(index, { standardId: val })}
-                        />
-                      ),
-                    },
-                    {
-                      title: '业务释义',
-                      dataIndex: 'businessMeaning',
-                      render: (v, _, index) => (
-                        <Input
-                          size="small"
-                          value={v}
-                          onChange={(e) => updateField(index, { businessMeaning: e.target.value })}
-                        />
-                      ),
-                    },
-                    {
-                      title: '敏感等级',
-                      dataIndex: 'sensitivityLevel',
-                      width: 100,
-                      render: (v, _, index) => (
-                        <Input
-                          size="small"
-                          value={v}
-                          onChange={(e) => updateField(index, { sensitivityLevel: e.target.value })}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-              </>
-            )}
-          </Card>
-        </Col>
-      </Row>
-    </PageContainer>
+                  <Table
+                    size="small"
+                    rowKey="id"
+                    style={{ marginTop: 16 }}
+                    dataSource={detail.fields || []}
+                    pagination={false}
+                    columns={[
+                      { title: '字段', dataIndex: 'fieldKey', width: 120 },
+                      {
+                        title: '元数据编码',
+                        dataIndex: 'metadataCode',
+                        render: (v, _, index) => (
+                          <Input
+                            size="small"
+                            value={v}
+                            onChange={(e) => updateField(index, { metadataCode: e.target.value })}
+                          />
+                        ),
+                      },
+                      {
+                        title: '数据标准',
+                        dataIndex: 'standardId',
+                        width: 200,
+                        render: (v, _, index) => (
+                          <Select
+                            size="small"
+                            allowClear
+                            style={{ width: '100%' }}
+                            value={v}
+                            options={standardOptions}
+                            onChange={(val) => updateField(index, { standardId: val })}
+                          />
+                        ),
+                      },
+                      {
+                        title: '业务释义',
+                        dataIndex: 'businessMeaning',
+                        render: (v, _, index) => (
+                          <Input
+                            size="small"
+                            value={v}
+                            onChange={(e) => updateField(index, { businessMeaning: e.target.value })}
+                          />
+                        ),
+                      },
+                      {
+                        title: '敏感等级',
+                        dataIndex: 'sensitivityLevel',
+                        width: 100,
+                        render: (v, _, index) => (
+                          <Input
+                            size="small"
+                            value={v}
+                            onChange={(e) => updateField(index, { sensitivityLevel: e.target.value })}
+                          />
+                        ),
+                      },
+                    ]}
+                  />
+                </>
+              )}
+            </Card>
+          </div>
+        </Splitter.Panel>
+      </Splitter>
+    </div>
   );
 };
 

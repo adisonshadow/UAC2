@@ -4,6 +4,7 @@ const MetricController = require('../controllers/metricController');
 const DataStandardController = require('../controllers/dataStandardController');
 const MetadataCatalogController = require('../controllers/metadataCatalogController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({ prefix: '/api/v1/business-data' });
 
@@ -18,7 +19,7 @@ const router = new Router({ prefix: '/api/v1/business-data' });
  *       200:
  *         description: 获取成功
  */
-router.get('/schema', auth, BusinessDataController.getSchema);
+router.get('/schema', authWithBuiltinApiGuard, BusinessDataController.getSchema);
 
 /**
  * @swagger
@@ -65,8 +66,8 @@ router.get('/schema', auth, BusinessDataController.getSchema);
  *       201:
  *         description: 创建成功
  */
-router.get('/entities', auth, BusinessDataController.listEntities);
-router.post('/entities', auth, BusinessDataController.createEntity);
+router.get('/entities', authWithBuiltinApiGuard, BusinessDataController.listEntities);
+router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createEntity);
 
 /**
  * @swagger
@@ -92,6 +93,21 @@ router.post('/entities', auth, BusinessDataController.createEntity);
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               code: { type: string, description: "Scope:Entity 编码；变更时在同一事务中级联更新元数据、API 服务、采集管道、物化记录、关系配置等引用，并同步重命名已物化的物理表/集合；任一步失败则全部回滚" }
+ *               label: { type: string }
+ *               entityKind: { type: string, enum: [er_table, json_schema] }
+ *               tableName: { type: string, description: "ER 表物理表名；不填且原表名为默认推导值时随 code 同步变更，并同步重命名已物化的物理表/集合" }
+ *               status: { type: string, enum: [enabled, disabled, archived] }
+ *               isLocked: { type: boolean }
+ *               entityInfo: { type: object }
+ *               jsonSchema: { type: object }
+ *               layout: { type: object }
  *     responses:
  *       200:
  *         description: 更新成功
@@ -108,9 +124,9 @@ router.post('/entities', auth, BusinessDataController.createEntity);
  *       200:
  *         description: 删除成功
  */
-router.get('/entities/:id', auth, BusinessDataController.getEntity);
-router.patch('/entities/:id', auth, BusinessDataController.updateEntity);
-router.delete('/entities/:id', auth, BusinessDataController.deleteEntity);
+router.get('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.getEntity);
+router.patch('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.updateEntity);
+router.delete('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.deleteEntity);
 
 /**
  * @swagger
@@ -161,7 +177,7 @@ router.delete('/entities/:id', auth, BusinessDataController.deleteEntity);
  *       200:
  *         description: 保存成功
  */
-router.put('/entities/:id/fields', auth, BusinessDataController.upsertFields);
+router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataController.upsertFields);
 
 /**
  * @swagger
@@ -181,8 +197,8 @@ router.put('/entities/:id/fields', auth, BusinessDataController.upsertFields);
  *       201:
  *         description: 创建成功
  */
-router.get('/enums', auth, BusinessDataController.listEnums);
-router.post('/enums', auth, BusinessDataController.createEnum);
+router.get('/enums', authWithBuiltinApiGuard, BusinessDataController.listEnums);
+router.post('/enums', authWithBuiltinApiGuard, BusinessDataController.createEnum);
 
 /**
  * @swagger
@@ -212,8 +228,8 @@ router.post('/enums', auth, BusinessDataController.createEnum);
  *       200:
  *         description: 删除成功
  */
-router.patch('/enums/:id', auth, BusinessDataController.updateEnum);
-router.delete('/enums/:id', auth, BusinessDataController.deleteEnum);
+router.patch('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.updateEnum);
+router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.deleteEnum);
 
 /**
  * @swagger
@@ -233,8 +249,8 @@ router.delete('/enums/:id', auth, BusinessDataController.deleteEnum);
  *       201:
  *         description: 创建成功
  */
-router.get('/relations', auth, BusinessDataController.listRelations);
-router.post('/relations', auth, BusinessDataController.createRelation);
+router.get('/relations', authWithBuiltinApiGuard, BusinessDataController.listRelations);
+router.post('/relations', authWithBuiltinApiGuard, BusinessDataController.createRelation);
 
 /**
  * @swagger
@@ -264,8 +280,8 @@ router.post('/relations', auth, BusinessDataController.createRelation);
  *       200:
  *         description: 删除成功
  */
-router.patch('/relations/:id', auth, BusinessDataController.updateRelation);
-router.delete('/relations/:id', auth, BusinessDataController.deleteRelation);
+router.patch('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.updateRelation);
+router.delete('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.deleteRelation);
 
 /**
  * @swagger
@@ -289,7 +305,7 @@ router.delete('/relations/:id', auth, BusinessDataController.deleteRelation);
  *       200:
  *         description: 预览成功
  */
-router.post('/materialization/preview', auth, BusinessDataController.previewMaterialization);
+router.post('/materialization/preview', authWithBuiltinApiGuard, BusinessDataController.previewMaterialization);
 
 /**
  * @swagger
@@ -322,7 +338,7 @@ router.post('/materialization/preview', auth, BusinessDataController.previewMate
  *       409:
  *         description: 目标 Schema/数据库不存在，需用户确认后带 createTargetIfMissing 重试
  */
-router.post('/materialization/execute', auth, BusinessDataController.executeMaterialization);
+router.post('/materialization/execute', authWithBuiltinApiGuard, BusinessDataController.executeMaterialization);
 
 /**
  * @swagger
@@ -339,7 +355,7 @@ router.post('/materialization/execute', auth, BusinessDataController.executeMate
  *       200:
  *         description: 获取成功
  */
-router.get('/materialization/status', auth, BusinessDataController.getMaterializationStatus);
+router.get('/materialization/status', authWithBuiltinApiGuard, BusinessDataController.getMaterializationStatus);
 
 /**
  * @swagger
@@ -362,7 +378,7 @@ router.get('/materialization/status', auth, BusinessDataController.getMaterializ
  *       200:
  *         description: 获取成功
  */
-router.get('/materialization/runs', auth, BusinessDataController.listMaterializationRuns);
+router.get('/materialization/runs', authWithBuiltinApiGuard, BusinessDataController.listMaterializationRuns);
 
 /**
  * @swagger
@@ -380,7 +396,7 @@ router.get('/materialization/runs', auth, BusinessDataController.listMaterializa
  *       200:
  *         description: 获取成功
  */
-router.get('/materialization/runs/:id', auth, BusinessDataController.getMaterializationRun);
+router.get('/materialization/runs/:id', authWithBuiltinApiGuard, BusinessDataController.getMaterializationRun);
 
 /**
  * @swagger
@@ -511,8 +527,8 @@ router.post(
  *       201:
  *         description: 创建成功
  */
-router.get('/database-connections', auth, BusinessDataController.listDatabaseConnections);
-router.post('/database-connections', auth, BusinessDataController.createDatabaseConnection);
+router.get('/database-connections', authWithBuiltinApiGuard, BusinessDataController.listDatabaseConnections);
+router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataController.createDatabaseConnection);
 
 /**
  * @swagger
@@ -542,8 +558,8 @@ router.post('/database-connections', auth, BusinessDataController.createDatabase
  *       200:
  *         description: 删除成功
  */
-router.put('/database-connections/:id', auth, BusinessDataController.updateDatabaseConnection);
-router.delete('/database-connections/:id', auth, BusinessDataController.deleteDatabaseConnection);
+router.put('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.updateDatabaseConnection);
+router.delete('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.deleteDatabaseConnection);
 
 /**
  * @swagger
@@ -561,7 +577,7 @@ router.delete('/database-connections/:id', auth, BusinessDataController.deleteDa
  *       200:
  *         description: 测试成功
  */
-router.post('/database-connections/:id/test', auth, BusinessDataController.testDatabaseConnection);
+router.post('/database-connections/:id/test', authWithBuiltinApiGuard, BusinessDataController.testDatabaseConnection);
 
 /**
  * @swagger
@@ -574,7 +590,7 @@ router.post('/database-connections/:id/test', auth, BusinessDataController.testD
  *       200:
  *         description: 获取成功，data.tree 为树形结构，data.items 为扁平列表
  */
-router.get('/scopes', auth, BusinessDataController.listScopes);
+router.get('/scopes', authWithBuiltinApiGuard, BusinessDataController.listScopes);
 
 /**
  * @swagger
@@ -594,7 +610,7 @@ router.get('/scopes', auth, BusinessDataController.listScopes);
  *       200:
  *         description: 获取成功
  */
-router.get('/metrics/dashboard', auth, MetricController.getDashboard);
+router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDashboard);
 
 /**
  * @swagger
@@ -614,7 +630,7 @@ router.get('/metrics/dashboard', auth, MetricController.getDashboard);
  *       200:
  *         description: 执行完成
  */
-router.post('/metrics/execute-batch', auth, MetricController.executeBatch);
+router.post('/metrics/execute-batch', authWithBuiltinApiGuard, MetricController.executeBatch);
 
 /**
  * @swagger
@@ -650,8 +666,8 @@ router.post('/metrics/execute-batch', auth, MetricController.executeBatch);
  *       201:
  *         description: 创建成功
  */
-router.get('/metrics', auth, MetricController.listMetrics);
-router.post('/metrics', auth, MetricController.createMetric);
+router.get('/metrics', authWithBuiltinApiGuard, MetricController.listMetrics);
+router.post('/metrics', authWithBuiltinApiGuard, MetricController.createMetric);
 
 /**
  * @swagger
@@ -669,7 +685,7 @@ router.post('/metrics', auth, MetricController.createMetric);
  *       200:
  *         description: 执行成功
  */
-router.post('/metrics/:id/execute', auth, MetricController.executeMetric);
+router.post('/metrics/:id/execute', authWithBuiltinApiGuard, MetricController.executeMetric);
 
 /**
  * @swagger
@@ -687,7 +703,7 @@ router.post('/metrics/:id/execute', auth, MetricController.executeMetric);
  *       200:
  *         description: 获取成功
  */
-router.get('/metrics/:id/runs', auth, MetricController.listRuns);
+router.get('/metrics/:id/runs', authWithBuiltinApiGuard, MetricController.listRuns);
 
 /**
  * @swagger
@@ -705,7 +721,7 @@ router.get('/metrics/:id/runs', auth, MetricController.listRuns);
  *       200:
  *         description: 获取成功
  */
-router.get('/metrics/:id/values', auth, MetricController.listValues);
+router.get('/metrics/:id/values', authWithBuiltinApiGuard, MetricController.listValues);
 
 /**
  * @swagger
@@ -726,7 +742,7 @@ router.get('/metrics/:id/values', auth, MetricController.listValues);
  *       200:
  *         description: 获取成功
  */
-router.get('/metrics/:id/value', auth, MetricController.getValue);
+router.get('/metrics/:id/value', authWithBuiltinApiGuard, MetricController.getValue);
 
 /**
  * @swagger
@@ -768,9 +784,9 @@ router.get('/metrics/:id/value', auth, MetricController.getValue);
  *       200:
  *         description: 删除成功
  */
-router.get('/metrics/:id', auth, MetricController.getMetric);
-router.patch('/metrics/:id', auth, MetricController.updateMetric);
-router.delete('/metrics/:id', auth, MetricController.deleteMetric);
+router.get('/metrics/:id', authWithBuiltinApiGuard, MetricController.getMetric);
+router.patch('/metrics/:id', authWithBuiltinApiGuard, MetricController.updateMetric);
+router.delete('/metrics/:id', authWithBuiltinApiGuard, MetricController.deleteMetric);
 
 /**
  * @swagger
@@ -803,8 +819,8 @@ router.delete('/metrics/:id', auth, MetricController.deleteMetric);
  *       201:
  *         description: 创建成功
  */
-router.get('/data-standards', auth, DataStandardController.list);
-router.post('/data-standards', auth, DataStandardController.create);
+router.get('/data-standards', authWithBuiltinApiGuard, DataStandardController.list);
+router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.create);
 
 /**
  * @swagger
@@ -846,9 +862,9 @@ router.post('/data-standards', auth, DataStandardController.create);
  *       200:
  *         description: 删除成功
  */
-router.get('/data-standards/:id', auth, DataStandardController.get);
-router.put('/data-standards/:id', auth, DataStandardController.update);
-router.delete('/data-standards/:id', auth, DataStandardController.delete);
+router.get('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.get);
+router.put('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.update);
+router.delete('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.delete);
 
 /**
  * @swagger
@@ -868,8 +884,8 @@ router.delete('/data-standards/:id', auth, DataStandardController.delete);
  *       200:
  *         description: 保存成功
  */
-router.get('/metadata/tables', auth, MetadataCatalogController.listTables);
-router.post('/metadata/tables', auth, MetadataCatalogController.upsertTable);
+router.get('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogController.listTables);
+router.post('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogController.upsertTable);
 
 /**
  * @swagger
@@ -892,7 +908,7 @@ router.post('/metadata/tables', auth, MetadataCatalogController.upsertTable);
  *       200:
  *         description: 获取成功
  */
-router.get('/metadata/by-target', auth, MetadataCatalogController.getByTarget);
+router.get('/metadata/by-target', authWithBuiltinApiGuard, MetadataCatalogController.getByTarget);
 
 /**
  * @swagger
@@ -905,7 +921,7 @@ router.get('/metadata/by-target', auth, MetadataCatalogController.getByTarget);
  *       200:
  *         description: 同步成功
  */
-router.post('/metadata/sync-from-schema', auth, MetadataCatalogController.syncFromSchema);
+router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatalogController.syncFromSchema);
 
 /**
  * @swagger
@@ -937,9 +953,9 @@ router.post('/metadata/sync-from-schema', auth, MetadataCatalogController.syncFr
  *       200:
  *         description: 删除成功
  */
-router.get('/metadata/tables/:id', auth, MetadataCatalogController.getTable);
-router.put('/metadata/tables/:id', auth, MetadataCatalogController.updateTable);
-router.delete('/metadata/tables/:id', auth, MetadataCatalogController.deleteTable);
+router.get('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.getTable);
+router.put('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.updateTable);
+router.delete('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.deleteTable);
 
 /**
  * @swagger
@@ -952,7 +968,7 @@ router.delete('/metadata/tables/:id', auth, MetadataCatalogController.deleteTabl
  *       200:
  *         description: 更新成功
  */
-router.put('/metadata/tables/:id/fields', auth, MetadataCatalogController.updateFields);
+router.put('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatalogController.updateFields);
 
 /**
  * @swagger
@@ -965,6 +981,6 @@ router.put('/metadata/tables/:id/fields', auth, MetadataCatalogController.update
  *       200:
  *         description: 保存成功
  */
-router.post('/metadata/tables/:id/fields', auth, MetadataCatalogController.upsertField);
+router.post('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatalogController.upsertField);
 
 module.exports = router;

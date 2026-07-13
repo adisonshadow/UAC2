@@ -2,16 +2,15 @@ import {
   CheckSquareFilled,
   DeleteOutlined,
   EditOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SignatureFilled,
 } from '@ant-design/icons';
-import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
+import { useScopeFromUrl, useUrlPagination } from '@/hooks/useUrlQueryState';
 import type { ProColumns } from '@ant-design/pro-components';
 
-import { Button, Card, Popconfirm, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Popconfirm, Splitter, Tag, Tooltip, Typography, message } from 'antd';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAIChatPrompts, useChatReference, useAISurface } from '@EADAF/ai-base';
 import { buildApiServiceListPrompts } from '@/ai/pageChatPrompts';
@@ -19,8 +18,6 @@ import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
-import { useUserHabit } from '@/hooks/useUserHabit';
-import { panelCollapseKey } from '@/utils/userHabit';
 import { augmentColumnsWithChatReference } from '@/utils/augmentColumnsWithChatReference';
 import { buildApiServiceReference } from '@/ai/chatReferenceBuilders';
 import { apiServiceStatusEnum } from '@/enums';
@@ -46,18 +43,6 @@ import {
 const { Text } = Typography;
 
 const VIEWPORT_HEIGHT = 'calc(100vh - 56px)';
-
-const columnCardStyle: React.CSSProperties = {
-  height: VIEWPORT_HEIGHT,
-  display: 'flex',
-  flexDirection: 'column',
-};
-
-const columnCardBodyStyle: React.CSSProperties = {
-  flex: 1,
-  minHeight: 0,
-  overflow: 'auto',
-};
 
 type ListFilters = {
   status?: string;
@@ -152,7 +137,7 @@ const columns = (
   },
   {
     ...TABLE_ACTION_COLUMN_BASE,
-    width: 200,
+    width: 120,
     render: (_, record) => (
       <TableActions>
         <TableActionButton
@@ -219,7 +204,8 @@ function mapApiService(item: API.ApiService): ApiServiceListItem {
 const ApiServiceListPage: React.FC = () => {
   const navigate = useNavigate();
   const [messageApi, contextHolder] = message.useMessage();
-  const [domainPrefix, setDomainPrefix] = useState<string | undefined>();
+  const [domainPrefix, setDomainPrefix] = useScopeFromUrl();
+  const { resetPage } = useUrlPagination(10);
   const [allServices, setAllServices] = useState<ApiServiceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [domainTree, setDomainTree] = useState<ReturnType<typeof buildApiServiceDomainTree>>([]);
@@ -305,104 +291,86 @@ const ApiServiceListPage: React.FC = () => {
   };
 
   const treeData = domainTree.length ? domainTree : buildApiServiceDomainTree(allServices);
-  const [domainPanelCollapsed, setDomainPanelCollapsed] = useUserHabit(
-    panelCollapseKey('api-services.list.domain'),
-    false,
-  );
   const search = useProTableSearchCollapse('api-services.list', { defaultCollapsed: false });
 
   return (
-    <PageContainer pageHeaderRender={() => <></>}>
+    <>
       {contextHolder}
-      <div style={{ display: 'flex', gap: 16, height: VIEWPORT_HEIGHT, position: 'relative' }}>
-        {domainPanelCollapsed ? (
-          <Button
-            type="text"
-            size="small"
-            aria-label="展开域面板"
-            icon={<MenuUnfoldOutlined />}
-            onClick={() => setDomainPanelCollapsed(false)}
-            style={{ position: 'absolute', left: 0, top: 16, zIndex: 1 }}
-          />
-        ) : (
-          <Card
-            title="域"
-            extra={
-              <Button
-                type="text"
-                size="small"
-                aria-label="折叠域面板"
-                icon={<MenuFoldOutlined />}
-                onClick={() => setDomainPanelCollapsed(true)}
-              />
-            }
-            style={{ width: 260, flexShrink: 0, ...columnCardStyle }}
-            styles={{ body: columnCardBodyStyle }}
+      <div style={{ height: VIEWPORT_HEIGHT }}>
+        <Splitter style={{ height: '100%' }}>
+          <Splitter.Panel
+            defaultSize={260}
+            min={200}
+            max="40%"
+            collapsible
           >
-            <ApiServiceDomainTree
-              treeData={treeData}
-              selectedDomain={domainPrefix}
-              onSelectDomain={setDomainPrefix}
-              loading={loading}
-            />
-          </Card>
-        )}
-        <Card
-          style={{ flex: 1, minWidth: 0, ...columnCardStyle }}
-          styles={{ body: { ...columnCardBodyStyle, paddingTop: 0 } }}
-        >
-          <ProTable<ApiServiceListItem>
-            {...DEFAULT_PRO_TABLE_OPTIONS}
-            rowKey="id"
-            headerTitle={
-              domainPrefix ? (
-                <span>
-                  当前域：<Tag>{domainPrefix}</Tag>
-                </span>
-              ) : (
-                '显示全部 API 服务'
-              )
-            }
-            search={search}
-            scroll={{ x: 'max-content' }}
-            loading={loading}
-            columns={augmentColumnsWithChatReference(
-              columns(
-                handlePublish,
-                handleDelete,
-                (record) => navigate(`/api_services/${record.id}/test`),
-                (record) => navigate(`/api_services/${record.id}/edit`),
-              ),
-              'name',
-              buildApiServiceReference,
-            )}
-            dataSource={filteredServices}
-            pagination={{ pageSize: 10 }}
-            locale={{ emptyText: '暂无 API 服务，请先新建' }}
-            onSubmit={(values) => {
-              setListFilters({
-                status: values.status as string | undefined,
-                tag: values.tag as string | undefined,
-                keyword: values.code as string | undefined,
-              });
-            }}
-            onReset={() => {
-              setListFilters({});
-            }}
-            toolBarRender={() => [
-              <Button
-                key="create"
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => navigate('/api_services/create')}
-              >
-                新建
-              </Button>,
-            ]}
-          />
-        </Card>
+            <div style={{ height: '100%', overflow: 'auto', paddingRight: 8 }}>
+              <ApiServiceDomainTree
+                treeData={treeData}
+                selectedDomain={domainPrefix}
+                onSelectDomain={setDomainPrefix}
+                loading={loading}
+              />
+            </div>
+          </Splitter.Panel>
+          <Splitter.Panel>
+            <div style={{ height: '100%', overflow: 'auto', paddingLeft: 4 }}>
+              <UrlSyncedProTable<ApiServiceListItem>
+                {...DEFAULT_PRO_TABLE_OPTIONS}
+                rowKey="id"
+                headerTitle={
+                  domainPrefix ? (
+                    <span>
+                      当前域：<Tag>{domainPrefix}</Tag>
+                    </span>
+                  ) : (
+                    '显示全部 API 服务'
+                  )
+                }
+                search={search}
+                scroll={{ x: 'max-content' }}
+                loading={loading}
+                columns={augmentColumnsWithChatReference(
+                  columns(
+                    handlePublish,
+                    handleDelete,
+                    (record) => navigate(`/api_services/${record.id}/test`),
+                    (record) => navigate(`/api_services/${record.id}/edit`),
+                  ),
+                  'name',
+                  buildApiServiceReference,
+                )}
+                dataSource={filteredServices}
+                defaultPageSize={10}
+                locale={{ emptyText: '暂无 API 服务，请先新建' }}
+                onSubmit={(values) => {
+                  resetPage();
+                  setListFilters({
+                    status: values.status as string | undefined,
+                    tag: values.tag as string | undefined,
+                    keyword: values.code as string | undefined,
+                  });
+                }}
+                onReset={() => {
+                  resetPage();
+                  setListFilters({});
+                }}
+                toolBarRender={() => [
+                  <Button
+                    key="create"
+                    type="primary" className="btn-gradient-primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => navigate('/api_services/create')}
+                  >
+                    新建
+                  </Button>,
+                ]}
+              />
+            </div>
+          </Splitter.Panel>
+        </Splitter>
       </div>
-    </PageContainer>
+    </>
   );
 };
 

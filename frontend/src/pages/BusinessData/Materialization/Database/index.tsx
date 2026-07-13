@@ -1,9 +1,10 @@
 import { ReloadOutlined } from '@ant-design/icons';
-import { PageContainer } from '@ant-design/pro-components';
-import { Button, Select, Space, message } from 'antd';
+import { Button, Select, Space, Splitter, message } from 'antd';
 import { useAISurface, useAIChatPrompts, useChatReference, sendMockUserMessage } from '@EADAF/ai-base';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildMaterializedDatabasePrompts } from '@/ai/pageChatPrompts';
+import { useScopeFromUrl } from '@/hooks/useUrlQueryState';
+import ScopeDomainTree from '@/components/ScopeDomainTree';
 import MaterializedTableList, { materializedRowKey } from '../components/MaterializedTableList';
 import { useDatabaseConnections } from '../hooks/useMaterializationData';
 import { buildMockDataPrompt } from '../utils/mockDataPrompt';
@@ -15,8 +16,9 @@ const MaterializedDatabasePage: React.FC = () => {
   const [items, setItems] = useState<API.MaterializationStatusItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-
+  const [selectedScope, setSelectedScope] = useScopeFromUrl();
   const connectionIdRef = useRef(connectionId);
+  const prevConnectionIdRef = useRef<string | undefined>(undefined);
   connectionIdRef.current = connectionId;
 
   const { connections, defaultConnection } = useDatabaseConnections();
@@ -52,12 +54,24 @@ const MaterializedDatabasePage: React.FC = () => {
 
   useEffect(() => {
     setSelectedRowKeys([]);
-  }, [connectionId]);
+    const prev = prevConnectionIdRef.current;
+    if (prev !== undefined && prev !== connectionId) {
+      setSelectedScope(undefined);
+    }
+    prevConnectionIdRef.current = connectionId;
+  }, [connectionId, setSelectedScope]);
 
   const materializedItems = useMemo(
     () => items.filter((item) => item.materializedVersion != null && item.staleStatus !== 'not_materialized'),
     [items],
   );
+
+  const filteredItems = useMemo(() => {
+    if (!selectedScope) return materializedItems;
+    return materializedItems.filter(
+      (item) => item.code === selectedScope || item.code?.startsWith(`${selectedScope}:`),
+    );
+  }, [materializedItems, selectedScope]);
 
   const staleCount = useMemo(
     () => materializedItems.filter((i) => i.staleStatus === 'stale').length,
@@ -65,8 +79,8 @@ const MaterializedDatabasePage: React.FC = () => {
   );
 
   const selectedItems = useMemo(
-    () => materializedItems.filter((item) => selectedRowKeys.includes(materializedRowKey(item))),
-    [materializedItems, selectedRowKeys],
+    () => filteredItems.filter((item) => selectedRowKeys.includes(materializedRowKey(item))),
+    [filteredItems, selectedRowKeys],
   );
 
   useAISurface({
@@ -90,10 +104,10 @@ const MaterializedDatabasePage: React.FC = () => {
       }
     },
     matchMutation: (mutation) =>
-      mutation.domain === 'bizdata' &&
-      (mutation.type.startsWith('materialization.') ||
-        mutation.scope === 'bizdata.database.status' ||
-        mutation.scope === 'bizdata.materialization.execute'),
+      mutation.domain === 'bizdata'
+      && (mutation.type.startsWith('materialization.')
+        || mutation.scope === 'bizdata.database.status'
+        || mutation.scope === 'bizdata.materialization.execute'),
   });
 
   const handleMockData = () => {
@@ -102,37 +116,55 @@ const MaterializedDatabasePage: React.FC = () => {
   };
 
   return (
-    <PageContainer pageHeaderRender={() => <></>}>
-      <Space orientation="vertical" size={16} style={{ width: '100%', paddingTop: 16 }}>
-        <Space wrap>
-          <Select
-            style={{ width: 240 }}
-            placeholder="选择数据库连接"
-            value={connectionId}
-            options={connections.map((c) => ({
-              label: `${c.name} (${c.dbType})`,
-              value: c.id,
-            }))}
-            onChange={setConnectionId}
-          />
-          <Button icon={<ReloadOutlined />} onClick={() => void loadStatus()}>
-            刷新
-          </Button>
-          {selectedRowKeys.length > 0 && (
-            <Button type="primary" onClick={handleMockData}>
-              AI MOCK数据
-            </Button>
-          )}
-        </Space>
-        <MaterializedTableList
-          items={materializedItems}
-          loading={loading}
-          showConnectionInfo
-          selectedRowKeys={selectedRowKeys}
-          onSelectionChange={(keys) => setSelectedRowKeys(keys)}
-        />
-      </Space>
-    </PageContainer>
+    <div style={{ height: 'calc(100vh - 56px)' }}>
+      <Splitter style={{ height: '100%' }}>
+        <Splitter.Panel defaultSize={300} min={220} max="40%">
+          <div style={{ height: '100%', overflow: 'auto', paddingRight: 8 }}>
+            <ScopeDomainTree
+              items={materializedItems}
+              selectedScope={selectedScope}
+              onSelect={setSelectedScope}
+              loading={loading}
+              emptyDescription="暂无域"
+            />
+          </div>
+        </Splitter.Panel>
+        <Splitter.Panel>
+          <div style={{ height: '100%', overflow: 'auto', paddingLeft: 4 }}>
+            <MaterializedTableList
+              items={filteredItems}
+              loading={loading}
+              showConnectionInfo
+              selectedRowKeys={selectedRowKeys}
+              onSelectionChange={(keys) => setSelectedRowKeys(keys)}
+              headerExtra={
+                <Space wrap>
+                  <Select
+                    style={{ width: 240 }}
+                    placeholder="选择数据库连接"
+                    value={connectionId}
+                    options={connections.map((c) => ({
+                      label: `${c.name} (${c.dbType})`,
+                      value: c.id,
+                    }))}
+                    onChange={setConnectionId}
+                  />
+                  <Button icon={<ReloadOutlined />} onClick={() => void loadStatus()}>
+                    刷新
+                  </Button>
+                  {selectedRowKeys.length > 0 && (
+                    <Button type="primary" onClick={handleMockData}>
+                      AI MOCK数据
+                    </Button>
+                  )}
+                </Space>
+              }
+              headerTitle={selectedScope ? `物化表（${selectedScope}）` : '全部物化表'}
+            />
+          </div>
+        </Splitter.Panel>
+      </Splitter>
+    </div>
   );
 };
 

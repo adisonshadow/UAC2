@@ -1,10 +1,10 @@
 import {
   DeleteOutlined,
   EditOutlined,
-  EyeOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { ActionType, PageContainer, ProTable } from '@ant-design/pro-components';
+import { ActionType, PageContainer } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Modal, message } from 'antd';
 import React, { useRef, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -52,7 +52,7 @@ const SkillsPage: React.FC = () => {
   return (
     <PageContainer pageHeaderRender={() => <></>}>
       {contextHolder}
-      <ProTable
+      <UrlSyncedProTable
         actionRef={actionRef}
         rowKey="id"
         scroll={{ x: 'max-content' }}
@@ -61,14 +61,9 @@ const SkillsPage: React.FC = () => {
           ...augmentColumnsWithChatReference(skillTableColumns, 'name', buildAISkillListReference),
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 120,
+            width: 70,
             render: (_, record) => (
               <TableActions>
-                <TableActionButton
-                  title="查看"
-                  icon={<EyeOutlined />}
-                  onClick={() => navigate(`/ai_management/skills/${record.id}`)}
-                />
                 <TableActionButton
                   title="编辑"
                   icon={<EditOutlined />}
@@ -91,7 +86,7 @@ const SkillsPage: React.FC = () => {
         toolBarRender={() => [
           <Button
             key="create"
-            type="primary"
+            type="primary" className="btn-gradient-primary"
             icon={<PlusOutlined />}
             onClick={() => navigate('/ai_management/skills/create')}
           >

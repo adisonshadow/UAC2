@@ -1,11 +1,25 @@
 import type { FunctionCallDef } from '../types';
 import { withToolInvokeLog } from '../utils/toolInvokeLogger';
 
+/** 默认命名空间：未显式传 namespace 的注册与查询都落在这里（向后兼容） */
+const DEFAULT_NAMESPACE = 'default';
+
 const registry = new Map<string, FunctionCallDef>();
 const listeners = new Set<() => void>();
 
 function notifyRegistryChange() {
   listeners.forEach((listener) => listener());
+}
+
+/** 内部 key：namespace + name 组合，保证不同命名空间同名 Tool 不冲突 */
+function makeKey(namespace: string, name: string): string {
+  return `${namespace}::${name}`;
+}
+
+/** 归一化命名空间入参：空值 → 默认命名空间 */
+function resolveNamespace(namespace?: string): string {
+  const trimmed = (namespace || '').trim();
+  return trimmed || DEFAULT_NAMESPACE;
 }
 
 /** 本地 client Tool 注册/注销时订阅，用于刷新可用 Tool 列表 */
@@ -14,23 +28,105 @@ export function subscribeFunctionCalls(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-export function registerFunctionCall(def: FunctionCallDef): void {
-  registry.set(def.name, def);
+export interface RegisterFunctionCallOptions {
+  /**
+   * 命名空间隔离：同一 name 在不同 namespace 下可并存。
+   * 默认 'default'（向后兼容现有注册）。微前端/多面板场景可按 app/scope 隔离。
+   */
+  namespace?: string;
+}
+
+/**
+ * 注册本地 client Tool。
+ * - 不传 namespace：落 'default'，行为与历史版本一致。
+ * - 传 namespace：落该命名空间，不与同名 Tool 冲突。
+ */
+export function registerFunctionCall(
+  def: FunctionCallDef,
+  options?: RegisterFunctionCallOptions,
+): void {
+  const ns = resolveNamespace(options?.namespace);
+  registry.set(makeKey(ns, def.name), def);
   notifyRegistryChange();
 }
 
-export function unregisterFunctionCall(name: string): void {
-  if (registry.delete(name)) {
+/**
+ * 注销本地 client Tool。
+ * @param name Tool functionName
+ * @param namespace 与注册时一致；未传则注销 'default' 命名空间下的同名 Tool。
+ */
+export function unregisterFunctionCall(name: string, namespace?: string): void {
+  const ns = resolveNamespace(namespace);
+  if (registry.delete(makeKey(ns, name))) {
     notifyRegistryChange();
   }
 }
 
-export function getFunctionCallDef(name: string): FunctionCallDef | undefined {
-  return registry.get(name);
+/**
+ * 取本地 client Tool 定义。
+ * 解析顺序：先查指定 namespace（或默认），未命中再回退 'default'。
+ * 这样「页面级命名空间注册 + 全局兜底」可共存。
+ */
+export function getFunctionCallDef(
+  name: string,
+  namespace?: string,
+): FunctionCallDef | undefined {
+  const ns = resolveNamespace(namespace);
+  const direct = registry.get(makeKey(ns, name));
+  if (direct) return direct;
+  if (ns !== DEFAULT_NAMESPACE) {
+    return registry.get(makeKey(DEFAULT_NAMESPACE, name));
+  }
+  return undefined;
 }
 
-export function getAllFunctionCalls(): FunctionCallDef[] {
-  return Array.from(registry.values());
+/**
+ * 列出本地 client Tool（合并视图）。
+ * - 不传 namespace：返回全部命名空间的合并（namespace 优先于 default 同名项）。
+ * - 传 namespace：仅返回该命名空间 + default 的合并（namespace 覆盖 default 同名项）。
+ */
+export function getAllFunctionCalls(namespace?: string): FunctionCallDef[] {
+  const ns = resolveNamespace(namespace);
+  if (ns === DEFAULT_NAMESPACE) {
+    return collectNamespace(DEFAULT_NAMESPACE);
+  }
+  // 命名空间优先于 default：先把 default 放入 map，再用 namespace 覆盖
+  const merged = new Map<string, FunctionCallDef>();
+  for (const def of collectNamespace(DEFAULT_NAMESPACE)) {
+    merged.set(def.name, def);
+  }
+  for (const def of collectNamespace(ns)) {
+    merged.set(def.name, def);
+  }
+  return Array.from(merged.values());
+}
+
+function collectNamespace(namespace: string): FunctionCallDef[] {
+  const prefix = `${namespace}::`;
+  const result: FunctionCallDef[] = [];
+  for (const [key, def] of registry) {
+    if (key.startsWith(prefix)) result.push(def);
+  }
+  return result;
+}
+
+/** 清空指定命名空间下的全部 client Tool；不传则清空所有命名空间 */
+export function clearFunctionCalls(namespace?: string): void {
+  if (namespace === undefined) {
+    if (registry.size === 0) return;
+    registry.clear();
+    notifyRegistryChange();
+    return;
+  }
+  const prefix = `${resolveNamespace(namespace)}::`;
+  let changed = false;
+  for (const key of Array.from(registry.keys())) {
+    if (key.startsWith(prefix)) {
+      registry.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) notifyRegistryChange();
 }
 
 export function toOpenAITools(defs: FunctionCallDef[]) {
@@ -44,8 +140,16 @@ export function toOpenAITools(defs: FunctionCallDef[]) {
   }));
 }
 
-export async function invokeFunctionCall(name: string, args: Record<string, unknown>) {
-  const def = registry.get(name);
+/**
+ * 执行本地 client Tool。
+ * 查找规则同 getFunctionCallDef：先指定 namespace，回退 default。
+ */
+export async function invokeFunctionCall(
+  name: string,
+  args: Record<string, unknown>,
+  namespace?: string,
+) {
+  const def = getFunctionCallDef(name, namespace);
   if (!def) {
     throw new Error(`未注册的 Client Tool: ${name}`);
   }

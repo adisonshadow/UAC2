@@ -103,6 +103,8 @@ export async function putPermissionsPermissionId(
     resource_type?: 'MENU' | 'BUTTON' | 'API';
     /** 操作类型列表 */
     actions?: ('create' | 'read' | 'update' | 'delete')[];
+    /** 访问限制（菜单/按钮运行时可见性） */
+    access_restriction?: { mode: 'none' | 'role' | 'department'; roleIds?: string[]; departmentIds?: string[] };
   },
   options?: { [key: string]: any },
 ) {
@@ -116,6 +118,7 @@ export async function putPermissionsPermissionId(
       description?: string;
       resource_type?: string;
       actions?: string[];
+      access_restriction?: { mode: string; roleIds?: string[]; departmentIds?: string[] } | null;
       created_at?: string;
     };
   }>(`/api/v1/permissions/${param0}`, {

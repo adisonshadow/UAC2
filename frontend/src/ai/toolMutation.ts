@@ -125,7 +125,7 @@ const READ_ACTION_RE = /^(list|get|browse|read|status|suggest|run_test|runs|valu
 /** 域前缀 → 入口路由（命中即跳，子类覆盖见 domainRoutes 二级判断） */
 const DOMAIN_ROUTES: Array<{ test: RegExp; path: string }> = [
   // 业务数据 - 建模（实体/枚举/关系/索引/校验）
-  { test: /^bizdata_(create|update|delete|upsert)_(entity|enum|relation|indexes)|^bizdata_validate_model/, path: '/business_data/model-design' },
+  { test: /^bizdata_(create|update|delete|upsert|rename)_?(entity|enum|relation|indexes)|^bizdata_validate_model/, path: '/business_data/model-design' },
   // 业务数据 - 元数据（表/字段）
   { test: /^bizdata_(create|update|delete|upsert)_metadata/, path: '/business_data/metadata' },
   // 业务数据 - 数据标准
@@ -140,6 +140,8 @@ const DOMAIN_ROUTES: Array<{ test: RegExp; path: string }> = [
   { test: /^apiservice_(create|update|delete|publish|disable)/, path: '/api_services/list' },
   // 采集管道写（含 upsert/publish/disable/delete）
   { test: /^collection_pipeline_(create|update|delete|upsert|publish|disable)/, path: '/api_services/collection-pipelines' },
+  // 提交外部API写
+  { test: /^outbound_webhook_(upsert|delete|publish|disable)/, path: '/api_services/outbound-webhooks' },
   // AI 管理 - 按子类型二级区分
   { test: /^aibase_(create|update|delete)_provider/, path: '/ai_management/providers' },
   { test: /^aibase_(create|update|delete)_model/, path: '/ai_management/models' },

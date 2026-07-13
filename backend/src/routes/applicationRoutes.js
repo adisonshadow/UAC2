@@ -604,6 +604,6 @@ router.put('/:id/top-level-skill', auth, ApplicationController.updateTopLevelSki
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/token', auth, ApplicationController.getToken);
+router.post('/token', ApplicationController.getToken);
 
 module.exports = router; 

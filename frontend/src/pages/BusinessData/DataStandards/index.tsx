@@ -1,6 +1,7 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { BetaSchemaForm, PageContainer, ProTable } from '@ant-design/pro-components';
+import { BetaSchemaForm, PageContainer } from '@ant-design/pro-components';
 import type { ActionType } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Drawer, Form, Modal, message } from 'antd';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -93,8 +94,8 @@ const DataStandardsPage: React.FC = () => {
   };
 
   return (
-    <PageContainer title="数据标准">
-      <ProTable<API.BizdataDataStandard>
+    <PageContainer pageHeaderRender={() => <></>}>
+      <UrlSyncedProTable<API.BizdataDataStandard>
         actionRef={actionRef}
         rowKey="id"
         scroll={{ x: 'max-content' }}
@@ -103,7 +104,7 @@ const DataStandardsPage: React.FC = () => {
           ...augmentColumnsWithChatReference(dataStandardTableColumns, 'name', buildDataStandardReference),
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 100,
+            width: 70,
             render: (_, record) => (
               <TableActions>
                 <TableActionButton title="编辑" icon={<EditOutlined />} onClick={() => openEdit(record)} />
@@ -128,11 +129,11 @@ const DataStandardsPage: React.FC = () => {
           return { data: items, total, success };
         }}
         toolBarRender={() => [
-          <Button key="create" type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button key="create" type="primary" className="btn-gradient-primary" icon={<PlusOutlined />} onClick={openCreate}>
             新建数据标准
           </Button>,
         ]}
-        pagination={{ pageSize: 10 }}
+        defaultPageSize={10}
         options={DEFAULT_PRO_TABLE_OPTIONS}
       />
 

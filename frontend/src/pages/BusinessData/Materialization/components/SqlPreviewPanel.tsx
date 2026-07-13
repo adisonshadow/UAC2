@@ -1,12 +1,16 @@
 import Editor from '@monaco-editor/react';
 import { Tabs } from 'antd';
 import React, { useMemo } from 'react';
+import MaterializationRunTable from './MaterializationRunTable';
 
 interface SqlPreviewPanelProps {
   preview: API.MaterializationPreview | null;
   activeTab: string;
   onTabChange: (key: string) => void;
   dbType?: string;
+  runs?: API.MaterializationRun[];
+  runsLoading?: boolean;
+  runsTotal?: number;
 }
 
 const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
@@ -14,6 +18,9 @@ const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
   activeTab,
   onTabChange,
   dbType,
+  runs = [],
+  runsLoading,
+  runsTotal = 0,
 }) => {
   const tsCode = useMemo(() => {
     if (!preview?.generatedCode) return '';
@@ -31,18 +38,20 @@ const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
         ? '// 点击「预览」生成 MongoDB 脚本'
         : '-- 点击「预览 SQL/代码」生成';
 
+  const editorHeight = 'calc(100vh - 120px)';
+
   return (
     <Tabs
       activeKey={activeTab}
       onChange={onTabChange}
-      style={{ flex: 1, minHeight: 0 }}
+      style={{ flex: 1, minHeight: 0, height: '100%' }}
       items={[
         {
           key: 'sql',
           label: scriptLabel,
           children: (
             <Editor
-              height="calc(100vh - 380px)"
+              height={editorHeight}
               language={scriptLanguage}
               value={preview?.sql || emptyScript}
               options={{ readOnly: true, minimap: { enabled: false } }}
@@ -54,11 +63,18 @@ const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
           label: 'TypeScript 预览',
           children: (
             <Editor
-              height="calc(100vh - 380px)"
+              height={editorHeight}
               language="typescript"
               value={tsCode || '// 点击「预览 SQL/代码」生成'}
               options={{ readOnly: true, minimap: { enabled: false } }}
             />
+          ),
+        },
+        {
+          key: 'history',
+          label: '物化历史',
+          children: (
+            <MaterializationRunTable runs={runs} loading={runsLoading} total={runsTotal} />
           ),
         },
       ]}

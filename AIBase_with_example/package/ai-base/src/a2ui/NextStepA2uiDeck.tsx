@@ -3,6 +3,7 @@ import { XCard, type ActionPayload } from '@ant-design/x-card';
 import type { XAgentCommand_v0_9 } from '@ant-design/x-card';
 import { useMemo, type ReactNode } from 'react';
 import { buildNextStepCommands } from './buildNextStepCommands';
+import { ArrowRightOutlined } from '@ant-design/icons';
 import { ensureNextStepCatalogRegistered, NEXT_STEP_SURFACE_ID } from './nextStepCatalog';
 import type { NextStepItem } from './parseA2uiCommands';
 import './NextStepA2uiDeck.css';
@@ -29,7 +30,8 @@ const ActionButton = ({
 }) => (
   <Button
     size="small"
-    type="default"
+    color="default" 
+    variant="filled"
     className="eadaf-next-step-btn"
     onClick={() => {
       if (!onAction || !action?.event?.name) return;
@@ -41,6 +43,7 @@ const ActionButton = ({
     }}
   >
     {text}
+    <ArrowRightOutlined style={{ marginLeft: 10, color: '#999' }} />
   </Button>
 );
 

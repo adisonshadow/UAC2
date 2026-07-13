@@ -49,6 +49,24 @@ export function extractAiChatErrorMessage(raw: unknown): string {
   return text;
 }
 
+const BURST_ERROR_RE = /burst|slow\s*down|rate\s*limit|too\s*many\s*requests|限流|频繁|请求过多/i;
+
+/**
+ * 判断错误信息是否为突发保护 / 限流类（来自上游 Provider 或后端本地限流）。
+ * 用于在 UI 层给出更友好的提示，而非原样透传英文 Provider 文案。
+ */
+export function isBurstErrorMessage(message: string): boolean {
+  return BURST_ERROR_RE.test(message) || /\b429\b/.test(message);
+}
+
+/** 对突发/限流错误返回友好的中文提示；其他错误原样返回 */
+export function friendlifyBurstError(message: string): string {
+  if (isBurstErrorMessage(message)) {
+    return '上游 AI 服务请求过于频繁（触发突发保护），已自动退避重试仍失败，请稍后重试或减少连续操作。';
+  }
+  return message;
+}
+
 export async function readChatErrorMessage(response: Response): Promise<string> {
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {

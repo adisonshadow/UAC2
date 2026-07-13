@@ -1,6 +1,7 @@
 const Router = require('koa-router');
 const AiModelController = require('../controllers/aiModelController');
 const auth = require('../middlewares/auth');
+const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({
   prefix: '/api/v1/admin/models'
@@ -117,8 +118,8 @@ const router = new Router({
  *       200:
  *         description: 创建成功
  */
-router.get('/', auth, AiModelController.list);
-router.post('/', auth, AiModelController.create);
+router.get('/', authWithBuiltinApiGuard, AiModelController.list);
+router.post('/', authWithBuiltinApiGuard, AiModelController.create);
 
 /**
  * @swagger
@@ -202,8 +203,8 @@ router.post('/', auth, AiModelController.create);
  *       200:
  *         description: 删除成功
  */
-router.get('/:id', auth, AiModelController.getById);
-router.patch('/:id', auth, AiModelController.update);
-router.delete('/:id', auth, AiModelController.delete);
+router.get('/:id', authWithBuiltinApiGuard, AiModelController.getById);
+router.patch('/:id', authWithBuiltinApiGuard, AiModelController.update);
+router.delete('/:id', authWithBuiltinApiGuard, AiModelController.delete);
 
 module.exports = router;

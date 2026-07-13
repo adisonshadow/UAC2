@@ -73,6 +73,18 @@ export class AIBaseClient {
     return res.data;
   }
 
+  /**
+   * 批量获取多个 Skill 详情（含 Tool 列表）：一次请求替代 N 次 loadSkill。
+   * 对应后端 GET /v1/ai/skills?slugs=a,b,c。
+   */
+  async loadSkills(slugs: string[]): Promise<AIBaseSkill[]> {
+    if (!slugs.length) return [];
+    const res = await this.request<{ data: AIBaseSkill[] }>(
+      `/v1/ai/skills?slugs=${encodeURIComponent(slugs.join(','))}`,
+    );
+    return res.data || [];
+  }
+
   async invokeServerTool(functionName: string, args: Record<string, unknown>): Promise<ToolInvokeResult> {
     const res = await this.request<{ data: ToolInvokeResult }>('/v1/ai/tools/invoke', {
       method: 'POST',

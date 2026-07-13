@@ -45,47 +45,9 @@ VALUES
   ('660e8400-e29b-41d4-a716-446655440052', 'aibase:provider:manage', 'AI 服务商管理', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('660e8400-e29b-41d4-a716-446655440053', 'aibase:model:manage', 'AI 模型管理', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('660e8400-e29b-41d4-a716-446655440054', 'aibase:tool:manage', 'AI Tool 管理', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440055', 'aibase:skill:manage', 'AI Skill 管理', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：权限 CRUD 补全
-  ('660e8400-e29b-41d4-a716-446655440060', 'api:permission:create', '创建权限 API', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440061', 'api:permission:update', '更新权限 API', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440062', 'api:permission:delete', '删除权限 API', 'API', '["delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440063', 'api:permission:rules', '数据权限规则 API', 'API', '["read","create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：应用
-  ('660e8400-e29b-41d4-a716-446655440064', 'api:application:list', '应用列表 API', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440065', 'api:application:create', '创建应用 API', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440066', 'api:application:update', '更新应用 API', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：文件
-  ('660e8400-e29b-41d4-a716-446655440067', 'api:storage:list', '存储列表 API', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440068', 'api:storage:write', '存储写入 API', 'API', '["create","update","delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：业务数据
-  ('660e8400-e29b-41d4-a716-446655440069', 'api:bizdata:scope:list', '业务 Scope 列表 API', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544006a', 'api:bizdata:entity:list', '业务实体列表 API', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544006b', 'api:bizdata:entity:create', '创建业务实体 API', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544006c', 'api:bizdata:entity:update', '更新业务实体 API', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544006d', 'api:bizdata:entity:delete', '删除业务实体 API', 'API', '["delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544006e', 'api:bizdata:materialize:execute', '执行物化 API', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544007d', 'api:bizdata:metrics:list', '指标列表 API', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544007e', 'api:bizdata:metrics:manage', '指标管理 API', 'API', '["create","update","delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-44665544007f', 'api:bizdata:metrics:execute', '指标执行 API', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440083', 'api:bizdata:data_standards', '数据标准 API', 'API', '["read","create","update","delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440084', 'api:bizdata:metadata', '元数据目录 API', 'API', '["read","create","update","delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440085', 'api:system:settings', '系统设置 API', 'API', '["read","update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440086', 'api:system:backups', '系统备份 API', 'API', '["read","create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：API 服务
-  ('660e8400-e29b-41d4-a716-44665544006f', 'api:apiservice:list', 'API 服务列表', 'API', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440070', 'api:apiservice:create', '创建 API 服务', 'API', '["create"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440071', 'api:apiservice:update', '更新 API 服务', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440072', 'api:apiservice:delete', '删除 API 服务', 'API', '["delete"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440073', 'api:apiservice:publish', '发布 API 服务', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：AI 管理
-  ('660e8400-e29b-41d4-a716-446655440074', 'api:aibase:provider', 'AI 服务商 API', 'API', '["read","create","update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440075', 'api:aibase:model', 'AI 模型 API', 'API', '["read","create","update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440076', 'api:aibase:tool', 'AI Tool API', 'API', '["read","create","update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440077', 'api:aibase:skill', 'AI Skill API', 'API', '["read","create","update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  -- API：角色权限
-  ('660e8400-e29b-41d4-a716-446655440078', 'api:role:assign_permissions', '角色分配权限 API', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('660e8400-e29b-41d4-a716-446655440079', 'api:user:assign_roles', '用户分配角色 API', 'API', '["update"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  ('660e8400-e29b-41d4-a716-446655440055', 'aibase:skill:manage', 'AI Skill 管理', 'BUTTON', '["read"]', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  -- 注：内置 API 权限已迁移至独立清单（backend/src/services/builtinApi/catalog.js）
+  --     及限制配置表 uac.builtin_api_configs，不再由 permissions(resource_type='API') 承载
 ON CONFLICT (code) DO UPDATE SET
   description = EXCLUDED.description,
   resource_type = EXCLUDED.resource_type,
@@ -124,17 +86,7 @@ WHERE p.code IN (
   'bizdata:entity:delete',
   'apiservice:create',
   'apiservice:edit',
-  'apiservice:publish',
-  'api:bizdata:scope:list',
-  'api:bizdata:entity:list',
-  'api:bizdata:entity:create',
-  'api:bizdata:entity:update',
-  'api:bizdata:entity:delete',
-  'api:apiservice:list',
-  'api:apiservice:create',
-  'api:apiservice:update',
-  'api:apiservice:delete',
-  'api:apiservice:publish'
+  'apiservice:publish'
 );
 
 -- 数据权限规则：equipment Scope 限定（运行时 enforcement 待接入）
