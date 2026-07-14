@@ -10,7 +10,8 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useScopeFromUrl, useUrlPagination } from '@/hooks/useUrlQueryState';
 import type { ProColumns } from '@ant-design/pro-components';
 
-import { Button, Popconfirm, Splitter, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Popconfirm, Splitter, Tag, Tooltip, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAIChatPrompts, useChatReference, useAISurface } from '@EADAF/ai-base';
 import { buildApiServiceListPrompts } from '@/ai/pageChatPrompts';
@@ -203,7 +204,6 @@ function mapApiService(item: API.ApiService): ApiServiceListItem {
 
 const ApiServiceListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const [domainPrefix, setDomainPrefix] = useScopeFromUrl();
   const { resetPage } = useUrlPagination(10);
   const [allServices, setAllServices] = useState<ApiServiceListItem[]>([]);
@@ -236,11 +236,11 @@ const ApiServiceListPage: React.FC = () => {
         setDomainTree(buildApiServiceDomainTree(items));
       }
     } catch (error) {
-      messageApi.error(getApiErrorMessage(error, '加载失败'));
+      message.error(getApiErrorMessage(error, '加载失败'));
     } finally {
       setLoading(false);
     }
-  }, [messageApi]);
+  }, []);
 
   useEffect(() => {
     void loadData(listFilters);
@@ -273,20 +273,20 @@ const ApiServiceListPage: React.FC = () => {
   const handlePublish = async (id: string) => {
     const res = await postApiServicePublish(id);
     if (isApiSuccess(res)) {
-      messageApi.success('发布成功');
+      message.success('发布成功');
       void loadData(listFilters);
     } else {
-      messageApi.error(getApiErrorMessage(res, '发布失败'));
+      message.error(getApiErrorMessage(res, '发布失败'));
     }
   };
 
   const handleDelete = async (id: string) => {
     const res = await deleteApiService(id);
     if (isApiSuccess(res)) {
-      messageApi.success('已删除');
+      message.success('已删除');
       void loadData(listFilters);
     } else {
-      messageApi.error(getApiErrorMessage(res, '删除失败'));
+      message.error(getApiErrorMessage(res, '删除失败'));
     }
   };
 
@@ -295,7 +295,6 @@ const ApiServiceListPage: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <div style={{ height: VIEWPORT_HEIGHT }}>
         <Splitter style={{ height: '100%' }}>
           <Splitter.Panel

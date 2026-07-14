@@ -23,6 +23,7 @@ export async function getBusinessDataEntities(params?: {
   entityKind?: string;
   page?: number;
   size?: number;
+  summary?: boolean;
 }) {
   return request<{ code: number; message: string; data: API.BusinessDataEntityList }>(`${BASE}/entities`, {
     method: 'GET',
@@ -54,6 +55,23 @@ export async function deleteBusinessDataEntity(id: string) {
   return request<{ code: number; message: string; data: null }>(`${BASE}/entities/${id}`, {
     method: 'DELETE',
   });
+}
+
+export async function postEntityDeletionAnalysis(id: string) {
+  return request<{ code: number; message: string; data: API.EntityDeletionAnalysis }>(
+    `${BASE}/entities/${id}/deletion-analysis`,
+    { method: 'POST' },
+  );
+}
+
+export async function postEntityDeletionExecute(body: {
+  deleteEntityIds: string[];
+  dropPhysicalTables?: boolean;
+}) {
+  return request<{ code: number; message: string; data: API.EntityDeletionExecuteResult }>(
+    `${BASE}/entities/deletion-execute`,
+    { method: 'POST', data: body },
+  );
 }
 
 export async function putBusinessDataEntityFields(id: string, fields: API.BusinessDataField[]) {

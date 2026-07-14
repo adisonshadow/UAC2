@@ -239,4 +239,32 @@ router.get('/skills/:slug', authWithBuiltinApiGuard, SkillController.getPublicBy
  */
 router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.invokeTool);
 
+/**
+ * @swagger
+ * /api/v1/ai/tool-invoke-logs:
+ *   post:
+ *     tags: [AI-Service]
+ *     summary: 记录 Client Tool 失败/未验证调用日志 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               args: { type: object }
+ *               envelope: { type: object }
+ *               error: { type: string }
+ *               durationMs: { type: integer }
+ *               conversationKey: { type: string }
+ *               turnId: { type: string }
+ *               round: { type: integer }
+ *     responses:
+ *       200:
+ *         description: 记录成功或日志未启用
+ */
+router.post('/tool-invoke-logs', authWithBuiltinApiGuard, AiCapabilityController.logClientToolInvoke);
+
 module.exports = router;

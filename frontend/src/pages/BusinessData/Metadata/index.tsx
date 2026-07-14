@@ -1,5 +1,6 @@
 import { DatabaseOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Form, Input, Row, Select, Space, Splitter, Table, message } from 'antd';
+import { Button, Card, Col, Form, Input, Row, Select, Space, Splitter, Table } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildMetadataPrompts } from '@/ai/pageChatPrompts';

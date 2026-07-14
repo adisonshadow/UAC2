@@ -1,15 +1,28 @@
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { ThoughtChain } from '@ant-design/x';
 import type { ThoughtChainItemType } from '@ant-design/x';
+import { clsx } from 'clsx';
 import type { ChatToolStep } from '../chat/chatToolSteps';
 
 function formatStepDescription(step: ChatToolStep): string {
   if (step.status === 'loading') return '执行中…';
-  if (step.status === 'error') return step.error || '执行失败';
-  if (typeof step.durationMs === 'number') return `已完成 · ${step.durationMs}ms`;
-  return '已完成';
+  if (step.status === 'business_error' || step.status === 'error') {
+    return step.error ? `执行失败 · ${step.error}` : '执行失败';
+  }
+  if (typeof step.durationMs === 'number') return `执行成功 · ${step.durationMs}ms`;
+  return '执行成功';
 }
 
 function toThoughtChainItem(step: ChatToolStep): ThoughtChainItemType {
+  if (step.status === 'business_error') {
+    return {
+      key: step.id,
+      title: step.displayName,
+      description: formatStepDescription(step),
+      icon: <InfoCircleOutlined className="aibase-tool-step-business-error-icon" />,
+    };
+  }
+
   return {
     key: step.id,
     title: step.displayName,
@@ -32,7 +45,12 @@ interface ToolInvokeStepsProps {
 export default function ToolInvokeSteps({ step }: ToolInvokeStepsProps) {
   if (!step) return null;
   return (
-    <div className="aibase-tool-invoke-steps">
+    <div
+      className={clsx(
+        'aibase-tool-invoke-steps',
+        step.status === 'business_error' && 'aibase-tool-invoke-steps--business-error',
+      )}
+    >
       <ThoughtChain key={step.id} line={false} items={[toThoughtChainItem(step)]} />
     </div>
   );

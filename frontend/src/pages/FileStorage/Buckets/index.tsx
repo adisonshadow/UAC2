@@ -14,7 +14,8 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Checkbox, Form, Modal, Select, Space, Tag, message } from 'antd';
+import { Button, Checkbox, Form, Select, Space, Tag } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildStorageBucketPrompts } from '@/ai/pageChatPrompts';
@@ -40,7 +41,6 @@ type BucketRecord = API.StorageBucket;
 
 const BucketsPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BucketRecord | null>(null);
   const [scopePickerOpen, setScopePickerOpen] = useState(false);
@@ -79,7 +79,7 @@ const BucketsPage: React.FC = () => {
 
   const openEdit = (record: BucketRecord) => {
     if (record.isSystem) {
-      messageApi.warning('系统内置 Bucket 不可编辑');
+      message.warning('系统内置 Bucket 不可编辑');
       return;
     }
     setEditing(record);
@@ -110,11 +110,11 @@ const BucketsPage: React.FC = () => {
     const accessMode = form.getFieldValue('accessMode');
     if (accessMode !== 'authenticated') return true;
     if (policyRoles && !roleIds.length) {
-      messageApi.error('已启用角色限制但未选择角色');
+      message.error('已启用角色限制但未选择角色');
       return false;
     }
     if (policyScope && !scopeCodes.length) {
-      messageApi.error('已启用 Scope 限制但未选择 Scope');
+      message.error('已启用 Scope 限制但未选择 Scope');
       return false;
     }
     return true;
@@ -131,18 +131,17 @@ const BucketsPage: React.FC = () => {
       ? await putStorageBucket(editing.bucketId, payload)
       : await postStorageBucket(payload);
     if (isApiSuccess(res)) {
-      messageApi.success(editing ? '更新成功' : '创建成功');
+      message.success(editing ? '更新成功' : '创建成功');
       setModalOpen(false);
       actionRef.current?.reload();
       return true;
     }
-    messageApi.error('保存失败');
+    message.error('保存失败');
     return false;
   };
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <UrlSyncedProTable<BucketRecord>
         actionRef={actionRef}
         rowKey="bucketId"
@@ -211,12 +210,12 @@ const BucketsPage: React.FC = () => {
                     danger
                     icon={<DeleteOutlined />}
                     onClick={() => {
-                      Modal.confirm({
+                      modal.confirm({
                         title: '确认删除该 Bucket？',
                         onOk: async () => {
                           const res = await deleteStorageBucket(record.bucketId!);
                           if (isApiSuccess(res)) {
-                            messageApi.success('已删除');
+                            message.success('已删除');
                             actionRef.current?.reload();
                           }
                         },

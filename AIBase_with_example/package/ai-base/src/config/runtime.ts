@@ -2,7 +2,11 @@ import type { AIChatConfig, ResolvedAIChatConfig } from '../types';
 
 const DEFAULT_SYSTEM_PROMPT_PREFIX =
   '你是 企业数据底座的 AI 助手，已接入各类数据服务与Tool。\n' +
-  '遇到统计类问题，必须先调用 Tool 获取数据再回答。';
+  '遇到统计类问题，必须先调用 Tool 获取数据再回答。\n\n' +
+  '## Tool 结果汇报（硬约束）\n' +
+  '- 写操作（创建/更新/删除/发布/测试）**禁止**在未调用 Tool，或 Tool 信封中 `verified !== true` / `kind !== success` 时向用户声称成功\n' +
+  '- 必须以最近一次相关 Tool 返回的 `ok`、`verified`、`kind`、`error.message` 为准；禁止编造 ID、status、preview、rolledBack 等\n' +
+  '- Tool 返回 `business_error` 或 `verified: false` 时，向用户说明失败原因（引用 error.message），不要脑补成功';
 
 const DEFAULT_WELCOME = {
   title: '我是您的AI助手',

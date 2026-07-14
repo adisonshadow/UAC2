@@ -24,7 +24,8 @@ import {
 } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useSetState } from "ahooks";
-import { Button, Modal, Space, message, Form, Typography, Tabs } from 'antd';
+import { Button, Modal, Space, Form, Typography, Tabs } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import { LinkOutlined } from '@ant-design/icons';
 import React, { useRef, useState, useMemo, useEffect } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -63,7 +64,6 @@ interface ApplicationRecord extends API.Application {
 const Page: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const [apiConfigModalVisible, setApiConfigModalVisible] = useState(false);
   const [ssoConfigModalVisible, setSsoConfigModalVisible] = useState(false);
   const [keyManagementModalVisible, setKeyManagementModalVisible] = useState(false);
@@ -207,10 +207,10 @@ const Page: React.FC = () => {
             disabled={record.code === SYSTEM_APPLICATION_CODE}
             onClick={() => {
             if (record.code === SYSTEM_APPLICATION_CODE) {
-              messageApi.warning('系统内置应用不可删除');
+              message.warning('系统内置应用不可删除');
               return;
             }
-            Modal.confirm({
+            modal.confirm({
               title: '确认删除',
               content: '确定要删除该应用吗？',
               onOk: async () => {
@@ -218,12 +218,12 @@ const Page: React.FC = () => {
                   await deleteApplicationsId({
                     id: record.application_id || '',
                   });
-                  messageApi.success('删除成功');
+                  message.success('删除成功');
                   if (actionRef.current) {
                     actionRef.current.reload();
                   }
                 } catch (error) {
-                  messageApi.error('删除失败');
+                  message.error('删除失败');
                 }
               },
             });
@@ -255,16 +255,16 @@ const Page: React.FC = () => {
       );
 
       if (isApiSuccess(response)) {
-        messageApi.success('保存成功');
+        message.success('保存成功');
         setApiConfigModalVisible(false);
         if (actionRef.current) {
           actionRef.current.reload();
         }
       } else {
-        messageApi.error(response.message || '保存失败');
+        message.error(response.message || '保存失败');
       }
     } catch (error) {
-      messageApi.error('保存失败');
+      message.error('保存失败');
     }
   };
 
@@ -277,7 +277,7 @@ const Page: React.FC = () => {
       // 正常保存
       await saveApiConfig(values);
     } catch (error) {
-      messageApi.error('保存失败');
+      message.error('保存失败');
     }
   };
 
@@ -305,18 +305,18 @@ const Page: React.FC = () => {
               client_secret: secret,
             },
           });
-          messageApi.success('生成统一密钥成功');
+          message.success('生成统一密钥成功');
           if (actionRef.current) {
             actionRef.current.reload();
           }
         } else {
-          messageApi.error('生成失败');
+          message.error('生成失败');
         }
       } else {
-        messageApi.error((res as { message?: string }).message || '生成失败');
+        message.error((res as { message?: string }).message || '生成失败');
       }
     } catch (e) {
-      messageApi.error('生成失败');
+      message.error('生成失败');
     }
   };
 
@@ -347,16 +347,16 @@ const Page: React.FC = () => {
       );
 
       if (isApiSuccess(response)) {
-        messageApi.success('保存成功');
+        message.success('保存成功');
         setSsoConfigModalVisible(false);
         if (actionRef.current) {
           actionRef.current.reload();
         }
       } else {
-        messageApi.error(response.message || '保存失败');
+        message.error(response.message || '保存失败');
       }
     } catch (error) {
-      messageApi.error('保存失败');
+      message.error('保存失败');
     }
   };
 
@@ -364,7 +364,6 @@ const Page: React.FC = () => {
     <PageContainer pageHeaderRender={() => {
       return <></>;
     }}>
-      {contextHolder}
       <UrlSyncedProTable<ApplicationRecord, API.getApplicationsParams, API.Application>
         defaultPageSize={PAGE_SIZE}
         headerTitle="应用列表"
@@ -662,14 +661,14 @@ const Page: React.FC = () => {
               { bizdata_scope_codes: codes },
             );
             if (isApiSuccess(res)) {
-              messageApi.success('Scope 已保存');
+              message.success('Scope 已保存');
               setScopeModalVisible(false);
               actionRef.current?.reload();
             } else {
-              messageApi.error('保存失败');
+              message.error('保存失败');
             }
           } catch {
-            messageApi.error('保存失败');
+            message.error('保存失败');
           } finally {
             setScopeSaving(false);
           }

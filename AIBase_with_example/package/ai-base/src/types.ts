@@ -16,7 +16,7 @@ export interface AIChatConfig {
   scopeSlug?: string;
   /**
    * 当前业务应用系统 ID（应用列表中的 application_id，可选）。
-   * 配置后：加载「全局 Skill + 绑定该应用的专用 Skill + fallbackSkillSlugs 本地 Skill」；
+   * 配置后：加载「全局 Skill + fallbackSkillSlugs 页面 Skill」（不再加载全部专用 Skill，避免 Tool/指引稀释）；
    * 未配置：仅加载 fallbackSkillSlugs 指定的本地 Skill。
    */
   applicationId?: string;
@@ -107,6 +107,8 @@ export interface AIBaseTool {
   allowClientOverride?: boolean;
   /** 该 Tool 结果回灌上下文时的字符预算（覆盖 AIChatConfig.maxToolResultChars） */
   resultBudget?: { maxChars: number };
+  /** 写操作 Tool：verified 不为 true 时规范为 business_error */
+  requiresVerification?: boolean;
 }
 
 export interface OpenAIToolDefinition {
@@ -148,6 +150,14 @@ export interface SkillCompletionStrategy {
   blockKeywords?: string[];
   /** 连续执行型 Skill（如 test-fix 循环），不受「一次一事」限制 */
   continuousExecution?: boolean;
+  /**
+   * 条件约束：文本命中 keywords 时，requiredTools 必须全部已调用。
+   * 用于「声称发布成功」须调用 publish Tool，而不强制每次对话都调用 publish。
+   */
+  claimRules?: Array<{
+    keywords: string[];
+    requiredTools: string[];
+  }>;
 }
 
 export interface AIBaseModelInfo {
@@ -177,4 +187,6 @@ export interface FunctionCallDef<TArgs = Record<string, unknown>, TResult = unkn
   handler: (args: TArgs) => Promise<TResult>;
   /** 该 Tool 结果回灌上下文时的字符预算（覆盖 AIChatConfig.maxToolResultChars） */
   resultBudget?: { maxChars: number };
+  /** 写操作 Tool：verified 不为 true 时规范为 business_error */
+  requiresVerification?: boolean;
 }

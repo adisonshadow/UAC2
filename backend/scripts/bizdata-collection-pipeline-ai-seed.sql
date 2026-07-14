@@ -197,6 +197,6 @@ WHERE s.slug = 'api-services-collection-pipeline'
     'collection_pipeline_suggest_scripts',
     'collection_pipeline_navigate',
     'bizdata_get_entity',
-    'bizdata_list_entities'
+    'bizdata_list_entity_summaries'
   )
 ON CONFLICT (skill_id, tool_id) DO UPDATE SET sort_order = EXCLUDED.sort_order;

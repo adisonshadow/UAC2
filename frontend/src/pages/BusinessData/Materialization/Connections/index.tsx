@@ -1,5 +1,6 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { message } from 'antd';
+import { message } from '@/utils/antdAppApis';
+
 import { useAISurface } from '@EADAF/ai-base';
 import React from 'react';
 import DatabaseConnectionManager from '../components/DatabaseConnectionManager';

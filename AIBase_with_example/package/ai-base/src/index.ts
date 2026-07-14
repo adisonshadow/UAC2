@@ -75,6 +75,7 @@ export type { UseFunctionCallOptions } from './hooks/useFunctionCall';
 
 export { serializeToolResultForContext, resolveToolResultBudget } from './utils/toolResultBudget';
 export type { TrimmedToolResult } from './utils/toolResultBudget';
+export { resolveToolStepFromEnvelope } from './chat/resolveToolStepFromEnvelope';
 
 export { AIBaseClient } from './sdk';
 
@@ -93,6 +94,14 @@ export type {
   FunctionCallDef,
   SkillCompletionStrategy,
 } from './types';
+export type {
+  ToolResponse,
+  ToolResponseError,
+  ToolResultKind,
+} from './types/toolResponse';
+export { isToolResponse } from './types/toolResponse';
+export { normalizeToolResult, toToolResponseContextView } from './utils/normalizeToolResult';
+export { executeToolWithEnvelope } from './utils/executeToolWithEnvelope';
 export type {
   AIMutation,
   ToolMutationResult,

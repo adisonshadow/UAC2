@@ -5,7 +5,8 @@ import {
 } from '@ant-design/icons';
 import { ActionType, PageContainer } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Modal, message } from 'antd';
+import { Button } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildAIProviderPrompts } from '@/ai/pageChatPrompts';
@@ -23,7 +24,6 @@ import { providerTableColumns } from './schema';
 const ProvidersPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildAIProviderPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -32,16 +32,16 @@ const ProvidersPage: React.FC = () => {
   const search = useProTableSearchCollapse('ai-management.providers');
 
   const handleDelete = (record: API.AdminProvider) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认停用',
       content: `确定要停用服务商「${record.name}」吗？`,
       onOk: async () => {
         const response = await deleteAdminProvidersId({ id: record.id || '' });
         if (isApiSuccess(response)) {
-          messageApi.success('已停用');
+          message.success('已停用');
           actionRef.current?.reload();
         } else {
-          messageApi.error(response.message || '操作失败');
+          message.error(response.message || '操作失败');
         }
       },
     });
@@ -49,7 +49,6 @@ const ProvidersPage: React.FC = () => {
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <UrlSyncedProTable<API.AdminProvider>
         actionRef={actionRef}
         rowKey="id"

@@ -1,5 +1,6 @@
 import { ReloadOutlined } from '@ant-design/icons';
-import { Button, Select, Space, Splitter, message } from 'antd';
+import { Button, Select, Space, Splitter } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { useAISurface, useAIChatPrompts, useChatReference, sendMockUserMessage } from '@EADAF/ai-base';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildMaterializedDatabasePrompts } from '@/ai/pageChatPrompts';

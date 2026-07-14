@@ -6,7 +6,8 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import { ActionType, ProTable } from '@ant-design/pro-components';
-import { Button, Drawer, Modal, Splitter, message } from 'antd';
+import { Button, Drawer, Splitter } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAIChatPrompts, useAISurface, useChatReference } from '@EADAF/ai-base';
 import { buildMetricPrompts } from '@/ai/pageChatPrompts';
@@ -28,7 +29,6 @@ import { metricRunColumns, metricTableColumns } from './schema';
 
 const MetricsListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const [metrics, setMetrics] = useState<API.BizdataMetric[]>([]);
   const [loading, setLoading] = useState(true);
   const [runsOpen, setRunsOpen] = useState(false);
@@ -82,25 +82,25 @@ const MetricsListPage: React.FC = () => {
     if (!record.id) return;
     const response = await postBizdataMetricExecute(record.id);
     if (isApiSuccess(response)) {
-      messageApi.success('执行成功');
+      message.success('执行成功');
       await loadMetrics();
     } else {
-      messageApi.error(response.message || '执行失败');
+      message.error(response.message || '执行失败');
     }
   };
 
   const handleDelete = (record: API.BizdataMetric) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除',
       content: `确定删除指标「${record.label}」吗？`,
       onOk: async () => {
         if (!record.id) return;
         const response = await deleteBizdataMetric(record.id);
         if (isApiSuccess(response)) {
-          messageApi.success('已删除');
+          message.success('已删除');
           await loadMetrics();
         } else {
-          messageApi.error(response.message || '删除失败');
+          message.error(response.message || '删除失败');
         }
       },
     });
@@ -145,7 +145,6 @@ const MetricsListPage: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <div style={{ height: 'calc(100vh - 56px)' }}>
         <Splitter style={{ height: '100%' }}>
           <Splitter.Panel defaultSize={220} min={180} max="40%">

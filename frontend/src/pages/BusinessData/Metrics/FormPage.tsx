@@ -1,5 +1,6 @@
 import { BetaSchemaForm, PageContainer } from '@ant-design/pro-components';
-import { Button, Form, Space, Spin, message } from 'antd';
+import { Button, Form, Space, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAIChatPrompts, useAISurface } from '@EADAF/ai-base';
@@ -27,7 +28,6 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [form] = Form.useForm<API.BizdataMetric>();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(mode !== 'create');
   const [saving, setSaving] = useState(false);
   const [connections, setConnections] = useState<API.DatabaseConnection[]>([]);
@@ -112,13 +112,13 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
     try {
       const response = await getBizdataMetric(id);
       if (!isApiSuccess(response)) {
-        messageApi.error('获取指标详情失败');
+        message.error('获取指标详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       const data = getApiData<API.BizdataMetric>(response);
       if (!data) {
-        messageApi.error('获取指标详情失败');
+        message.error('获取指标详情失败');
         navigate(listPath, { replace: true });
         return;
       }
@@ -130,12 +130,12 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
         scheduleConfig: cronExpression ? { expression: cronExpression } : {},
       });
     } catch {
-      messageApi.error('获取指标详情失败');
+      message.error('获取指标详情失败');
       navigate(listPath, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [form, id, listPath, messageApi, mode, navigate]);
+  }, [form, id, listPath, mode, navigate]);
 
   useEffect(() => {
     void loadMeta();
@@ -199,18 +199,18 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
       if (mode === 'create') {
         const response = await postBizdataMetric(payload);
         if (isApiSuccess(response)) {
-          messageApi.success('创建成功');
+          message.success('创建成功');
           navigate(listPath);
         } else {
-          messageApi.error(response.message || '创建失败');
+          message.error(response.message || '创建失败');
         }
       } else if (id) {
         const response = await patchBizdataMetric(id, payload);
         if (isApiSuccess(response)) {
-          messageApi.success('保存成功');
+          message.success('保存成功');
           navigate(listPath);
         } else {
-          messageApi.error(response.message || '保存失败');
+          message.error(response.message || '保存失败');
         }
       }
     } catch {
@@ -228,7 +228,6 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
         />
       }
     >
-      {contextHolder}
       <Spin spinning={loading}>
         <BetaSchemaForm<API.BizdataMetric>
           form={form}

@@ -1,4 +1,5 @@
-import { Button, Segmented, Space, Alert, message } from 'antd';
+import { Button, Segmented, Space, Alert } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { sendMockUserMessage } from '@EADAF/ai-base';
 import FieldList from '../FieldList';

@@ -1,6 +1,7 @@
 import { useAIChatDisplayMode } from '@EADAF/ai-base';
 import { ApiOutlined, PartitionOutlined, CopyOutlined } from '@ant-design/icons';
-import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography, message } from 'antd';
+import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import type { DataNode } from 'antd/es/tree';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';

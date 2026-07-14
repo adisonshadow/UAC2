@@ -1,7 +1,7 @@
 const salesDemoDb = require('../demo/salesDemoDb');
 const materializationService = require('../businessData/materializationService');
 const materializedTableBrowseService = require('../businessData/materializedTableBrowseService');
-const { withToolInvokeLog } = require('../../utils/aiToolLogger');
+const { executeToolWithEnvelope } = require('./executeToolWithEnvelope');
 
 const BUILTIN_HANDLERS = {
   demo_echo: async (args) => ({
@@ -117,33 +117,62 @@ async function invokeServerBuiltin(config, args) {
   return BUILTIN_HANDLERS[handlerName](args);
 }
 
-async function invokeTool(tool, args = {}) {
+async function invokeTool(tool, args = {}, logContext = {}) {
   const functionName = tool.function_name || tool.functionName || '(unknown)';
   const executionType = tool.execution_type || tool.executionType;
+  const requiresVerification = tool.requires_verification === true || tool.requiresVerification === true;
 
   if (tool.execution_type === 'client') {
-    return withToolInvokeLog(functionName, args, 'client', async () => ({
+    return executeToolWithEnvelope({
+      name: functionName,
+      args,
       executionType: 'client',
-      message: 'Client tool must be executed in the browser via functionRegistry',
-    }));
+      requiresVerification,
+      logContext,
+      fn: async () => ({
+        executionType: 'client',
+        message: 'Client tool must be executed in the browser via functionRegistry',
+      }),
+    });
   }
 
   if (tool.execution_type === 'server_http') {
-    return withToolInvokeLog(functionName, args, 'server_http', async () => {
-      const result = await invokeServerHttp(tool.server_config || {}, args);
-      return { executionType: 'server_http', result };
+    return executeToolWithEnvelope({
+      name: functionName,
+      args,
+      executionType: 'server_http',
+      requiresVerification,
+      logContext,
+      fn: async () => {
+        const result = await invokeServerHttp(tool.server_config || {}, args);
+        return { executionType: 'server_http', result };
+      },
     });
   }
 
   if (tool.execution_type === 'server_builtin') {
-    return withToolInvokeLog(functionName, args, 'server_builtin', async () => {
-      const result = await invokeServerBuiltin(tool.server_config || {}, args);
-      return { executionType: 'server_builtin', result };
+    return executeToolWithEnvelope({
+      name: functionName,
+      args,
+      executionType: 'server_builtin',
+      requiresVerification,
+      logContext,
+      fn: async () => {
+        const result = await invokeServerBuiltin(tool.server_config || {}, args);
+        return { executionType: 'server_builtin', result };
+      },
     });
   }
 
-  return withToolInvokeLog(functionName, args, executionType || 'unknown', async () => {
-    throw new Error(`不支持的 execution_type: ${tool.execution_type}`);
+  return executeToolWithEnvelope({
+    name: functionName,
+    args,
+    executionType: executionType || 'unknown',
+    requiresVerification,
+    logContext,
+    fn: async () => {
+      throw new Error(`不支持的 execution_type: ${tool.execution_type}`);
+    },
   });
 }
 

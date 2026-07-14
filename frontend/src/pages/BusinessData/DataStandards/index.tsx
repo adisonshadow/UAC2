@@ -2,7 +2,8 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { BetaSchemaForm, PageContainer } from '@ant-design/pro-components';
 import type { ActionType } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Drawer, Form, Modal, message } from 'antd';
+import { Button, Drawer, Form } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildDataStandardPrompts } from '@/ai/pageChatPrompts';
@@ -77,7 +78,7 @@ const DataStandardsPage: React.FC = () => {
   };
 
   const handleDelete = (record: API.BizdataDataStandard) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除',
       content: `确定删除数据标准「${record.name}」吗？`,
       onOk: async () => {

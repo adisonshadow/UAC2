@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Alert, Form, Input, Button, message, Card, Space, Typography, Tabs } from 'antd';
+import { Alert, Form, Input, Button, Card, Space, Typography, Tabs } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { history } from '@/utils/navigation';
 import { LeftOutlined } from '@ant-design/icons';
 import api from '@/services/UAC/api';

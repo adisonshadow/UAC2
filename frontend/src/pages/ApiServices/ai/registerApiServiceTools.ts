@@ -7,7 +7,6 @@ import {
   getApiServiceOperationCatalog,
   getApiServiceTestProfile,
   getApiServiceTree,
-  getApiServices,
   patchApiService,
   postApiService,
   postApiServicePublish,
@@ -15,13 +14,14 @@ import {
   postApiServiceTest,
   putApiServiceTestMockParams,
 } from '@/services/UAC/api/apiServices';
-import { getApiData, parseApiListResponse, isApiSuccess } from '@/utils/apiResponse';
-import { formatApiServiceTestError, extractApiServiceValidationErrors } from './apiServiceTestError';
+import { getApiData, isApiSuccess } from '@/utils/apiResponse';
+import { formatApiServiceTestError, extractApiServiceValidationErrors, isApiServiceTestFailure, describeApiServiceTestFailure } from './apiServiceTestError';
 import { normalizeApiServiceCode } from './apiServiceCodeUtils';
 import { executeBatchCreateServices, DEFAULT_CRUD_OPERATIONS, type BatchCreateArgs } from './apiServiceBatchCreate';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
 import { resolveApiServiceId } from './apiServiceResolve';
-import { verifyApiServiceById, verifyApiServiceListed } from './apiServiceVerify';
+import { verifyApiServiceById, verifyApiServiceListed, verifyApiServicePublished } from './apiServiceVerify';
+import { queryApiServicesForTool } from './apiServiceListQuery';
 
 const API_SERVICE_DOMAIN = 'bizdata';
 const LIST_SURFACE = 'api-services.list';
@@ -29,6 +29,7 @@ const TEST_SURFACE = 'api-services.test';
 
 const TOOL_NAMES = [
   'apiservice_list_services',
+  'apiservice_list_draft_services',
   'apiservice_filter_services',
   'apiservice_get_service',
   'apiservice_resolve_connection',
@@ -49,46 +50,56 @@ const TOOL_NAMES = [
 export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_list_services',
-    description: '列出 API 服务',
+    description:
+      '列出 API 服务（默认 size=-1 拉全量）。找未发布 draft 时须传 status=draft，或直接用 apiservice_list_draft_services',
     parameters: {
       type: 'object',
       properties: {
-        codePrefix: { type: 'string' },
-        status: { type: 'string', enum: ['draft', 'published'] },
+        codePrefix: { type: 'string', description: '域前缀，如 fmms（勿传单个服务全 code）' },
+        status: { type: 'string', enum: ['draft', 'published', 'disabled'] },
         connectionId: { type: 'string' },
         tag: { type: 'string' },
         page: { type: 'integer' },
-        size: { type: 'integer' },
+        size: { type: 'integer', description: '默认 -1 全量；分页时 total 为匹配总数，returnedCount 为本页条数' },
+      },
+    },
+    handler: async (args) => queryApiServicesForTool(args as Record<string, unknown>),
+  });
+
+  registerFunctionCall({
+    name: 'apiservice_list_draft_services',
+    description:
+      '列出未发布(draft)的 API 服务。批量「测试并发布」任务必须先用本 Tool 获取待处理列表，禁止对已是 published 的服务重复 publish',
+    parameters: {
+      type: 'object',
+      properties: {
+        codePrefix: { type: 'string', description: '域前缀，如 fmms' },
+        tag: { type: 'string' },
+        connectionId: { type: 'string' },
       },
     },
     handler: async (args) => {
-      const res = await getApiServices({
+      const result = await queryApiServicesForTool({
         codePrefix: args.codePrefix as string,
-        status: args.status as string,
-        connectionId: args.connectionId as string,
+        status: 'draft',
         tag: args.tag as string,
-        page: args.page as number,
-        size: args.size as number,
+        connectionId: args.connectionId as string,
+        size: -1,
       });
-      const data = getApiData<API.ApiServiceListResult>(res);
-      const items = data?.items ?? parseApiListResponse(res).items;
-      const codePrefix = args.codePrefix ? String(args.codePrefix).trim() : '';
-      const exactMatch = codePrefix.includes(':')
-        ? items.find((item) => item.code === codePrefix)
-        : undefined;
       return {
-        total: data?.total ?? items.length,
-        items,
-        exactMatch: exactMatch
-          ? { id: exactMatch.id, code: exactMatch.code, name: exactMatch.name, status: exactMatch.status }
-          : null,
+        ...result,
+        hint:
+          result.items.length === 0
+            ? '当前过滤条件下无 draft 服务'
+            : `共 ${result.items.length} 个 draft 待发布；仅对这些 code 调用 publish/run_test`,
       };
     },
   });
 
   registerFunctionCall({
     name: 'apiservice_filter_services',
-    description: '按页面过滤项检索 API 服务（code 前缀 + 状态 + 标签 + 数据库连接），返回全部命中项；面向检索而非分页浏览',
+    description:
+      '按 status/codePrefix 过滤 API 服务（等同 list，默认 size=-1）。找 draft 须传 status=draft 或改用 apiservice_list_draft_services',
     parameters: {
       type: 'object',
       properties: {
@@ -98,18 +109,7 @@ export function registerApiServiceTools() {
         connectionId: { type: 'string' },
       },
     },
-    handler: async (args) => {
-      const res = await getApiServices({
-        codePrefix: args.codePrefix as string,
-        status: args.status as string,
-        tag: args.tag as string,
-        connectionId: args.connectionId as string,
-        size: -1,
-      });
-      const data = getApiData<API.ApiServiceListResult>(res);
-      const items = data?.items ?? parseApiListResponse(res).items;
-      return { items, total: items.length };
-    },
+    handler: async (args) => queryApiServicesForTool(args as Record<string, unknown>),
   });
 
   registerFunctionCall({
@@ -154,6 +154,7 @@ export function registerApiServiceTools() {
     name: 'apiservice_create_service',
     description:
       '创建单个 API 服务（draft，一次一个主 operation）。code 可基于 entityCode 自动补全；connectionId 可省略',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -264,23 +265,37 @@ export function registerApiServiceTools() {
         };
 
         if (args.publish === true) {
-          const pubRes = await postApiServicePublish(created.id);
+          const pubRes = await postApiServicePublish(created.id, { skipErrorHandler: true });
           const published = getApiData<API.ApiService>(pubRes);
-          if (!published) throw new Error('创建成功但发布失败');
-          const verified = await verifyApiServiceById(published.id!, serviceCode);
-          const listed = await verifyApiServiceListed(verified.code);
+          if (!published?.id) throw new Error('创建成功但发布失败');
+          const verified = await verifyApiServicePublished(published.id, serviceCode);
+          const listed = await verifyApiServiceListed(verified.code, { expectedStatus: 'published' });
+          const allVerified = verified.verified && listed.verified;
           return {
             ...published,
             _resolvedConnection: resolved,
-            _verification: { ...verified, listedInApiList: listed.verified },
+            _verification: {
+              ...verified,
+              listedInApiList: listed.verified,
+              verified: allVerified,
+              message: allVerified
+                ? verified.message
+                : listed.message || verified.message,
+            },
           };
         }
 
-        const verified = await verifyApiServiceById(created.id, serviceCode);
+        const verified = await verifyApiServiceById(created.id, { expectedCode: serviceCode });
         const listed = await verifyApiServiceListed(verified.code);
+        const allVerified = verified.verified && listed.verified;
         return {
           ...result,
-          _verification: { ...verified, listedInApiList: listed.verified },
+          _verification: {
+            ...verified,
+            listedInApiList: listed.verified,
+            verified: allVerified,
+            message: `已创建 draft 服务「${serviceCode}」（未发布；发布须 apiservice_publish_service）`,
+          },
         };
       },
     }),
@@ -290,6 +305,7 @@ export function registerApiServiceTools() {
     name: 'apiservice_create_services_batch',
     description:
       '批量创建 API 服务（如 CRUD 全套）。每个服务一个 operation；可传 entityCode 自动生成 find/create/updateOne/deleteOne',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -415,7 +431,9 @@ export function registerApiServiceTools() {
 
   registerFunctionCall({
     name: 'apiservice_publish_service',
-    description: '发布 API 服务',
+    description:
+      '发布 API 服务（draft→published）。成功后信封须 verified=true 且 status=published；禁止用 run_test 代替本 Tool',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -430,15 +448,63 @@ export function registerApiServiceTools() {
       buildResourceId: (_args, data) => (data as API.ApiService)?.id,
       handler: async (args) => {
         const serviceId = await resolveApiServiceId(args as Record<string, unknown>);
-        const res = await postApiServicePublish(serviceId);
-        const data = getApiData<API.ApiService>(res);
-        if (!data) throw new Error('发布失败');
-        const code = args.code ? String(args.code) : data.code;
-        const verified = await verifyApiServiceById(data.id!, code || undefined);
-        if (verified.status !== 'published') {
-          throw new Error(`发布校验失败：期望 status=published，实际为 ${verified.status}`);
+        const code = args.code ? String(args.code).trim() : undefined;
+        const before = await verifyApiServiceById(serviceId, { expectedCode: code });
+
+        if (before.status === 'published') {
+          return {
+            success: false,
+            verified: false,
+            alreadyPublished: true,
+            error: `服务「${before.code}」已是 published，未产生 draft→published 变更。请用 apiservice_list_draft_services 获取待发布列表`,
+            serviceId,
+            code: before.code,
+            status: before.status,
+          };
         }
-        return { ...data, _verification: verified };
+
+        if (before.status === 'disabled') {
+          return {
+            success: false,
+            verified: false,
+            error: `服务「${before.code}」为 disabled，无法直接发布`,
+            serviceId,
+            code: before.code,
+            status: before.status,
+          };
+        }
+
+        try {
+          const pubRes = await postApiServicePublish(serviceId, { skipErrorHandler: true });
+          const data = getApiData<API.ApiService>(pubRes);
+          if (!data?.id) throw new Error('发布失败：接口未返回服务');
+          const verified = await verifyApiServicePublished(data.id, code || data.code);
+          const listed = await verifyApiServiceListed(verified.code, { expectedStatus: 'published' });
+          return {
+            ...data,
+            previousStatus: before.status || 'draft',
+            _verification: {
+              ...verified,
+              listedInApiList: listed.verified,
+              verified: verified.verified && listed.verified,
+              statusTransition: `${before.status || 'draft'}→published`,
+              message:
+                verified.verified && listed.verified
+                  ? verified.message
+                  : listed.message || verified.message,
+            },
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '发布失败';
+          return {
+            success: false,
+            verified: false,
+            error: message,
+            serviceId,
+            code: before.code,
+            previousStatus: before.status,
+          };
+        }
       },
     }),
   });
@@ -479,7 +545,7 @@ export function registerApiServiceTools() {
 
   registerFunctionCall({
     name: 'apiservice_get_tree',
-    description: '获取 API 服务域树',
+    description: '获取 API 服务域树；禁止用于实体/API 覆盖率对比',
     parameters: {
       type: 'object',
       properties: {
@@ -587,6 +653,7 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_run_test',
     description: '使用指定 operation 与 parameters 执行 API 服务测试（写操作事务回滚）；结果同步到测试页',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -610,13 +677,26 @@ export function registerApiServiceTools() {
           await verifyApiServiceListed(code);
         }
         try {
-          const res = await postApiServiceTest(serviceId, {
-            operation: args.operation as string,
-            parameters: (args.parameters as Record<string, unknown>) || {},
-          });
+          const res = await postApiServiceTest(
+            serviceId,
+            {
+              operation: args.operation as string,
+              parameters: (args.parameters as Record<string, unknown>) || {},
+            },
+            { skipErrorHandler: true },
+          );
           if (isApiSuccess(res)) {
             const data = getApiData<API.ApiServiceTestResult>(res);
             if (!data) throw new Error('测试请求失败');
+            const failureMessage = describeApiServiceTestFailure(data);
+            if (isApiServiceTestFailure(data)) {
+              return {
+                success: false,
+                verified: false,
+                error: failureMessage || '测试未通过',
+                ...data,
+              };
+            }
             const parameters = (args.parameters as Record<string, unknown>) || {};
             const operation = String(args.operation || data.operation || '');
             let savedMockParameters = data.savedMockParameters;

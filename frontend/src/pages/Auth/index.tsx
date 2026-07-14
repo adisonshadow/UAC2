@@ -6,7 +6,8 @@ import { getCaptcha } from '@/services/UAC/api/captcha';
 import { history } from '@/utils/navigation';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import { Helmet } from '@/components/Helmet';
-import { message, Modal, Form, Input, Button, Card, Space, Spin, Result } from 'antd';
+import { Modal, Form, Input, Button, Card, Space, Spin, Result } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import Lottie from 'react-lottie-player';
 import React, { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
@@ -293,7 +294,7 @@ const LoginPage: React.FC = () => {
       try {
         const response = await getHealth();
         if (response.code !== 200) {
-          Modal.error({
+          modal.error({
             title: '系统异常',
             content: '系统服务暂时不可用，请稍后再试',
             okText: '确定',
@@ -303,7 +304,7 @@ const LoginPage: React.FC = () => {
 
         // 检查数据库状态
         if (response.data?.database?.status === 'error') {
-          Modal.error({
+          modal.error({
             title: '数据库异常',
             content: response.data.database.message || '数据库连接异常，请稍后再试',
             okText: '确定',
@@ -312,7 +313,7 @@ const LoginPage: React.FC = () => {
         }
         
       } catch (error) {
-        Modal.error({
+        modal.error({
           title: '网络异常',
           content: '无法连接到服务器，请检查网络连接',
           okText: '确定',

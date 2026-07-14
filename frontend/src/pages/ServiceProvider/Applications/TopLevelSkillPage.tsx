@@ -1,6 +1,7 @@
 import { BulbOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, Button, Collapse, Form, Space, Spin, Tag, Typography, message } from 'antd';
+import { Alert, Button, Collapse, Form, Space, Spin, Tag, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MilkdownCrepeEditor from '@/components/MilkdownCrepeEditor';
@@ -33,7 +34,6 @@ const ApplicationTopLevelSkillPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [form] = Form.useForm();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applicationName, setApplicationName] = useState('');
@@ -70,7 +70,7 @@ const ApplicationTopLevelSkillPage: React.FC = () => {
         loadCapabilities(id),
       ]);
       if (!isApiSuccess(skillRes)) {
-        messageApi.error('加载失败');
+        message.error('加载失败');
         return;
       }
       const data = getApiData<{
@@ -83,7 +83,7 @@ const ApplicationTopLevelSkillPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [form, id, loadCapabilities, messageApi]);
+  }, [form, id, loadCapabilities]);
 
   useEffect(() => {
     void loadDetail();
@@ -99,16 +99,16 @@ const ApplicationTopLevelSkillPage: React.FC = () => {
         { contentMarkdown: values.contentMarkdown || '' },
       );
       if (!isApiSuccess(res)) {
-        messageApi.error('保存失败');
+        message.error('保存失败');
         return;
       }
-      messageApi.success('保存成功');
+      message.success('保存成功');
       const data = getApiData<{ applicationName?: string }>(res);
       if (data?.applicationName) {
         setApplicationName(data.applicationName);
       }
     } catch {
-      messageApi.error('保存失败');
+      message.error('保存失败');
     } finally {
       setSaving(false);
     }
@@ -131,7 +131,6 @@ const ApplicationTopLevelSkillPage: React.FC = () => {
         </Space>
       }
     >
-      {contextHolder}
       <Spin spinning={loading}>
         <Alert
           type="info"

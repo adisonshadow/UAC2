@@ -25,9 +25,9 @@ import ScopeEntityTree from '../components/ScopeEntityTree';
 import FieldsManager from '../components/FieldsManager';
 import JsonSchemaEditor from '../components/JsonSchemaEditor';
 import EnumManager from '../components/EnumManager';
+import EntityDeletionModal from '../components/EntityDeletionModal';
 import { buildEntityValidatePrompt } from '../utils/entityValidation';
 import {
-  deleteBusinessDataEntity,
   getBusinessDataSchema,
   getMaterializationStatus,
   patchBusinessDataEntity,
@@ -51,6 +51,7 @@ const ModelDesigner: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingEntity, setEditingEntity] = useState<API.BusinessDataEntity | null>(null);
+  const [deletingEntity, setDeletingEntity] = useState<API.BusinessDataEntity | null>(null);
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
@@ -228,16 +229,16 @@ const ModelDesigner: React.FC = () => {
     }
   };
 
-  const handleDeleteEntity = async (entity: API.BusinessDataEntity) => {
+  const handleDeleteEntity = (entity: API.BusinessDataEntity) => {
     if (!entity.id) return;
-    const res = await deleteBusinessDataEntity(entity.id);
-    if (isApiSuccess(res)) {
-      message.success('实体已删除');
-      if (selected?.id === entity.id) setSelected(null);
-      await loadSchema();
-    } else {
-      message.error(getApiErrorMessage(res, '删除失败'));
-    }
+    setDeletingEntity(entity);
+  };
+
+  const handleEntityDeletionDone = async (result: API.EntityDeletionExecuteResult) => {
+    const deletedIds = new Set(result.deleteEntityIds || []);
+    deletedIds.forEach((id) => removeEntityFromSchema(id));
+    setDeletingEntity(null);
+    await loadSchema();
   };
 
   const handleSaveFields = async (fields: API.BusinessDataField[]) => {
@@ -453,6 +454,13 @@ const ModelDesigner: React.FC = () => {
         open={enumModalOpen}
         onClose={() => setEnumModalOpen(false)}
         onRefresh={loadSchema}
+      />
+
+      <EntityDeletionModal
+        open={!!deletingEntity}
+        rootEntity={deletingEntity}
+        onCancel={() => setDeletingEntity(null)}
+        onDeleted={handleEntityDeletionDone}
       />
     </div>
   );

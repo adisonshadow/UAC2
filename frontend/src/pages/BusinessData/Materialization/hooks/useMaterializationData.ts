@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, message } from 'antd';
+
+import { message, modal } from '@/utils/antdAppApis';
 import {
   getBusinessDataSchema,
   getDatabaseConnections,
@@ -252,7 +253,7 @@ export function useMaterializationActions() {
         const dbType = payload?.dbType || options.dbType;
         const targetSchema = payload?.targetSchema || options.targetSchema;
         const label = getMaterializationTargetLabel(dbType);
-        Modal.confirm({
+        modal.confirm({
           title: `${label}「${targetSchema}」不存在`,
           content: `是否创建该${label}并继续物化？`,
           okText: '创建并继续',

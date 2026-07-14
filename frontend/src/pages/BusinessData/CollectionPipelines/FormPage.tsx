@@ -1,6 +1,7 @@
 import { PageContainer, ProForm } from '@ant-design/pro-components';
 import { useAISurface } from '@EADAF/ai-base';
-import { Button, Space, Spin, message } from 'antd';
+import { Button, Space, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -24,7 +25,6 @@ interface CollectionPipelineFormPageProps {
 const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const [messageApi, contextHolder] = message.useMessage();
   const [form] = ProForm.useForm<CollectionPipelineFormValues>();
   const [loading, setLoading] = useState(mode !== 'create');
   const [submitting, setSubmitting] = useState(false);
@@ -54,12 +54,12 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
     try {
       const res = await getCollectionPipeline(id);
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '加载失败'));
+        message.error(getApiErrorMessage(res, '加载失败'));
         return;
       }
       const data = getApiData<API.CollectionPipeline>(res);
       if (!data) {
-        messageApi.error('采集管道不存在');
+        message.error('采集管道不存在');
         return;
       }
       setMeta(data);
@@ -81,7 +81,7 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [form, id, messageApi]);
+  }, [form, id]);
 
   useEffect(() => {
     if (mode === 'edit') void loadPipeline();
@@ -155,10 +155,10 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
           : await patchCollectionPipeline(id!, payload);
 
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '保存失败'));
+        message.error(getApiErrorMessage(res, '保存失败'));
         return;
       }
-      messageApi.success('已保存');
+      message.success('已保存');
       const data = getApiData<API.CollectionPipeline>(res);
       if (mode === 'create' && data?.id) {
         navigate(`${listPath}/${data.id}/edit`, { replace: true });
@@ -167,7 +167,7 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
       if (data) setMeta(data);
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) return;
-      messageApi.error(getApiErrorMessage(error, '保存失败'));
+      message.error(getApiErrorMessage(error, '保存失败'));
     } finally {
       setSubmitting(false);
     }
@@ -175,7 +175,7 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
 
   const publish = async () => {
     if (!id) {
-      messageApi.warning('请先保存管道');
+      message.warning('请先保存管道');
       return;
     }
     const values = await form.validateFields();
@@ -184,10 +184,10 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
       await patchCollectionPipeline(id, buildPayload(values));
       const res = await postCollectionPipelinePublish(id);
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '发布失败'));
+        message.error(getApiErrorMessage(res, '发布失败'));
         return;
       }
-      messageApi.success('已发布');
+      message.success('已发布');
       await loadPipeline();
     } finally {
       setSubmitting(false);
@@ -227,7 +227,6 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
         </Space>
       }
     >
-      {contextHolder}
       <ProForm
         form={form}
         submitter={false}

@@ -1,5 +1,6 @@
 import type { AxiosRequestConfig, AxiosResponse } from 'axios';
-import { message } from 'antd';
+import { message } from '@/utils/antdAppApis';
+
 import { handleUnauthorized } from './auth';
 import { getApiErrorMessage, enrichAxiosError } from './apiResponse';
 import { NO_TOKEN_APIS, AUTH_HEADER, AUTH_PREFIX, AUTH_PAGES } from '@/constants/auth';

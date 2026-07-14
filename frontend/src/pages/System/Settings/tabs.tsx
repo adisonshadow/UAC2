@@ -1,4 +1,5 @@
-import { Button, Card, message, Space, Switch, Table, Typography } from 'antd';
+import { Button, Card, Space, Switch, Table, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   getSystemBackups,

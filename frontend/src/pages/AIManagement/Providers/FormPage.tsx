@@ -6,7 +6,8 @@ import {
   ProFormSwitch,
   ProFormText,
 } from '@ant-design/pro-components';
-import { Button, Form, Space, Spin, message } from 'antd';
+import { Button, Form, Space, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -35,7 +36,6 @@ const ProviderFormPage: React.FC<ProviderFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [form] = Form.useForm();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(mode !== 'create');
   const [saving, setSaving] = useState(false);
 
@@ -49,24 +49,24 @@ const ProviderFormPage: React.FC<ProviderFormPageProps> = ({ mode }) => {
     try {
       const response = await getAdminProvidersId({ id });
       if (!isApiSuccess(response)) {
-        messageApi.error('获取服务商详情失败');
+        message.error('获取服务商详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       const data = getApiData<API.AdminProvider>(response);
       if (!data) {
-        messageApi.error('获取服务商详情失败');
+        message.error('获取服务商详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       form.setFieldsValue({ ...data, apiKey: undefined });
     } catch {
-      messageApi.error('获取服务商详情失败');
+      message.error('获取服务商详情失败');
       navigate(listPath, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [form, id, listPath, messageApi, mode, navigate]);
+  }, [form, id, listPath, mode, navigate]);
 
   useAIFormSurface({
     resourceType: 'provider',
@@ -105,10 +105,10 @@ const ProviderFormPage: React.FC<ProviderFormPageProps> = ({ mode }) => {
           adapterType: values.adapterType,
         });
         if (!isApiSuccess(response)) {
-          messageApi.error(response.message || '创建失败');
+          message.error(response.message || '创建失败');
           return;
         }
-        messageApi.success('创建成功');
+        message.success('创建成功');
       } else if (id) {
         const payload: Record<string, unknown> = {
           name: values.name,
@@ -122,15 +122,15 @@ const ProviderFormPage: React.FC<ProviderFormPageProps> = ({ mode }) => {
         }
         const response = await patchAdminProvidersId({ id }, payload);
         if (!isApiSuccess(response)) {
-          messageApi.error(response.message || '更新失败');
+          message.error(response.message || '更新失败');
           return;
         }
-        messageApi.success('更新成功');
+        message.success('更新成功');
       }
       navigate(listPath);
     } catch (error: unknown) {
       if (!(error as { errorFields?: unknown })?.errorFields) {
-        messageApi.error('保存失败');
+        message.error('保存失败');
       }
     } finally {
       setSaving(false);
@@ -159,7 +159,6 @@ const ProviderFormPage: React.FC<ProviderFormPageProps> = ({ mode }) => {
         )
       }
     >
-      {contextHolder}
       <Spin spinning={loading}>
         <ProForm form={form} submitter={false} layout="vertical" readonly={readOnly}>
           <ProFormText name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />

@@ -5,7 +5,8 @@ import {
 } from '@ant-design/icons';
 import { ActionType, PageContainer } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Modal, message } from 'antd';
+import { Button } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildAIToolListPrompts } from '@/ai/pageChatPrompts';
@@ -23,7 +24,6 @@ import { toolTableColumns } from './schema';
 const ToolsPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildAIToolListPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -32,7 +32,7 @@ const ToolsPage: React.FC = () => {
   const search = useProTableSearchCollapse('ai-management.tools');
 
   const handleDelete = (id: string, name?: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除该 Tool？',
       content: name ? `将永久删除「${name}」，此操作不可恢复。` : '删除后不可恢复。',
       okText: '删除',
@@ -40,10 +40,10 @@ const ToolsPage: React.FC = () => {
       onOk: async () => {
         const response = await deleteAdminToolsId({ id });
         if (!isApiSuccess(response)) {
-          messageApi.error('删除失败');
+          message.error('删除失败');
           return;
         }
-        messageApi.success('已删除');
+        message.success('已删除');
         actionRef.current?.reload();
       },
     });
@@ -51,7 +51,6 @@ const ToolsPage: React.FC = () => {
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <UrlSyncedProTable
         actionRef={actionRef}
         rowKey="id"

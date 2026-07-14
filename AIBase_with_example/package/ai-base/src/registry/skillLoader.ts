@@ -60,7 +60,7 @@ export interface ChatSkillContext {
 
 /**
  * 加载可用 Skill 与顶层 Skill 说明：
- * - 配置了 applicationId：远端（全局 + 绑定该应用的专用）+ 本地 fallbackSkillSlugs
+ * - 配置了 applicationId：远端（全局 Skill + fallbackSkillSlugs 页面 Skill）+ 本地 fallbackSkillSlugs
  * - 未配置 applicationId：仅本地 fallbackSkillSlugs
  * - topLevelSkillMarkdown：config 非空优先，否则从 capabilities 读取
  *
@@ -101,9 +101,17 @@ export async function loadChatSkillContext(
     const topLevelSkillMarkdown =
       localTopLevel || extractTopLevelFromCapabilities(caps as Record<string, unknown>);
 
-    const skillMetas = ((caps as Record<string, unknown>)?.skills as Array<{ slug: string }>) || [];
+    const skillMetas =
+      ((caps as Record<string, unknown>)?.skills as Array<{ slug: string; isGlobal?: boolean }>) || [];
+    const fallbackSet = new Set(config.fallbackSkillSlugs ?? []);
+    // 页面配置了 fallbackSkillSlugs 时，只加载全局框架 Skill + 当前页 Skill，避免全部专用 Skill 稀释指引与 Tool 池
+    const remoteSkillSlugs = skillMetas
+      .filter((item) => {
+        if (!fallbackSet.size) return true;
+        return item.isGlobal === true || fallbackSet.has(item.slug);
+      })
+      .map((item) => item.slug);
     // 批量加载远端 Skill（单请求替代 N 次），失败时降级为逐个请求
-    const remoteSkillSlugs = skillMetas.map((item) => item.slug);
     const remoteSkills = skillMetas.length
       ? await loadSkillsBySlugs(client, remoteSkillSlugs)
       : [];

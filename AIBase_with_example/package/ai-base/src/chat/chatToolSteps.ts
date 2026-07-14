@@ -1,4 +1,4 @@
-export type ChatToolStepStatus = 'loading' | 'success' | 'error';
+export type ChatToolStepStatus = 'loading' | 'success' | 'error' | 'business_error';
 
 export interface ChatToolStep {
   id: string;

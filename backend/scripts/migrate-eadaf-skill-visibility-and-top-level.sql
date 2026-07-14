@@ -102,7 +102,7 @@ SET top_level_skill_markdown = $EADAF_TOP$
 ### 与用户沟通
 - 用业务语言；**禁止**向用户展示 Tool 函数名、内部 JSON 协议、原始 Tool 返回体
 - 涉及成员、权限、实体、API 等数据时**必须先调用 Tool 查询**，禁止编造 ID、version、连接信息
-- 用户说的「Scope / 业务域 / 设备域」通常指 **bizdata 实体 code 前缀**（如 `equipment`），用 `uac_list_bizdata_scopes` / `bizdata_list_entities` 查询；**不是** aibase.scopes（AI 能力域管理菜单暂未开放）
+- 用户说的「Scope / 业务域 / 设备域」通常指 **bizdata 实体 code 前缀**（如 `equipment`），用 `uac_list_bizdata_scopes` / `bizdata_list_entity_summaries` 查询实体列表；**不是** aibase.scopes（AI 能力域管理菜单暂未开放）
 
 ### 引用与快捷操作
 - 用户可通过页面 `@` 引用成员、实体、API 服务等上下文；优先结合引用内容理解意图

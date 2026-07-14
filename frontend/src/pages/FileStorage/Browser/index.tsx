@@ -1,7 +1,8 @@
 import { DownloadOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons';
-import { ActionType, PageContainer, ProColumns } from '@ant-design/pro-components';
+import { ActionType, PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Image, Modal, Space, Upload, message, Tooltip } from 'antd';
+import { Button, Image, Modal, Space, Upload, Tooltip } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildStorageBrowserPrompts } from '@/ai/pageChatPrompts';
@@ -59,13 +60,11 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 
 const BrowserPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadBucket, setUploadBucket] = useState<string>();
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [previewName, setPreviewName] = useState<string>();
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingBucketCode, setUploadingBucketCode] = useState<string>();
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildStorageBrowserPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -91,7 +90,7 @@ const BrowserPage: React.FC = () => {
       setPreviewUrl(url);
       setPreviewOpen(true);
     } catch (error) {
-      messageApi.error(error instanceof Error ? error.message : '预览失败');
+      message.error(error instanceof Error ? error.message : '预览失败');
     }
   };
 
@@ -101,13 +100,12 @@ const BrowserPage: React.FC = () => {
       const blob = await fetchStorageBlob(record.objectId, false);
       triggerBlobDownload(blob, record.name || 'download');
     } catch (error) {
-      messageApi.error(error instanceof Error ? error.message : '下载失败');
+      message.error(error instanceof Error ? error.message : '下载失败');
     }
   };
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <UrlSyncedProTable<ObjectRecord>
         headerTitle="文件浏览器"
         actionRef={actionRef}
@@ -210,42 +208,49 @@ const BrowserPage: React.FC = () => {
                 width: 80,
                 render: (_, row) => (
                   <TableActions>
-                    <Upload
-                      showUploadList={false}
-                      customRequest={async ({ file, onSuccess, onError }) => {
-                        if (!row.code) return;
-                        setUploading(true);
-                        try {
-                          const fd = new FormData();
-                          fd.append('file', file as File);
-                          fd.append('bucketCode', row.code);
-                          const res = await postStorageObjectUpload(fd);
-                          if (isApiSuccess(res)) {
-                            messageApi.success('上传成功');
-                            setUploadOpen(false);
-                            actionRef.current?.reload();
-                            onSuccess?.(res);
-                          } else {
-                            onError?.(new Error('upload failed'));
+                    <Tooltip title="选择文件">
+                      <Upload
+                        showUploadList={false}
+                        disabled={!row.code || Boolean(uploadingBucketCode)}
+                        customRequest={async ({ file, onSuccess, onError }) => {
+                          if (!row.code) {
+                            message.error('该 Bucket 缺少编码，无法上传');
+                            onError?.(new Error('missing bucketCode'));
+                            return;
                           }
-                        } catch (e) {
-                          onError?.(e as Error);
-                        } finally {
-                          setUploading(false);
-                        }
-                      }}
-                    >
-                      <Tooltip title="选择文件">
+                          setUploadingBucketCode(row.code);
+                          try {
+                            const fd = new FormData();
+                            fd.append('file', file as File);
+                            fd.append('bucketCode', row.code);
+                            const res = await postStorageObjectUpload(fd);
+                            if (isApiSuccess(res)) {
+                              message.success('上传成功');
+                              setUploadOpen(false);
+                              actionRef.current?.reload();
+                              onSuccess?.(res);
+                            } else {
+                              const err = new Error('upload failed');
+                              message.error('上传失败');
+                              onError?.(err);
+                            }
+                          } catch (e) {
+                            message.error(e instanceof Error ? e.message : '上传失败');
+                            onError?.(e as Error);
+                          } finally {
+                            setUploadingBucketCode(undefined);
+                          }
+                        }}
+                      >
                         <Button
                           type="link"
                           size="small"
                           icon={<UploadOutlined />}
-                          loading={uploading}
-                          disabled={uploadBucket !== undefined && uploadBucket !== row.code}
-                          onClick={(e) => e.stopPropagation()}
+                          loading={uploadingBucketCode === row.code}
+                          disabled={!row.code || Boolean(uploadingBucketCode)}
                         />
-                      </Tooltip>
-                    </Upload>
+                      </Upload>
+                    </Tooltip>
                   </TableActions>
                 ),
               },

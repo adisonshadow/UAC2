@@ -1,5 +1,6 @@
 import type { FunctionCallDef } from '../types';
-import { withToolInvokeLog } from '../utils/toolInvokeLogger';
+import { executeToolWithEnvelope } from '../utils/executeToolWithEnvelope';
+import type { ToolInvokeLogEntry } from '../utils/toolInvokeLogger';
 
 /** 默认命名空间：未显式传 namespace 的注册与查询都落在这里（向后兼容） */
 const DEFAULT_NAMESPACE = 'default';
@@ -148,10 +149,18 @@ export async function invokeFunctionCall(
   name: string,
   args: Record<string, unknown>,
   namespace?: string,
+  logContext?: Pick<ToolInvokeLogEntry, 'conversationKey' | 'turnId' | 'round'>,
 ) {
   const def = getFunctionCallDef(name, namespace);
   if (!def) {
     throw new Error(`未注册的 Client Tool: ${name}`);
   }
-  return withToolInvokeLog('client', name, args, () => def.handler(args));
+  return executeToolWithEnvelope({
+    side: 'client',
+    name,
+    args,
+    requiresVerification: def.requiresVerification,
+    logContext,
+    fn: () => def.handler(args),
+  });
 }

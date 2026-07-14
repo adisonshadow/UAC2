@@ -2,7 +2,8 @@ import { BulbOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons';
 import { Bubble, Prompts, Sender, Welcome, XProvider } from '@ant-design/x';
 import { useXChat } from '@ant-design/x-sdk';
 import { PageContainer } from '@ant-design/pro-components';
-import { Avatar, Flex, Select, message } from 'antd';
+import { Avatar, Flex, Select } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useMemo, useState } from 'react';
 import { getAiServiceModels, type AiServiceModelInfo } from '@/services/UAC/api/aiService';
 import { createEADAFChatProvider, type EADAFChatMessage } from './EADAFChatProvider';
@@ -42,7 +43,6 @@ const promptItems = [
 ];
 
 const ChatDemoPage: React.FC = () => {
-  const [messageApi, contextHolder] = message.useMessage();
   const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string>();
   const [senderValue, setSenderValue] = useState('');
@@ -91,11 +91,11 @@ const ChatDemoPage: React.FC = () => {
           setSelectedSlug(models[0].slug);
         }
       } catch {
-        messageApi.error('加载模型列表失败');
+        message.error('加载模型列表失败');
       }
     };
     loadModels();
-  }, [messageApi]);
+  }, []);
 
   const bubbleItems = useMemo(
     () =>
@@ -116,7 +116,7 @@ const ChatDemoPage: React.FC = () => {
 
   const handleSubmit = (content: string) => {
     if (!selectedSlug) {
-      messageApi.warning('请先选择模型');
+      message.warning('请先选择模型');
       return;
     }
     if (!content.trim()) {
@@ -130,7 +130,6 @@ const ChatDemoPage: React.FC = () => {
 
   return (
     <PageContainer pageHeaderRender={() => {return <></> }}>
-      {contextHolder}
       <Flex vertical gap={16} style={{ height: 'calc(100vh - 220px)', minHeight: 520 }}>
         <Flex align="center" gap={12} wrap="wrap">
           <span>选择模型：</span>

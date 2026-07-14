@@ -12,7 +12,7 @@ import {
   RetweetOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Empty, Popconfirm, Table, Tooltip, Typography } from 'antd';
+import { Button, Dropdown, Empty, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useChatReference } from '@EADAF/ai-base';
 import React, { useMemo } from 'react';
@@ -162,17 +162,10 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
                 {
                   key: 'delete',
                   icon: <DeleteOutlined />,
-                  label: (
-                    <Popconfirm
-                      title={`确定删除「${entity.label}」？`}
-                      disabled={entity.isLocked}
-                      onConfirm={() => onDeleteEntity?.(entity)}
-                    >
-                      <span>删除</span>
-                    </Popconfirm>
-                  ),
+                  label: '删除',
                   danger: true,
                   disabled: entity.isLocked,
+                  onClick: () => onDeleteEntity?.(entity),
                 },
               ],
             }}

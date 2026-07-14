@@ -29,10 +29,17 @@ export function applyBizdataModelMutation(
       }
       break;
     case 'entity.deleted':
-      if (mutation.resourceId) {
-        handlers.removeEntity(mutation.resourceId);
-      } else {
-        void handlers.refresh();
+      {
+        const deletedIds = Array.isArray(payload?.deleteEntityIds)
+          ? (payload.deleteEntityIds as string[]).filter(Boolean)
+          : [];
+        if (deletedIds.length) {
+          deletedIds.forEach((id) => handlers.removeEntity(String(id)));
+        } else if (mutation.resourceId) {
+          handlers.removeEntity(mutation.resourceId);
+        } else {
+          void handlers.refresh();
+        }
       }
       break;
     case 'enum.created':

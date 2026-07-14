@@ -10,7 +10,7 @@ import {
 } from '@/utils/apiResponse';
 import { normalizeApiServiceCode, suggestApiServiceCodeFromEntity } from './apiServiceCodeUtils';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
-import { verifyApiServiceListed } from './apiServiceVerify';
+import { verifyApiServiceListed, verifyApiServicePublished } from './apiServiceVerify';
 
 export const DEFAULT_CRUD_OPERATIONS = ['find', 'create', 'updateOne', 'deleteOne'] as const;
 
@@ -75,12 +75,24 @@ export interface BatchCreateResult {
   created: API.ApiService[];
   skipped: Array<{ code?: string; operation?: string; reason: string }>;
   failed: Array<{ code?: string; operation?: string; error: string }>;
+  publishFailed?: Array<{ code?: string; error: string }>;
   connectionId: string;
   connectionName?: string;
   targetSchema?: string;
   total: number;
   successCount: number;
   skippedCount: number;
+  publishRequested?: boolean;
+  publishedCount?: number;
+  _verification?: {
+    verified: boolean;
+    successCount: number;
+    failedCount: number;
+    skippedCount: number;
+    publishFailedCount?: number;
+    publishedCount?: number;
+    message?: string;
+  };
 }
 
 function isDuplicateError(message: string): boolean {
@@ -262,6 +274,7 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
   const created: API.ApiService[] = [];
   const skipped: BatchCreateResult['skipped'] = [];
   const failed: BatchCreateResult['failed'] = [];
+  const publishFailed: NonNullable<BatchCreateResult['publishFailed']> = [];
 
   for (const draft of drafts) {
     try {
@@ -322,8 +335,25 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
       }
 
       if (args.publish === true) {
-        const pubRes = await postApiServicePublish(service.id);
-        service = getApiData<API.ApiService>(pubRes) || service;
+        try {
+          const pubRes = await postApiServicePublish(service.id, { skipErrorHandler: true });
+          const published = getApiData<API.ApiService>(pubRes);
+          if (!published?.id) {
+            publishFailed.push({
+              code: draft.code,
+              error: '发布接口未返回服务',
+            });
+            service = { ...service, status: service.status || 'draft' };
+          } else {
+            const verified = await verifyApiServicePublished(published.id, draft.code);
+            service = { ...published, status: verified.status || 'published' };
+          }
+        } catch (pubErr) {
+          publishFailed.push({
+            code: draft.code,
+            error: getApiErrorMessage(pubErr, pubErr instanceof Error ? pubErr.message : '发布失败'),
+          });
+        }
       }
       created.push(service);
     } catch (error) {
@@ -344,15 +374,44 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
     }
   }
 
+  const publishRequested = args.publish === true;
+  const publishedCount = publishRequested
+    ? created.filter((item) => item.status === 'published').length
+    : 0;
+  const allPublished = !publishRequested || (publishFailed.length === 0 && publishedCount === created.length);
+
   return {
     created,
     skipped,
     failed,
+    publishFailed,
     connectionId: resolved.connectionId,
     connectionName: resolved.connectionName,
     targetSchema: resolved.targetSchema,
     total: drafts.length,
     successCount: created.length,
     skippedCount: skipped.length,
+    publishRequested,
+    publishedCount,
+    _verification: {
+      verified: failed.length === 0 && created.length > 0 && allPublished,
+      successCount: created.length,
+      failedCount: failed.length,
+      skippedCount: skipped.length,
+      publishFailedCount: publishFailed.length,
+      publishedCount,
+      message:
+        failed.length > 0
+          ? `批量创建有 ${failed.length} 项失败`
+          : publishFailed.length > 0
+            ? `批量发布有 ${publishFailed.length} 项失败`
+            : publishRequested && publishedCount < created.length
+              ? `仅 ${publishedCount}/${created.length} 项 status=published`
+              : created.length === 0
+                ? '未创建任何 API 服务'
+                : publishRequested
+                  ? `已创建并发布 ${publishedCount} 个服务`
+                  : `已创建 ${created.length} 个 draft 服务（未发布）`,
+    },
   };
 }

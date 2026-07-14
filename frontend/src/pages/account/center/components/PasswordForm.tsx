@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, message } from 'antd';
+import { Form, Input, Button } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import { request } from '@/utils/request';
 

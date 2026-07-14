@@ -5,7 +5,8 @@ import {
 } from '@ant-design/icons';
 import { ActionType, PageContainer } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Modal, message } from 'antd';
+import { Button } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildAIScopePrompts } from '@/ai/pageChatPrompts';
@@ -23,7 +24,6 @@ import { scopeTableColumns } from './schema';
 const ScopesPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildAIScopePrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -32,15 +32,15 @@ const ScopesPage: React.FC = () => {
   const search = useProTableSearchCollapse('ai-management.scopes');
 
   const handleDelete = (id: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认停用该 Scope？',
       onOk: async () => {
         const response = await deleteAdminScopesId({ id });
         if (!isApiSuccess(response)) {
-          messageApi.error('停用失败');
+          message.error('停用失败');
           return;
         }
-        messageApi.success('已停用');
+        message.success('已停用');
         actionRef.current?.reload();
       },
     });
@@ -48,7 +48,6 @@ const ScopesPage: React.FC = () => {
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <UrlSyncedProTable
         actionRef={actionRef}
         rowKey="id"

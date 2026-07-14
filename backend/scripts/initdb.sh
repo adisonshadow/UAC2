@@ -91,7 +91,11 @@ if [[ "$*" == *"--with-aibase-seed"* ]]; then
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-ai-seed.sql" || { echo "导入业务数据 AI 种子数据失败"; exit 1; }
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-entity-code-ai-tool.sql" || { echo "实体 Code 编辑 AI Tool/Skill 迁移失败"; exit 1; }
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-rename-entity-code-tool.sql" || { echo "实体 Code 重命名 Tool/Skill 迁移失败"; exit 1; }
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-list-entity-summaries-tool.sql" || { echo "精简列出实体 Tool/Skill 迁移失败"; exit 1; }
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-prefer-entity-summaries.sql" || { echo "停用 list_entities / 优先 summaries 迁移失败"; exit 1; }
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-entity-deletion-cascade-tool.sql" || { echo "实体级联删除 Tool 迁移失败"; exit 1; }
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-api-service-ai-seed.sql" || { echo "导入 API 服务 AI 种子数据失败"; exit 1; }
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-service-entity-coverage-skill.sql" || { echo "API 服务实体覆盖率 Skill 迁移失败"; exit 1; }
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-collection-pipeline-ai-seed.sql" || { echo "导入采集管道 AI 种子数据失败"; exit 1; }
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-outbound-webhook-ai-seed.sql" || { echo "导入提交外部API AI 种子数据失败"; exit 1; }
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-admin-ai-seed.sql" || { echo "导入 AI 管理种子数据失败"; exit 1; }
@@ -107,6 +111,10 @@ if [[ "$*" == *"--with-aibase-seed"* ]]; then
 
     echo "开始执行 EADAF Skill 可见性与顶层 Skill 迁移..."
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-eadaf-skill-visibility-and-top-level.sql" || { echo "EADAF Skill 迁移失败"; exit 1; }
+
+    echo "开始执行 ToolResponse 框架 Skill 迁移..."
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-tool-response-framework-skill.sql" || { echo "ToolResponse 框架 Skill 迁移失败"; exit 1; }
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-publish-verification-skill.sql" || { echo "API 发布防幻觉 Skill 迁移失败"; exit 1; }
 
     echo "开始初始化销售 Demo SQLite..."
     (cd "$PROJECT_ROOT" && node scripts/init-sales-demo-db.js) || { echo "初始化销售 Demo SQLite 失败"; exit 1; }

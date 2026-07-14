@@ -222,7 +222,7 @@ async function listServices({
   size = 100,
 } = {}) {
   const where = {};
-  if (status) where.status = status;
+  if (status) where.status = String(status).trim().toLowerCase();
   if (entityId) where.entity_id = entityId;
   if (connectionId) where.connection_id = connectionId;
   if (codePrefix) {

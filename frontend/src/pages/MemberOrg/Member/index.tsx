@@ -7,7 +7,8 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { ActionType, PageContainer } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { useSetState } from "ahooks";
-import { Button, Modal, message } from 'antd';
+import { Button } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useMemo, useRef } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildMemberPrompts } from '@/ai/pageChatPrompts';
@@ -42,7 +43,6 @@ const Page: React.FC = () => {
   const departmentOptions = useDepartmentOptions();
   const { roleOptions } = useRoleOptions();
   const actionRef = useRef<ActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildMemberPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -70,16 +70,16 @@ const Page: React.FC = () => {
                 danger
                 icon={<DeleteOutlined />}
                 onClick={() => {
-                  Modal.confirm({
+                  modal.confirm({
                     title: '确认删除',
                     content: '确定要删除该成员吗？',
                     onOk: async () => {
                       try {
                         await deleteUsersUserId({ user_id: record.user_id });
-                        messageApi.success('删除成功');
+                        message.success('删除成功');
                         actionRef.current?.reload();
                       } catch {
-                        messageApi.error('删除失败');
+                        message.error('删除失败');
                       }
                     },
                   });
@@ -147,17 +147,16 @@ const Page: React.FC = () => {
         };
       }
 
-      messageApi.error(response.message || '获取成员列表失败');
+      message.error(response.message || '获取成员列表失败');
       return { data: [], success: false, total: 0 };
     } catch {
-      messageApi.error('获取成员列表失败');
+      message.error('获取成员列表失败');
       return { data: [], success: false, total: 0 };
     }
-  }, [messageApi]);
+  }, []);
 
   return (
     <>
-      {contextHolder}
       <PageContainer pageHeaderRender={() => <></>}>
         <UrlSyncedProTable<UserRecord>
           defaultPageSize={PAGE_SIZE}

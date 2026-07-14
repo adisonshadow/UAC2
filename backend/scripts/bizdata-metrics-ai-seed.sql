@@ -224,7 +224,7 @@ WHERE s.slug = 'bizdata-metrics'
     'bizdata_metric_get_dashboard',
     'bizdata_metric_suggest_definition',
     'bizdata_metric_navigate',
-    'bizdata_list_entities',
+    'bizdata_list_entity_summaries',
     'bizdata_get_entity',
     'bizdata_browse_materialized_schema'
   )

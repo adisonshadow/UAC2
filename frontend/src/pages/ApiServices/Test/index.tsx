@@ -1,18 +1,8 @@
 import { PlayCircleOutlined, RobotOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { sendMockUserMessage, useAISurface, useChatReference } from '@EADAF/ai-base';
-import {
-  Alert,
-  Button,
-  Collapse,
-  Descriptions,
-  Input,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Collapse, Descriptions, Input, Space, Spin, Tag, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -59,7 +49,6 @@ const ApiServiceTestPage: React.FC = () => {
   const location = useLocation();
   const locationState = (location.state || {}) as TestLocationState;
   const { id: serviceId } = useParams<{ id: string }>();
-  const [messageApi, contextHolder] = message.useMessage();
   const { addReference } = useChatReference();
   const [profileLoading, setProfileLoading] = useState(true);
   const [testLoading, setTestLoading] = useState(false);
@@ -182,15 +171,15 @@ const ApiServiceTestPage: React.FC = () => {
     try {
       const res = await postApiServiceSuggestTestParams(serviceId, { operation: selectedOperation });
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '重置模拟参数失败'));
+        message.error(getApiErrorMessage(res, '重置模拟参数失败'));
         return;
       }
       const data = getApiData<API.ApiServiceSuggestTestParamsResult>(res);
       setParametersText(JSON.stringify(data?.mockParameters || {}, null, 2));
       setParseError(null);
-      messageApi.success('已重置为默认模拟参数');
+      message.success('已重置为默认模拟参数');
     } catch (err) {
-      messageApi.error(getApiErrorMessage(err, '重置模拟参数失败'));
+      message.error(getApiErrorMessage(err, '重置模拟参数失败'));
     }
   };
 
@@ -257,10 +246,14 @@ const ApiServiceTestPage: React.FC = () => {
     setResult(null);
     setTestError(null);
     try {
-      const res = await postApiServiceTest(serviceId, {
-        operation: selectedOperation,
-        parameters,
-      });
+      const res = await postApiServiceTest(
+        serviceId,
+        {
+          operation: selectedOperation,
+          parameters,
+        },
+        { skipErrorHandler: true },
+      );
       if (isApiSuccess(res)) {
         const data = getApiData<API.ApiServiceTestResult>(res) || null;
         setResult(data);
@@ -277,16 +270,14 @@ const ApiServiceTestPage: React.FC = () => {
       } else {
         const errMsg = getApiErrorMessage(res, '测试请求失败');
         setTestError(formatApiServiceTestError(res, errMsg));
-        messageApi.error(errMsg);
       }
     } catch (err) {
       const errMsg = formatApiServiceTestError(err, '测试请求失败');
       setTestError(errMsg);
-      messageApi.error(getApiErrorMessage(err, '测试请求失败'));
     } finally {
       setTestLoading(false);
     }
-  }, [messageApi, parametersText, selectedOperation, serviceId]);
+  }, [parametersText, selectedOperation, serviceId]);
 
   useEffect(() => {
     autoRunConsumedRef.current = false;
@@ -345,8 +336,6 @@ const ApiServiceTestPage: React.FC = () => {
         />
       }
     >
-      {contextHolder}
-
       {profileLoading && (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <Spin description="正在加载测试上下文…" />

@@ -1,5 +1,4 @@
 import {
-  deleteBusinessDataEntity,
   deleteBusinessDataRelation,
   getBusinessDataEntity,
   getBusinessDataEntities,
@@ -10,6 +9,7 @@ import {
   postBusinessDataEntity,
   postBusinessDataEnum,
   postBusinessDataRelation,
+  postEntityDeletionExecute,
   putBusinessDataEntityFields,
 } from '@/services/UAC/api/businessData';
 import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
@@ -34,8 +34,27 @@ import {
 const BIZDATA_DOMAIN = 'bizdata';
 const BIZDATA_SURFACE = 'bizdata.model-designer';
 
+async function buildEntityUpdateVerification(
+  entityId: string,
+  hint?: string,
+): Promise<{ entity: API.BusinessDataEntity; _verification: Record<string, unknown> }> {
+  const entity = await loadEntity(entityId);
+  const verified = Boolean(entity?.id);
+  return {
+    entity,
+    _verification: {
+      verified,
+      entityId: entity.id,
+      code: entity.code,
+      message: verified
+        ? hint || `已验证实体「${entity.code}」已更新`
+        : `更新校验失败：实体 ${entityId} 不存在或无法回读`,
+    },
+  };
+}
+
 const TOOL_NAMES = [
-  'bizdata_list_entities',
+  'bizdata_list_entity_summaries',
   'bizdata_get_entity',
   'bizdata_create_entity',
   'bizdata_update_entity',
@@ -134,22 +153,30 @@ async function createRelationFromInput(rel: RelationInput) {
 
 export function registerBizDataTools() {
   registerFunctionCall({
-    name: 'bizdata_list_entities',
-    description: '列出业务数据实体',
+    name: 'bizdata_list_entity_summaries',
+    description:
+      '列出业务数据实体摘要（不含 fields，含 fieldCount）；浏览 Scope/子域、对照 API 覆盖率时的默认 Tool',
     parameters: {
       type: 'object',
       properties: {
-        codePrefix: { type: 'string' },
+        codePrefix: { type: 'string', description: '按 code 前缀过滤，如 fmms 或 fmms:logistics' },
         entityKind: { type: 'string', enum: ['er_table', 'json_schema'] },
+        page: { type: 'integer', description: '页码，默认 1' },
+        size: { type: 'integer', description: '每页条数，默认 500，最大 500' },
       },
     },
     handler: async (args) => {
       const res = await getBusinessDataEntities({
         codePrefix: args.codePrefix as string,
         entityKind: args.entityKind as string,
-        size: 200,
+        page: (args.page as number) || 1,
+        size: (args.size as number) || 500,
+        summary: true,
       });
-      return getApiData(res) ?? parseApiListResponse(res).items;
+      const data = getApiData<API.BusinessDataEntityList>(res);
+      if (data) return data;
+      const { items, total, page, size } = parseApiListResponse(res);
+      return { total, page, size, items };
     },
   });
 
@@ -178,6 +205,7 @@ export function registerBizDataTools() {
     name: 'bizdata_create_entity',
     description:
       '创建全新实体（code 须不存在）；可同时传 fields、indexes、relations。调整 Scope/重命名已有实体请用 bizdata_rename_entity_code，禁止 delete + create',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -283,9 +311,19 @@ export function registerBizDataTools() {
         }
 
         const finalEntity = await loadEntity(entity.id!);
+        const expectedCode = String(args.code).trim();
         return {
           entity: finalEntity,
           relations: createdRelations,
+          _verification: {
+            verified: Boolean(finalEntity?.id && finalEntity.code === expectedCode),
+            entityId: finalEntity.id,
+            code: finalEntity.code,
+            message:
+              finalEntity?.code === expectedCode
+                ? `已验证实体「${finalEntity.code}」已创建`
+                : `创建校验失败：期望 code=${expectedCode}`,
+          },
         };
       },
     }),
@@ -332,6 +370,7 @@ export function registerBizDataTools() {
     name: 'bizdata_update_entity',
     description:
       '更新实体 label/字段/layout/jsonSchema。改 Scope 或重命名 code 请优先用 bizdata_rename_entity_code；若用本 Tool 改 code 则仅传 entityCode + code（可选 tableName），勿传 fields 等',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -415,10 +454,10 @@ export function registerBizDataTools() {
           const data = getApiData<API.BusinessDataEntity>(res);
           if (!data) throw new Error('更新实体字段失败');
           await resetEntityModelValidated(entityId);
-          return loadEntity(entityId);
+          return buildEntityUpdateVerification(entityId, `已验证实体「${data.code}」字段已更新`);
         }
 
-        return loadEntity(entityId);
+        return buildEntityUpdateVerification(entityId);
       },
     }),
   });
@@ -426,48 +465,84 @@ export function registerBizDataTools() {
   registerFunctionCall({
     name: 'bizdata_delete_entity',
     description:
-      '永久删除实体（字段/索引/关系/物化/MOCK 均丢失）。禁止用于 Scope 调整或 code 重命名，请用 bizdata_rename_entity_code；仅当用户明确要求删除且确认数据可丢弃时使用',
+      '事务化级联删除实体（含关联 API 服务/采集管道/指标/元数据目录；可选 DROP 物理表）。可传 deleteEntityIds 批量删除连通子图中选中的实体。禁止用于 Scope 调整或 code 重命名，请用 bizdata_rename_entity_code',
     parameters: {
       type: 'object',
       properties: {
-        entityId: { type: 'string', description: '实体 UUID（须来自 list，禁止编造）' },
+        entityId: { type: 'string', description: '根实体 UUID（与 entityCode 二选一；未传 deleteEntityIds 时只删该实体）' },
         entityCode: { type: 'string', description: '实体 code，如 fmms:WorkCard（与 entityId 二选一）' },
+        deleteEntityIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '待删除实体 UUID 列表（来自删除影响分析/用户确认；优先使用）',
+        },
+        dropPhysicalTables: {
+          type: 'boolean',
+          description: '是否 CASCADE DROP 所有物化连接上的物理表/集合，默认 false',
+        },
       },
     },
     handler: createMutatingHandler({
       domain: BIZDATA_DOMAIN,
       type: 'entity.deleted',
       scope: BIZDATA_SURFACE,
-      buildResourceId: (args) => String(args.entityId || args.entityCode),
+      buildResourceId: (args, data) => {
+        const ids = (data as { deleteEntityIds?: string[] })?.deleteEntityIds;
+        if (Array.isArray(ids) && ids[0]) return String(ids[0]);
+        return String(args.entityId || args.entityCode || ids?.[0] || '');
+      },
       buildPayload: (_args, data) => data,
       handler: async (args) => {
-        const entityId = await resolveBizDataEntityId(args as Record<string, unknown>);
-        const entity = await loadEntity(entityId);
+        const dropPhysicalTables = !!args.dropPhysicalTables;
+        let deleteEntityIds: string[] = Array.isArray(args.deleteEntityIds)
+          ? (args.deleteEntityIds as unknown[]).map((id) => String(id)).filter(Boolean)
+          : [];
+
+        if (!deleteEntityIds.length) {
+          const entityId = await resolveBizDataEntityId(args as Record<string, unknown>);
+          deleteEntityIds = [entityId];
+        }
+
+        const primaryId = deleteEntityIds[0];
+        const entity = await loadEntity(primaryId);
         const fieldCount = entity.fields?.length ?? 0;
 
+        let result: API.EntityDeletionExecuteResult;
         try {
-          await deleteBusinessDataEntity(entityId);
+          const res = await postEntityDeletionExecute({
+            deleteEntityIds,
+            dropPhysicalTables,
+          });
+          const data = getApiData<API.EntityDeletionExecuteResult>(res);
+          if (!isApiSuccess(res) || !data) {
+            throw new Error(getApiErrorMessage(res, '删除实体失败'));
+          }
+          result = data;
         } catch (error) {
           throw new Error(getApiErrorMessage(error, '删除实体失败'));
         }
 
-        try {
-          await loadEntity(entityId);
-          throw new Error(`删除未生效：实体「${entity.code}」仍存在`);
-        } catch (error) {
-          if (error instanceof Error && error.message.startsWith('删除未生效')) {
-            throw error;
+        for (const id of deleteEntityIds) {
+          try {
+            await loadEntity(id);
+            throw new Error(`删除未生效：实体 ${id} 仍存在`);
+          } catch (error) {
+            if (error instanceof Error && error.message.startsWith('删除未生效')) {
+              throw error;
+            }
           }
         }
 
         return {
           success: true,
-          deletedEntityId: entityId,
+          deleteEntityIds: result.deleteEntityIds || deleteEntityIds,
+          deletedEntityId: primaryId,
           deletedCode: entity.code,
+          summary: result.summary,
           _verification: {
             verified: true,
-            deletedCode: entity.code,
-            message: `已验证实体「${entity.code}」已删除`,
+            deletedCodes: (result.deletedEntities || []).map((e) => e.code).filter(Boolean),
+            message: `已验证删除 ${result.summary?.deletedEntities ?? deleteEntityIds.length} 个实体`,
           },
           _warning:
             fieldCount > 0
@@ -680,6 +755,7 @@ export function registerBizDataTools() {
     name: 'bizdata_validate_model',
     description:
       '校验实体模型完整性；默认 markValidated=true，校验通过时写入 entityInfo.modelValidated=true',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -778,6 +854,14 @@ export function registerBizDataTools() {
             modelValidated: resultEntity.entityInfo?.modelValidated === true,
             indexCount: indexes.length,
             relationCount: related.length,
+            _verification: {
+              verified: isValid,
+              entityId: resultEntity.id,
+              code: resultEntity.code,
+              message: isValid
+                ? `已验证实体「${resultEntity.code}」模型校验通过`
+                : `模型校验未通过：${errors.slice(0, 3).join('；')}`,
+            },
           };
         }
 

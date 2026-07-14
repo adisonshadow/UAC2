@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageContainer, ProTable, type ProColumns, type ActionType as ProActionType } from '@ant-design/pro-components';
-import { Button, message, Drawer, Form, Radio, Space, Tag, Tooltip, Typography } from 'antd';
+import { Button, Drawer, Form, Radio, Space, Tag, Tooltip, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { ControlOutlined, ThunderboltOutlined, BlockOutlined } from '@ant-design/icons';
 import {
   getBuiltinApis,
@@ -107,7 +108,6 @@ function buildTreeRows(
 
 const BuiltinApiPage: React.FC = () => {
   const actionRef = useRef<ProActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [rows, setRows] = useState<BuiltinApiItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -151,10 +151,10 @@ const BuiltinApiPage: React.FC = () => {
       if (isApiSuccess(res)) {
         setRows(getApiData(res)?.items || []);
       } else {
-        messageApi.error(res.message || '加载失败');
+        message.error(res.message || '加载失败');
       }
     } catch {
-      messageApi.error('加载失败');
+      message.error('加载失败');
     } finally {
       setLoading(false);
     }
@@ -183,7 +183,7 @@ const BuiltinApiPage: React.FC = () => {
     setBatchDomain(domainCode);
     form.setFieldsValue({ mode: 'none', roleIds: [], departmentIds: [] });
     setDrawerOpen(true);
-    messageApi.info(`批量配置将应用到「${domainLabel}」域下所有内置 API`);
+    message.info(`批量配置将应用到「${domainLabel}」域下所有内置 API`);
   };
 
   const isBatch = batchDomain !== null;
@@ -204,15 +204,15 @@ const BuiltinApiPage: React.FC = () => {
         res = await putBuiltinApiAccessRestriction(editing.code, payload);
       }
       if (isApiSuccess(res)) {
-        messageApi.success(isBatch ? `批量配置成功（已应用到 ${(res as any).data?.appliedCount ?? ''} 项）` : '保存成功');
+        message.success(isBatch ? `批量配置成功（已应用到 ${(res as any).data?.appliedCount ?? ''} 项）` : '保存成功');
         setDrawerOpen(false);
         await loadData();
       } else {
-        messageApi.error(res.message || '保存失败');
+        message.error(res.message || '保存失败');
       }
     } catch (err: any) {
       if (err?.errorFields) return; // 表单校验错误，不提示
-      messageApi.error('保存失败');
+      message.error('保存失败');
     } finally {
       setSaving(false);
     }
@@ -224,14 +224,14 @@ const BuiltinApiPage: React.FC = () => {
       setSaving(true);
       const res = await deleteBuiltinApiAccessRestriction(editing.code);
       if (isApiSuccess(res)) {
-        messageApi.success('已清除限制');
+        message.success('已清除限制');
         setDrawerOpen(false);
         await loadData();
       } else {
-        messageApi.error(res.message || '清除失败');
+        message.error(res.message || '清除失败');
       }
     } catch {
-      messageApi.error('清除失败');
+      message.error('清除失败');
     } finally {
       setSaving(false);
     }
@@ -325,7 +325,6 @@ const BuiltinApiPage: React.FC = () => {
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <ProTable<BuiltinApiTreeRow>
         headerTitle="内置 API 权限"
         actionRef={actionRef}

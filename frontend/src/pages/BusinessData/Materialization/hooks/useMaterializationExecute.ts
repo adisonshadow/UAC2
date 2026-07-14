@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Modal, message } from 'antd';
+
+import { message, modal } from '@/utils/antdAppApis';
 import { buildScopeTree, flattenScopeTree } from '../../utils/buildScopeTree';
 import { getEntityCodeLeaf } from './useMaterializationData';
 import {
@@ -177,7 +178,7 @@ export function useMaterializationExecute() {
         const dbType = payload?.dbType || selectedConnection?.dbType;
         const schema = payload?.targetSchema || targetSchema;
         const label = getMaterializationTargetLabel(dbType);
-        Modal.confirm({
+        modal.confirm({
           title: `${label}「${schema}」不存在`,
           content: `是否创建该${label}并继续物化？`,
           okText: '创建并继续',

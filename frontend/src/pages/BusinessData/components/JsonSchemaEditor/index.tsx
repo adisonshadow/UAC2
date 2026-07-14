@@ -1,5 +1,6 @@
 import Editor from '@monaco-editor/react';
-import { Button, message } from 'antd';
+import { Button } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useState } from 'react';
 import { patchBusinessDataEntity } from '@/services/UAC/api/businessData';
 

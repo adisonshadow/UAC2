@@ -1,6 +1,7 @@
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { Alert, Spin, Tag, Typography, message } from 'antd';
+import { Alert, Spin, Tag, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';

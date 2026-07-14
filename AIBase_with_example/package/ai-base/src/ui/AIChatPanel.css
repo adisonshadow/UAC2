@@ -140,6 +140,16 @@
   margin: 0;
 }
 
+/* business_error：业务失败（Tool 已执行但校验未过）— 蓝色，区别于 system_error 红色 */
+.aibase-tool-invoke-steps--business-error .aibase-tool-step-business-error-icon,
+.aibase-tool-invoke-steps--business-error .ant-thought-chain-node-title {
+  color: var(--ant-color-primary, #1677ff);
+}
+
+.aibase-tool-invoke-steps--business-error .ant-thought-chain-node-description {
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
+}
+
 /* AI 报错等瞬态系统消息：红色、不入对话上下文，仅展示 */
 .aibase-chat-system-error {
   color: #940a0a;

@@ -9,7 +9,8 @@ import {
 import { ActionType } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { useAISurface } from '@EADAF/ai-base';
-import { Button, Popconfirm, Splitter, Tag, message } from 'antd';
+import { Button, Popconfirm, Splitter, Tag } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
@@ -40,7 +41,6 @@ const VIEWPORT_HEIGHT = 'calc(100vh - 56px)';
 
 const CollectionPipelineListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [domainPrefix, setDomainPrefix] = useScopeFromUrl();
   const [allPipelines, setAllPipelines] = useState<API.CollectionPipeline[]>([]);
@@ -91,20 +91,20 @@ const CollectionPipelineListPage: React.FC = () => {
   const handlePublish = async (id: string) => {
     const res = await postCollectionPipelinePublish(id);
     if (isApiSuccess(res)) {
-      messageApi.success('已发布');
+      message.success('已发布');
       await loadAllPipelines();
     } else {
-      messageApi.error(getApiErrorMessage(res, '发布失败'));
+      message.error(getApiErrorMessage(res, '发布失败'));
     }
   };
 
   const handleDelete = async (id: string) => {
     const res = await deleteCollectionPipeline(id);
     if (isApiSuccess(res)) {
-      messageApi.success('已删除');
+      message.success('已删除');
       await loadAllPipelines();
     } else {
-      messageApi.error(getApiErrorMessage(res, '删除失败'));
+      message.error(getApiErrorMessage(res, '删除失败'));
     }
   };
 
@@ -178,7 +178,6 @@ const CollectionPipelineListPage: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <div style={{ height: VIEWPORT_HEIGHT }}>
         <Splitter style={{ height: '100%' }}>
           <Splitter.Panel defaultSize={260} min={200} max="40%" collapsible>

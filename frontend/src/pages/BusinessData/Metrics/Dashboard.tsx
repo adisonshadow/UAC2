@@ -1,5 +1,6 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, Col, Empty, Row, Spin, Statistic, message } from 'antd';
+import { Button, Card, Col, Empty, Row, Spin, Statistic } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAIChatPrompts, useAISurface } from '@EADAF/ai-base';
@@ -10,7 +11,6 @@ import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 
 const MetricsDashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboard, setDashboard] = useState<API.BizdataMetricDashboard | null>(null);
@@ -22,7 +22,7 @@ const MetricsDashboardPage: React.FC = () => {
       try {
         const response = await getBizdataMetricsDashboard({ refresh });
         if (!isApiSuccess(response)) {
-          messageApi.error(response.message || '加载看板失败');
+          message.error(response.message || '加载看板失败');
           return;
         }
         setDashboard(getApiData<API.BizdataMetricDashboard>(response) || { categories: [] });
@@ -31,7 +31,7 @@ const MetricsDashboardPage: React.FC = () => {
         setRefreshing(false);
       }
     },
-    [messageApi],
+    [],
   );
 
   useEffect(() => {
@@ -71,7 +71,6 @@ const MetricsDashboardPage: React.FC = () => {
         </Button>,
       ]}
     >
-      {contextHolder}
       <Spin spinning={loading}>
         {categories.length === 0 ? (
           <Empty description="暂无指标，请先创建并执行" />

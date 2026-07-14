@@ -41,6 +41,10 @@ router.get('/schema', authWithBuiltinApiGuard, BusinessDataController.getSchema)
  *       - in: query
  *         name: size
  *         schema: { type: integer }
+ *       - in: query
+ *         name: summary
+ *         schema: { type: boolean }
+ *         description: 为 true 时返回精简列表（不含 fields/layout/jsonSchema，含 fieldCount）
  *     responses:
  *       200:
  *         description: 获取成功
@@ -113,7 +117,7 @@ router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createE
  *         description: 更新成功
  *   delete:
  *     tags: [BusinessData]
- *     summary: 删除实体 [需要认证]
+ *     summary: 简单删除实体（无下游清理；遇 RESTRICT 引用会失败，请改用 deletion-analysis / deletion-execute） [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -127,6 +131,64 @@ router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createE
 router.get('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.getEntity);
 router.patch('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.updateEntity);
 router.delete('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.deleteEntity);
+
+/**
+ * @swagger
+ * /api/v1/business-data/entities/{id}/deletion-analysis:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 实体删除影响分析（关系连通子图 + 下游资源） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *         description: 根实体 ID
+ *     responses:
+ *       200:
+ *         description: 分析成功，返回连通子图实体、关系、API 服务/采集管道/物化/指标/元数据目录等影响面
+ *       404:
+ *         description: 实体不存在
+ */
+router.post(
+  '/entities/:id/deletion-analysis',
+  authWithBuiltinApiGuard,
+  BusinessDataController.analyzeEntityDeletion,
+);
+
+/**
+ * @swagger
+ * /api/v1/business-data/entities/deletion-execute:
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 事务化级联删除实体（含 API 服务/采集管道/指标/元数据目录；可选 DROP 物理表） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [deleteEntityIds]
+ *             properties:
+ *               deleteEntityIds:
+ *                 type: array
+ *                 items: { type: string, format: uuid }
+ *                 description: 待删除实体 ID 列表（仅含用户选择「删除实体」的节点）
+ *               dropPhysicalTables:
+ *                 type: boolean
+ *                 default: false
+ *                 description: 是否在各物化连接上 CASCADE DROP 物理表/集合（事务提交后 best-effort）
+ *     responses:
+ *       200:
+ *         description: 删除成功，data.summary 含删除计数与物理表 DROP 结果
+ */
+router.post(
+  '/entities/deletion-execute',
+  authWithBuiltinApiGuard,
+  BusinessDataController.executeEntityDeletion,
+);
 
 /**
  * @swagger

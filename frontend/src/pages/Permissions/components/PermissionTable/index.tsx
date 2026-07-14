@@ -7,7 +7,8 @@ import {
   ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
-import { Button, message, Space, Modal, Drawer, Spin, Tag, Typography } from 'antd';
+import { Button, Space, Modal, Drawer, Spin, Tag, Typography } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined, ControlOutlined } from "@ant-design/icons";
 import { Form } from 'antd';
 import { useSetState } from "ahooks";
@@ -30,7 +31,6 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
   title,
 }) => {
   const actionRef = useRef<ProActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -107,7 +107,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
       setLoading(true);
       setSaving(true);
       if (!detailsValue.permission_id) {
-        messageApi.error('权限ID不存在');
+        message.error('权限ID不存在');
         return;
       }
 
@@ -124,7 +124,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
       );
 
       if (response.code && response.code >= 200 && response.code < 300) {
-        messageApi.success('更新成功');
+        message.success('更新成功');
         setState({ 
           isDetailsEditable: false,
           detailsValue: { 
@@ -136,11 +136,11 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
           actionRef.current.reload();
         }
       } else {
-        messageApi.error(response.message || '更新失败');
+        message.error(response.message || '更新失败');
       }
     } catch (error) {
       console.error('更新权限信息失败:', error);
-      messageApi.error('更新失败');
+      message.error('更新失败');
     } finally {
       setLoading(false);
       setSaving(false);
@@ -265,10 +265,10 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
 
                   editform.setFieldsValue(processedData);
                 } else {
-                  messageApi.error('获取权限详情失败');
+                  message.error('获取权限详情失败');
                 }
               } catch (error) {
-                messageApi.error('获取权限详情失败');
+                message.error('获取权限详情失败');
               } finally {
                 setLoading(false);
               }
@@ -282,7 +282,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
               icon={<DeleteOutlined />}
               loading={deleteLoading}
               onClick={() => {
-              Modal.confirm({
+              modal.confirm({
                 title: '确认删除',
                 content: '确定要删除该权限吗？',
                 onOk: async () => {
@@ -292,16 +292,16 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                       permission_id: record.permission_id,
                     });
                     if (response.code && response.code >= 200 && response.code < 300) {
-                      messageApi.success('删除权限成功');
+                      message.success('删除权限成功');
                       if (actionRef.current) {
                         actionRef.current.reload();
                       }
                     } else {
-                      messageApi.error(response.message || '删除失败');
+                      message.error(response.message || '删除失败');
                     }
                   } catch (error: any) {
                     const errMsg = error?.response?.data?.message || '删除失败';
-                    messageApi.error(errMsg);
+                    message.error(errMsg);
                   } finally {
                     setDeleteLoading(false);
                   }
@@ -327,7 +327,6 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
 
   return (
     <>
-      {contextHolder}
       <PageContainer
         pageHeaderRender={() => {
           return <></>;
@@ -389,7 +388,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                 };
               }
 
-              messageApi.error(response.message || `获取${RESOURCE_TYPES[resourceType].label}列表失败`);
+              message.error(response.message || `获取${RESOURCE_TYPES[resourceType].label}列表失败`);
               return {
                 data: [],
                 success: false,
@@ -397,7 +396,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
               };
             } catch (error) {
               console.error('获取权限数据时发生错误:', error);
-              messageApi.error(`获取${RESOURCE_TYPES[resourceType].label}列表失败`);
+              message.error(`获取${RESOURCE_TYPES[resourceType].label}列表失败`);
               return {
                 data: [],
                 success: false,
@@ -477,7 +476,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                     loading={deleteLoading}
                     onClick={() => {
                       if (!detailsValue?.permission_id) return;
-                      Modal.confirm({
+                      modal.confirm({
                         title: '确认删除',
                         content: '确定要删除该权限吗？',
                         onOk: async () => {
@@ -487,7 +486,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                               permission_id: detailsValue.permission_id,
                             });
                             if (response.code && response.code >= 200 && response.code < 300) {
-                              messageApi.success('删除成功');
+                              message.success('删除成功');
                               setState({ 
                                 isDetailsViewOpen: false,
                                 detailsValue: {},
@@ -497,10 +496,10 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                                 actionRef.current.reload();
                               }
                             } else {
-                              messageApi.error(response.message || '删除失败');
+                              message.error(response.message || '删除失败');
                             }
                           } catch (error) {
-                            messageApi.error('删除失败');
+                            message.error('删除失败');
                           } finally {
                             setDeleteLoading(false);
                           }
@@ -532,7 +531,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                     });
                     
                     if (response.code === 200) {
-                      messageApi.success('更新权限成功');
+                      message.success('更新权限成功');
                       setState({
                         isDetailsViewOpen: false,
                         detailsValue: {},
@@ -543,12 +542,12 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                       }
                       return true;
                     } else {
-                      messageApi.error(response.message || '更新权限失败');
+                      message.error(response.message || '更新权限失败');
                       return false;
                     }
                   } catch (error: any) {
                     const errMsg = error?.response?.data?.message || '更新权限失败';
-                    messageApi.error(errMsg);
+                    message.error(errMsg);
                     return false;
                   } finally {
                     setSaving(false);
@@ -592,7 +591,7 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                 } as any);
                 
                 if (response.code && response.code >= 200 && response.code < 300) {
-                  messageApi.success('创建成功');
+                  message.success('创建成功');
                   setState({
                     isCreateModalOpen: false,
                     createValue: {},
@@ -611,11 +610,11 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
                   }
                   return true;
                 } else {
-                  messageApi.error(response.message || '创建失败');
+                  message.error(response.message || '创建失败');
                   return false;
                 }
               } catch (error: any) {
-                messageApi.error(error.message || '创建失败');
+                message.error(error.message || '创建失败');
                 return false;
               } finally {
                 setCreateLoading(false);

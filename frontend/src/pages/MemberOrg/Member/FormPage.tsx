@@ -4,7 +4,8 @@ import {
   type ProFormInstance,
 } from '@ant-design/pro-components';
 import { CopyOutlined, DeleteOutlined } from '@ant-design/icons';
-import { Button, Input, Modal, Space, Spin, message } from 'antd';
+import { Button, Input, Modal, Space, Spin } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -46,7 +47,6 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const formRef = useRef<ProFormInstance>(null);
-  const [messageApi, contextHolder] = message.useMessage();
   const { initialState } = useInitialState();
   const departmentOptions = useDepartmentOptions();
   const { roleOptions } = useRoleOptions();
@@ -121,7 +121,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
     try {
       const response = await getUsersUserId({ user_id: id });
       if (response.code !== 200 || !response.data) {
-        messageApi.error('获取成员详情失败');
+        message.error('获取成员详情失败');
         navigate(LIST_PATH, { replace: true });
         return;
       }
@@ -135,12 +135,12 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
       setDetailData(processedData);
       applyDetailToForm(processedData);
     } catch {
-      messageApi.error('获取成员详情失败');
+      message.error('获取成员详情失败');
       navigate(LIST_PATH, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [applyDetailToForm, id, messageApi, mode, navigate]);
+  }, [applyDetailToForm, id, mode, navigate]);
 
   useEffect(() => {
     if (mode === 'edit' && detailData && departmentOptions.length > 0) {
@@ -198,7 +198,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
 
         const response = await postUsers(userData);
         if (response.code !== 200) {
-          messageApi.error(response.message || '创建失败');
+          message.error(response.message || '创建失败');
           return false;
         }
 
@@ -223,19 +223,19 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
 
       const response = await putUsersUserId({ user_id: id }, updateData);
       if (response.code !== 200) {
-        messageApi.error(response.message || '更新失败');
+        message.error(response.message || '更新失败');
         return false;
       }
 
       const roleIds = Array.isArray(value.role_ids) ? value.role_ids : [];
       await putUsersUserIdRoles({ user_id: id }, { role_ids: roleIds });
 
-      messageApi.success('更新成功');
+      message.success('更新成功');
       navigate(LIST_PATH);
       return true;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : '保存失败';
-      messageApi.error(errMsg);
+      message.error(errMsg);
       return false;
     } finally {
       setSaving(false);
@@ -248,7 +248,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
   const closePasswordModal = async () => {
     setPasswordModalOpen(false);
     if (isSelfAccount) {
-      messageApi.warning('您已重置自己的登录密码，请使用弹窗中的新密码重新登录');
+      message.warning('您已重置自己的登录密码，请使用弹窗中的新密码重新登录');
       try {
         const refresh_token = localStorage.getItem('refresh_token');
         if (refresh_token) {
@@ -277,14 +277,14 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
         { password: newPassword } as Parameters<typeof putUsersUserId>[1],
       );
       if (response.code !== 200) {
-        messageApi.error(response.message || '密码重置失败');
+        message.error(response.message || '密码重置失败');
         return;
       }
       setGeneratedPassword(newPassword);
       setPasswordModalOpen(true);
-      messageApi.success('密码重置成功');
+      message.success('密码重置成功');
     } catch {
-      messageApi.error('密码重置失败');
+      message.error('密码重置失败');
     } finally {
       setResetPasswordLoading(false);
     }
@@ -292,17 +292,17 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
 
   const handleDelete = () => {
     if (!id) return;
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除',
       content: '确定要删除该成员吗？',
       onOk: async () => {
         try {
           setDeleteLoading(true);
           await deleteUsersUserId({ user_id: id });
-          messageApi.success('删除成功');
+          message.success('删除成功');
           navigate(LIST_PATH);
         } catch {
-          messageApi.error('删除失败');
+          message.error('删除失败');
         } finally {
           setDeleteLoading(false);
         }
@@ -312,7 +312,6 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
 
   return (
     <>
-      {contextHolder}
       <PageContainer
         title={<PageContainerTitleWithBack title={PAGE_TITLE[mode]} backTo={LIST_PATH} />}
         extra={
@@ -382,7 +381,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
             icon={<CopyOutlined />}
             onClick={() => {
               void navigator.clipboard.writeText(generatedPassword);
-              messageApi.success('密码已复制到剪贴板');
+              message.success('密码已复制到剪贴板');
             }}
           >
             复制

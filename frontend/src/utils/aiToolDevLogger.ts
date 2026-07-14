@@ -1,7 +1,6 @@
 import type { ToolInvokeLogEntry } from '@EADAF/ai-base';
-import { setToolInvokeLogger } from '@EADAF/ai-base';
+import { postToolInvokeLog } from './toolInvokeFileLogger';
 
-const DEV_LOG_PATH = '/__dev/ai-tool-log';
 const PREVIEW_MAX = 800;
 
 function previewJson(value: unknown, max = PREVIEW_MAX): string {
@@ -15,52 +14,55 @@ function previewJson(value: unknown, max = PREVIEW_MAX): string {
 }
 
 export function formatToolInvokeLog(entry: ToolInvokeLogEntry): string {
-  const icon = entry.success ? '🤖✅' : '🤖❌';
+  const failed =
+    !entry.success ||
+    entry.envelope?.kind === 'business_error' ||
+    entry.envelope?.kind === 'system_error' ||
+    entry.envelope?.verified === false;
+  const icon = failed ? '🤖❌' : '🤖✅';
   const sideLabel = entry.side === 'client' ? 'client' : `server/${entry.executionType || 'unknown'}`;
   const lines = [
     `${icon} [${sideLabel}] ${entry.name} (${entry.durationMs}ms)`,
     `  args: ${previewJson(entry.args)}`,
   ];
-  if (entry.success) {
+  if (entry.envelope) {
+    lines.push(`  envelope: ${previewJson(entry.envelope)}`);
+  }
+  if (entry.success && !failed) {
     lines.push(`  result: ${previewJson(entry.result)}`);
   } else {
-    lines.push(`  error: ${entry.error || 'unknown error'}`);
+    lines.push(`  error: ${entry.error || entry.envelope?.error?.message || 'unknown error'}`);
   }
   return lines.join('\n');
 }
 
-function postDevToolLog(entry: ToolInvokeLogEntry, text: string) {
-  if (typeof fetch === 'undefined') return;
-  void fetch(DEV_LOG_PATH, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...entry, text }),
-  }).catch(() => {
-    // dev server 未启动 middleware 时忽略
-  });
-}
-
-/** 开发环境：Client Tool 日志输出到浏览器控制台，并转发到 Umi dev 终端 */
+/** 开发环境：Client Tool 日志输出到浏览器控制台，失败/未验证时 POST 到后端 */
 export function setupAiToolDevLogger() {
   if (process.env.NODE_ENV !== 'development') return;
 
-  if (typeof setToolInvokeLogger !== 'function') {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[ai-base] setToolInvokeLogger 不可用，Tool 终端日志未启用。请执行 pnpm refresh:ai-base 并重启 dev。',
-    );
-    return;
-  }
-
-  setToolInvokeLogger((entry) => {
-    const text = formatToolInvokeLog(entry);
-    if (entry.success) {
+  import('@EADAF/ai-base').then(({ setToolInvokeLogger }) => {
+    if (typeof setToolInvokeLogger !== 'function') {
       // eslint-disable-next-line no-console
-      console.info(text);
-    } else {
-      // eslint-disable-next-line no-console
-      console.error(text);
+      console.warn(
+        '[ai-base] setToolInvokeLogger 不可用，Tool 终端日志未启用。请执行 pnpm refresh:ai-base 并重启 dev。',
+      );
+      return;
     }
-    postDevToolLog(entry, text);
+
+    setToolInvokeLogger((entry) => {
+      const text = formatToolInvokeLog(entry);
+      const failed =
+        !entry.success ||
+        entry.envelope?.kind !== 'success' ||
+        entry.envelope?.verified === false;
+      if (failed) {
+        // eslint-disable-next-line no-console
+        console.error(text);
+      } else {
+        // eslint-disable-next-line no-console
+        console.info(text);
+      }
+      postToolInvokeLog(entry);
+    });
   });
 }

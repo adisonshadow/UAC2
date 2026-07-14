@@ -32,12 +32,16 @@ class BusinessDataController {
 
   static async listEntities(ctx) {
     try {
-      const data = await businessDataService.listEntities({
+      const summary = ctx.query.summary === 'true' || ctx.query.summary === '1';
+      const params = {
         codePrefix: ctx.query.codePrefix,
         entityKind: ctx.query.entityKind,
         page: parseInt(ctx.query.page, 10) || 1,
-        size: parseInt(ctx.query.size, 10) || 100
-      });
+        size: parseInt(ctx.query.size, 10) || (summary ? 500 : 100),
+      };
+      const data = summary
+        ? await businessDataService.listEntitySummaries(params)
+        : await businessDataService.listEntities(params);
       ctx.body = { code: 200, message: '获取实体列表成功', data };
     } catch (error) {
       sendBizDataError(ctx, error, { fallbackStatus: 500 });
@@ -91,6 +95,30 @@ class BusinessDataController {
         return;
       }
       ctx.body = { code: 200, message: '删除实体成功', data: null };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async analyzeEntityDeletion(ctx) {
+    try {
+      const entityDeletionService = require('../services/businessData/entityDeletionService');
+      const data = await entityDeletionService.analyzeEntityDeletion(ctx.params.id);
+      ctx.body = { code: 200, message: '获取实体删除影响分析成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: error?.status === 404 ? 404 : 400 });
+    }
+  }
+
+  static async executeEntityDeletion(ctx) {
+    try {
+      const entityDeletionService = require('../services/businessData/entityDeletionService');
+      const body = ctx.request.body || {};
+      const data = await entityDeletionService.executeEntityDeletion({
+        deleteEntityIds: body.deleteEntityIds || [],
+        dropPhysicalTables: !!body.dropPhysicalTables,
+      });
+      ctx.body = { code: 200, message: '实体级联删除成功', data };
     } catch (error) {
       sendBizDataError(ctx, error);
     }

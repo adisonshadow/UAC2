@@ -1,4 +1,6 @@
 import type { AIBaseTool, FunctionCallDef } from '../types';
+import { isToolResponse } from '../types/toolResponse';
+import { toToolResponseContextView } from './normalizeToolResult';
 
 /** 单条 Tool 结果序列化 + 超预算裁剪后的信息（用于 tool role 消息 content） */
 export interface TrimmedToolResult {
@@ -35,11 +37,24 @@ export function serializeToolResultForContext(
   result: unknown,
   budget: { maxChars: number },
 ): string {
-  const serialized = stringifyResult(result);
+  const payload = isToolResponse(result) ? toToolResponseContextView(result) : result;
+  const serialized = stringifyResult(payload);
   const budgetChars = Math.max(1, Math.floor(budget.maxChars) || 1);
 
   if (serialized.length <= budgetChars) {
     return serialized;
+  }
+
+  if (isToolResponse(result)) {
+    const compact = stringifyResult({
+      ok: result.ok,
+      verified: result.verified,
+      kind: result.kind,
+      error: result.error,
+      meta: result.meta,
+      data: '[truncated]',
+    });
+    if (compact.length <= budgetChars) return compact;
   }
 
   const TAIL_RESERVE = 120;

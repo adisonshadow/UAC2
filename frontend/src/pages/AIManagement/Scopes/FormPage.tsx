@@ -6,7 +6,8 @@ import {
   ProFormText,
   ProFormTextArea,
 } from '@ant-design/pro-components';
-import { Button, Form, Space, Spin, message } from 'antd';
+import { Button, Form, Space, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -35,7 +36,6 @@ const ScopeFormPage: React.FC<ScopeFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [form] = Form.useForm();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(mode !== 'create');
   const [saving, setSaving] = useState(false);
 
@@ -49,24 +49,24 @@ const ScopeFormPage: React.FC<ScopeFormPageProps> = ({ mode }) => {
     try {
       const response = await getAdminScopesId({ id });
       if (!isApiSuccess(response)) {
-        messageApi.error('获取 Scope 详情失败');
+        message.error('获取 Scope 详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       const data = getApiData<Record<string, unknown>>(response);
       if (!data) {
-        messageApi.error('获取 Scope 详情失败');
+        message.error('获取 Scope 详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       form.setFieldsValue(data);
     } catch {
-      messageApi.error('获取 Scope 详情失败');
+      message.error('获取 Scope 详情失败');
       navigate(listPath, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [form, id, listPath, messageApi, mode, navigate]);
+  }, [form, id, listPath, mode, navigate]);
 
   useAIFormSurface({
     resourceType: 'scope',
@@ -103,17 +103,17 @@ const ScopeFormPage: React.FC<ScopeFormPageProps> = ({ mode }) => {
           description: values.description,
         });
         if (!isApiSuccess(response)) {
-          messageApi.error('创建 Scope 失败');
+          message.error('创建 Scope 失败');
           return;
         }
-        messageApi.success('创建成功');
+        message.success('创建成功');
       } else if (id) {
         const response = await patchAdminScopesId({ id }, values);
         if (!isApiSuccess(response)) {
-          messageApi.error('更新 Scope 失败');
+          message.error('更新 Scope 失败');
           return;
         }
-        messageApi.success('更新成功');
+        message.success('更新成功');
       }
       navigate(listPath);
     } catch {
@@ -145,7 +145,6 @@ const ScopeFormPage: React.FC<ScopeFormPageProps> = ({ mode }) => {
         )
       }
     >
-      {contextHolder}
       <Spin spinning={loading}>
         <ProForm form={form} submitter={false} readonly={readOnly} layout="vertical">
           <ProFormText name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />

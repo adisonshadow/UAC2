@@ -687,6 +687,112 @@ declare namespace API {
     relations?: BusinessDataRelation[];
   };
 
+  type EntityDeletionReferencingRelation = {
+    relationId?: string;
+    relationType?: string;
+    relationName?: string;
+    direction?: 'outgoing' | 'incoming' | string;
+    otherEntityId?: string;
+    otherEntityCode?: string;
+    otherEntityLabel?: string;
+  };
+
+  type EntityDeletionApiServiceRef = {
+    id?: string;
+    code?: string;
+    name?: string;
+    routePath?: string;
+    status?: string;
+  };
+
+  type EntityDeletionPipelineRef = {
+    id?: string;
+    code?: string;
+    name?: string;
+    routePath?: string;
+    protocolType?: string;
+    status?: string;
+  };
+
+  type EntityDeletionMaterializationRef = {
+    connectionId?: string;
+    connectionName?: string;
+    dbType?: string;
+    targetSchema?: string;
+    tableName?: string;
+    entityVersion?: number;
+    materializationEntityId?: string;
+    runId?: string;
+  };
+
+  type EntityDeletionMetricRef = {
+    id?: string;
+    code?: string;
+    name?: string;
+    scopeCode?: string;
+    metricType?: string;
+    matchStrength?: 'strong' | 'weak' | string;
+  };
+
+  type EntityDeletionMetadataRef = {
+    id?: string;
+    code?: string;
+    targetType?: string;
+    targetId?: string;
+    metadataCode?: string;
+    businessMeaning?: string;
+    fieldCount?: number;
+  };
+
+  type EntityDeletionEntityItem = BusinessDataEntity & {
+    isRoot?: boolean;
+    referencingRelations?: EntityDeletionReferencingRelation[];
+    apiServices?: EntityDeletionApiServiceRef[];
+    collectionPipelines?: EntityDeletionPipelineRef[];
+    materialization?: EntityDeletionMaterializationRef[];
+    metrics?: EntityDeletionMetricRef[];
+    metadataTables?: EntityDeletionMetadataRef[];
+  };
+
+  type EntityDeletionAnalysis = {
+    rootEntityId?: string;
+    rootEntity?: BusinessDataEntity;
+    entities?: EntityDeletionEntityItem[];
+    relations?: BusinessDataRelation[];
+    metricMetadataTables?: EntityDeletionMetadataRef[];
+  };
+
+  type EntityDeletionExecuteResult = {
+    deleteEntityIds?: string[];
+    dropPhysicalTables?: boolean;
+    summary?: {
+      deletedEntities?: number;
+      deletedRelations?: number;
+      deletedApiServices?: number;
+      deletedCollectionPipelines?: number;
+      deletedMetrics?: number;
+      deletedMetadataTables?: number;
+      deletedMetadataFields?: number;
+      physicalTableDrops?: Array<{
+        entityId?: string;
+        entityCode?: string;
+        connectionId?: string;
+        connectionName?: string;
+        dbType?: string;
+        targetSchema?: string;
+        tableName?: string;
+        status?: string;
+        ok?: boolean;
+        error?: string | null;
+        keysDeleted?: number;
+      }>;
+    };
+    deletedEntities?: BusinessDataEntity[];
+    deletedApiServices?: EntityDeletionApiServiceRef[];
+    deletedCollectionPipelines?: EntityDeletionPipelineRef[];
+    deletedMetrics?: EntityDeletionMetricRef[];
+  };
+
   type BizdataScopeOption = {
     code: string;
     name: string;

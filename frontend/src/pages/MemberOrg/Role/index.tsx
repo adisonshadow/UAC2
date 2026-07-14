@@ -5,7 +5,8 @@ import {
   ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
-import { Button, message, Space, Modal, Drawer, Spin, Typography } from 'antd';
+import { Button, Space, Modal, Drawer, Spin, Typography } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from "@ant-design/icons";
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
@@ -32,7 +33,6 @@ import { buildRoleReference } from '@/ai/chatReferenceBuilders';
 
 const Page: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -144,7 +144,7 @@ const Page: React.FC = () => {
       setLoading(true);
       setSaving(true);
       if (!detailsValue.role_id) {
-        messageApi.error('角色ID不存在');
+        message.error('角色ID不存在');
         return;
       }
 
@@ -180,7 +180,7 @@ const Page: React.FC = () => {
           }
         }
 
-        messageApi.success('更新成功');
+        message.success('更新成功');
         setState({ 
           isDetailsEditable: false,
           detailsValue: { 
@@ -196,11 +196,11 @@ const Page: React.FC = () => {
           actionRef.current.reload();
         }
       } else {
-        messageApi.error(response.message || '更新失败');
+        message.error(response.message || '更新失败');
       }
     } catch (error) {
       console.error('更新角色信息失败:', error);
-      messageApi.error('更新失败');
+      message.error('更新失败');
     } finally {
       setLoading(false);
       setSaving(false);
@@ -287,10 +287,10 @@ const Page: React.FC = () => {
 
                   editform.setFieldsValue(processedData);
                 } else {
-                  messageApi.error('获取角色详情失败');
+                  message.error('获取角色详情失败');
                 }
               } catch (error) {
-                messageApi.error('获取角色详情失败');
+                message.error('获取角色详情失败');
               } finally {
                 setLoading(false);
               }
@@ -303,7 +303,7 @@ const Page: React.FC = () => {
               icon={<DeleteOutlined />}
               loading={deleteLoading}
               onClick={() => {
-              Modal.confirm({
+              modal.confirm({
                 title: '确认删除',
                 content: '确定要删除该角色吗？',
                 onOk: async () => {
@@ -313,16 +313,16 @@ const Page: React.FC = () => {
                       role_id: record.role_id,
                     });
                     if (response.code && response.code >= 200 && response.code < 300) {
-                      messageApi.success('删除角色成功');
+                      message.success('删除角色成功');
                       if (actionRef.current) {
                         actionRef.current.reload();
                       }
                     } else {
-                      messageApi.error(response.message || '删除失败');
+                      message.error(response.message || '删除失败');
                     }
                   } catch (error: any) {
                     const errMsg = error?.response?.data?.message || '删除失败';
-                    messageApi.error(errMsg);
+                    message.error(errMsg);
                   } finally {
                     setDeleteLoading(false);
                   }
@@ -338,7 +338,6 @@ const Page: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <PageContainer
         pageHeaderRender={() => {
           return <></>;
@@ -420,10 +419,10 @@ const Page: React.FC = () => {
                 };
               }
 
-              messageApi.error(response.message || '获取角色列表失败');
+              message.error(response.message || '获取角色列表失败');
               return { data: [], success: false, total: 0 };
             } catch (error) {
-              messageApi.error('获取角色列表失败');
+              message.error('获取角色列表失败');
               return { data: [], success: false, total: 0 };
             } finally {
               setLoading(false);
@@ -500,7 +499,7 @@ const Page: React.FC = () => {
                       loading={deleteLoading}
                       onClick={() => {
                         if (!detailsValue?.role_id) return;
-                        Modal.confirm({
+                        modal.confirm({
                           title: '确认删除',
                           content: '确定要删除该角色吗？',
                           onOk: async () => {
@@ -510,7 +509,7 @@ const Page: React.FC = () => {
                                 role_id: detailsValue.role_id,
                               });
                               if (response.code && response.code >= 200 && response.code < 300) {
-                                messageApi.success('删除成功');
+                                message.success('删除成功');
                                 setState({ 
                                   isDetailsViewOpen: false,
                                   detailsValue: {},
@@ -520,10 +519,10 @@ const Page: React.FC = () => {
                                   actionRef.current.reload();
                                 }
                               } else {
-                                messageApi.error(response.message || '删除失败');
+                                message.error(response.message || '删除失败');
                               }
                             } catch (error) {
-                              messageApi.error('删除失败');
+                              message.error('删除失败');
                             } finally {
                               setDeleteLoading(false);
                             }
@@ -615,7 +614,7 @@ const Page: React.FC = () => {
                 });
                 
                 if (response.code && response.code >= 200 && response.code < 300) {
-                  messageApi.success('创建成功');
+                  message.success('创建成功');
                   setState({
                     isCreateModalOpen: false,
                     createValue: {},
@@ -637,11 +636,11 @@ const Page: React.FC = () => {
                   }
                   return true;
                 } else {
-                  messageApi.error(response.message || '创建失败');
+                  message.error(response.message || '创建失败');
                   return false;
                 }
               } catch (error: any) {
-                messageApi.error(error.message || '创建失败');
+                message.error(error.message || '创建失败');
                 return false;
               } finally {
                 setCreateLoading(false);

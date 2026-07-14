@@ -1,6 +1,7 @@
 import { PlayCircleOutlined, BulbOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { Alert, Button, Collapse, Descriptions, Spin, Tag, Typography, message } from 'antd';
+import { Alert, Button, Collapse, Descriptions, Spin, Tag, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import Editor from '@monaco-editor/react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -19,7 +20,6 @@ const MONACO_OPTIONS = { minimap: { enabled: false }, fontSize: 13, wordWrap: 'o
 const OutboundWebhookTestPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [profile, setProfile] = useState<API.OutboundWebhookTestProfile>();
@@ -67,12 +67,12 @@ const OutboundWebhookTestPage: React.FC = () => {
       const res = await postOutboundWebhookTest(id, { mockData });
       if (isApiSuccess(res)) {
         setResult(getApiData<API.OutboundWebhookTestResult>(res) || null);
-        messageApi.success('测试完成');
+        message.success('测试完成');
       } else {
-        messageApi.error(res.message || '测试失败');
+        message.error(res.message || '测试失败');
       }
     } catch {
-      messageApi.error('测试失败');
+      message.error('测试失败');
     } finally {
       setRunning(false);
     }
@@ -101,7 +101,6 @@ const OutboundWebhookTestPage: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <PageContainer title={<PageContainerTitleWithBack title={`测试 - ${profile.name}`} backTo="/api_services/outbound-webhooks" />}>
         <Alert
           type="warning"

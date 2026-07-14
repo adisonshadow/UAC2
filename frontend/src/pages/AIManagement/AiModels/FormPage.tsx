@@ -8,7 +8,8 @@ import {
   ProFormText,
   ProFormTextArea,
 } from '@ant-design/pro-components';
-import { Button, Form, Space, Spin, message } from 'antd';
+import { Button, Form, Space, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -56,7 +57,6 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [form] = Form.useForm();
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(mode !== 'create');
   const [saving, setSaving] = useState(false);
   const [providerOptions, setProviderOptions] = useState<{ label: string; value: string }[]>([]);
@@ -83,13 +83,13 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
       await loadProviders();
       const response = await getAdminModelsId({ id });
       if (!isApiSuccess(response)) {
-        messageApi.error('获取模型详情失败');
+        message.error('获取模型详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       const data = getApiData<API.AdminAiModel>(response);
       if (!data) {
-        messageApi.error('获取模型详情失败');
+        message.error('获取模型详情失败');
         navigate(listPath, { replace: true });
         return;
       }
@@ -100,12 +100,12 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
         requestsPerMinute: data.rateLimit?.requestsPerMinute ?? undefined,
       });
     } catch {
-      messageApi.error('获取模型详情失败');
+      message.error('获取模型详情失败');
       navigate(listPath, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [form, id, listPath, loadProviders, messageApi, mode, navigate]);
+  }, [form, id, listPath, loadProviders, mode, navigate]);
 
   useAIFormSurface({
     resourceType: 'model',
@@ -167,26 +167,26 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
       if (mode === 'create') {
         const response = await postAdminModels(buildPayload(values));
         if (!isApiSuccess(response)) {
-          messageApi.error(response.message || '创建失败');
+          message.error(response.message || '创建失败');
           return;
         }
-        messageApi.success('创建成功');
+        message.success('创建成功');
       } else if (id) {
         const response = await patchAdminModelsId({ id }, buildPayload(values));
         if (!isApiSuccess(response)) {
-          messageApi.error(response.message || '更新失败');
+          message.error(response.message || '更新失败');
           return;
         }
-        messageApi.success('更新成功');
+        message.success('更新成功');
       }
       navigate(listPath);
     } catch (error: unknown) {
       if (error instanceof Error && error.message === 'defaultParams 必须是合法 JSON') {
-        messageApi.error(error.message);
+        message.error(error.message);
         return;
       }
       if (!(error as { errorFields?: unknown })?.errorFields) {
-        messageApi.error('保存失败');
+        message.error('保存失败');
       }
     } finally {
       setSaving(false);
@@ -215,7 +215,6 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
         )
       }
     >
-      {contextHolder}
       <Spin spinning={loading}>
         <ProForm form={form} submitter={false} layout="vertical" readonly={readOnly}>
           <ProFormSelect

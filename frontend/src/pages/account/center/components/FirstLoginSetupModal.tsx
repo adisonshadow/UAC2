@@ -1,4 +1,5 @@
-import { Alert, Button, Form, Input, Modal, Space, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Space } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { LogoutOutlined } from '@ant-design/icons';
 import React, { useState } from 'react';
 import { useInitialState } from '@/providers/InitialStateProvider';

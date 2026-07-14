@@ -64,9 +64,13 @@ export async function patchApiService(id: string, body: Partial<API.ApiServiceCr
   });
 }
 
-export async function postApiServicePublish(id: string) {
+export async function postApiServicePublish(
+  id: string,
+  options?: { skipErrorHandler?: boolean },
+) {
   return request<{ code: number; message: string; data: API.ApiService }>(`${BASE}/${id}/publish`, {
     method: 'POST',
+    skipErrorHandler: options?.skipErrorHandler,
   });
 }
 
@@ -85,10 +89,11 @@ export async function deleteApiService(id: string) {
 export async function postApiServiceTest(
   id: string,
   body?: { operation?: string; parameters?: Record<string, unknown> },
+  options?: { skipErrorHandler?: boolean },
 ) {
   return request<{ code: number; message: string; data: API.ApiServiceTestResult }>(
     `${BASE}/${id}/test`,
-    { method: 'POST', data: body || {} },
+    { method: 'POST', data: body || {}, skipErrorHandler: options?.skipErrorHandler },
   );
 }
 

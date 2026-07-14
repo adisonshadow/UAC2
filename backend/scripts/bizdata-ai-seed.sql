@@ -22,13 +22,26 @@ VALUES
     (
         '66666666-6666-4666-8666-666666666601',
         '55555555-5555-4555-8555-555555555501',
-        '列出实体',
+        '列出实体(全量字段,已停用)',
         'bizdata-list-entities',
         'bizdata_list_entities',
-        '列出业务数据实体与 Scope 树',
+        '【已停用】含完整 fields；浏览/列举实体请用 bizdata_list_entity_summaries',
         'client',
         '{"type":"object","properties":{"codePrefix":{"type":"string"},"entityKind":{"type":"string","enum":["er_table","json_schema"]}}}'::jsonb,
-        '## bizdata_list_entities\n\n可选 codePrefix、entityKind 过滤。',
+        E'## bizdata_list_entities（已停用）\n\n已对 AI 停用。请用 **bizdata_list_entity_summaries** 或 **bizdata_get_entity**。',
+        '{}'::jsonb,
+        false
+    ),
+    (
+        '66666666-6666-4666-8666-666666666641',
+        '55555555-5555-4555-8555-555555555501',
+        '列出实体摘要',
+        'bizdata-list-entity-summaries',
+        'bizdata_list_entity_summaries',
+        '列出业务数据实体摘要（不含 fields，含 fieldCount）；浏览 Scope、对照 API 覆盖率时的默认 Tool',
+        'client',
+        '{"type":"object","properties":{"codePrefix":{"type":"string"},"entityKind":{"type":"string","enum":["er_table","json_schema"]},"page":{"type":"integer"},"size":{"type":"integer"}}}'::jsonb,
+        E'## bizdata_list_entity_summaries\n\n列出/浏览实体默认 Tool。返回 id/code/label/entityKind/tableName/status/version/fieldCount/modelValidated。字段详情用 bizdata_get_entity。',
         '{}'::jsonb,
         true
     ),
@@ -90,10 +103,10 @@ VALUES
         '删除实体',
         'bizdata-delete-entity',
         'bizdata_delete_entity',
-        '永久删除实体；禁止用于 Scope 调整，请用 bizdata_rename_entity_code',
+        '永久删除实体；支持 deleteEntityIds 级联清理 API/采集/指标/元数据；禁止用于 Scope 调整，请用 bizdata_rename_entity_code',
         'client',
-        '{"type":"object","properties":{"entityId":{"type":"string"},"entityCode":{"type":"string"}}}'::jsonb,
-        E'## bizdata_delete_entity\n\n**禁止**用于 Scope 调整/code 重命名。仅用户明确要求删除时使用。须 `_verification.verified=true` 才算成功。',
+        '{"type":"object","properties":{"entityId":{"type":"string"},"entityCode":{"type":"string"},"deleteEntityIds":{"type":"array","items":{"type":"string"}},"dropPhysicalTables":{"type":"boolean"}}}'::jsonb,
+        E'## bizdata_delete_entity\n\n**禁止**用于 Scope 调整/code 重命名。仅用户明确要求删除时使用。\n支持 `deleteEntityIds` 批量级联删除（含 API 服务/采集管道/指标/元数据目录；可选 `dropPhysicalTables`）。须 `_verification.verified=true` 才算成功。',
         '{}'::jsonb,
         true
     ),
@@ -297,7 +310,12 @@ VALUES
         '业务数据模型设计',
         'bizdata-model-design',
         '辅助设计 Scope:Entity 层级模型',
-        E'# 业务数据模型设计助手\n\n你是 EADAF 业务数据建模助手。**禁止**只建空实体或只写字段就结束。\n\n## 编码规范\n- Entity code：`Scope1[:Scope2...]:EntityName`（如 `fmms:production:WorkCard`、`sales:order:Order`）\n- Enum code：同 Scope 层级 + 枚举名（如 `fmms:production:WorkCardStatus`）\n- Scope 树由实体 code 冒号路径推导，**无独立 create_scope Tool**\n\n## Scope 调整 / 修改实体 Code（必遵）\n- **唯一推荐**：**`bizdata_rename_entity_code`**，仅传 `entityCode`（旧）+ `code`（新）\n- 备选：`bizdata_update_entity` 同样仅传 entityCode + code\n- **禁止** `bizdata_delete_entity` + `bizdata_create_entity`（丢失物化/MOCK/关系，且常虚假成功）\n- 批量改 Scope：list_entities → 逐个 rename_entity_code → 再 list 验证 → validate_model\n- 必须以 Tool 返回的 `_verification.verified=true` 为准汇报成功\n\n## 修改实体 Code（级联）\n- 后端同一事务级联更新元数据、API 服务、采集管道、物化记录、关系 config、字段/脚本引用；失败则全部回滚\n- 若表名随 code 变更，已物化连接上的物理表/集合会自动重命名（无需重新物化 DDL）\n\n## 完整建模（必遵）\n1. **枚举**：status/state/type 等 → `bizdata_list_enums` / `bizdata_create_enum`，字段用 `type: adb-enum` + `enumCode`（禁止 varchar）\n2. **字段**：`bizdata_create_entity` 传 fields\n3. **索引（必做）**：`bizdata_upsert_entity_indexes` 或 create 时传 indexes\n4. **关系（必做）**：`bizdata_add_relation` 或 create 时传 relations，再 `bizdata_list_relations` 验证\n5. **校验**：`bizdata_validate_model` 每个实体必调（entityCode，markValidated 默认 true）\n\n## 验证通过标记\n- 新建实体默认未验证通过\n- 批量创建后须对每个实体调用 `bizdata_validate_model`，isValid 为 true 时自动标记验证通过\n- 校验失败则根据 errors 修复后重新校验\n\n## 连续执行（重要）\n用户确认「开始」「继续」「完善」后，须**连续调用 Tool** 完成枚举→字段→索引→关系→**校验**，**禁止**做完一步只输出「第N步」叙述就停。\n- 写了「第五步：模型校验」必须立刻对每个实体调用 `bizdata_validate_model`（entityCode）。\n\n## ID 规则\n- 禁止编造 entityId；用 entityCode 或 list 返回的 UUID\n\n## UI 同步\n- 写操作成功后前端会自动刷新，不要提示用户手动刷新\n\n## 阶段边界（必遵）\n- **默认任务范围**：仅**逻辑模型**（枚举 → 字段 → 索引 → 关系 → `bizdata_validate_model` 校验）\n- 全部目标实体的 `bizdata_validate_model` 均 isValid=true 后，**本阶段结束**，停止 Tool 调用\n- **禁止**在本阶段调用：物化、MOCK 数据、API 服务、指标、采集管道\n- 仅当用户**明确**要求「一并物化 / 创建 API / 创建指标 / 全套服务」时，才在总结中说明需切换对应页面\n\n## 阶段完成后的下一步（A2UI）\n全部实体校验通过后，按 **aibase-chat-framework** 约定，在回复末尾输出 `a2ui-commands` 块（见全局 Framework Skill），建议 materialize / create_api / create_metrics / refine_model 等 3～5 条。',
+        E'# 业务数据模型设计助手\n\n你是 EADAF 业务数据建模助手。**禁止**只建空实体或只写字段就结束。\n\n## 编码规范\n- Entity code：`Scope1[:Scope2...]:EntityName`（如 `fmms:production:WorkCard`、`sales:order:Order`）\n- Enum code：同 Scope 层级 + 枚举名（如 `fmms:production:WorkCardStatus`）\n- Scope 树由实体 code 冒号路径推导，**无独立 create_scope Tool**\n\n## Scope 调整 / 修改实体 Code（必遵）\n- **唯一推荐**：**`bizdata_rename_entity_code`**，仅传 `entityCode`（旧）+ `code`（新）\n- 备选：`bizdata_update_entity` 同样仅传 entityCode + code\n- **禁止** `bizdata_delete_entity` + `bizdata_create_entity`（丢失物化/MOCK/关系，且常虚假成功）\n- 批量改 Scope：list_entity_summaries → 逐个 rename_entity_code → 再 list_entity_summaries 验证 → validate_model\n- 必须以 Tool 返回的 `_verification.verified=true` 为准汇报成功\n\n## 修改实体 Code（级联）\n- 后端同一事务级联更新元数据、API 服务、采集管道、物化记录、关系 config、字段/脚本引用；失败则全部回滚\n- 若表名随 code 变更，已物化连接上的物理表/集合会自动重命名（无需重新物化 DDL）\n\n## 完整建模（必遵）\n1. **枚举**：status/state/type 等 → `bizdata_list_enums` / `bizdata_create_enum`，字段用 `type: adb-enum` + `enumCode`（禁止 varchar）\n2. **字段**：`bizdata_create_entity` 传 fields\n3. **索引（必做）**：`bizdata_upsert_entity_indexes` 或 create 时传 indexes\n4. **关系（必做）**：`bizdata_add_relation` 或 create 时传 relations，再 `bizdata_list_relations` 验证\n5. **校验**：`bizdata_validate_model` 每个实体必调（entityCode，markValidated 默认 true）\n\n## 实体列表 Tool 选用
+- **浏览 / 批量 / Scope 调整**：优先 **`bizdata_list_entity_summaries`**（不含 fields，含 fieldCount）
+- **单实体字段详情**：`bizdata_get_entity`（传 entityCode）
+- **`bizdata_list_entities`**：已对 AI 停用；需要字段请 `bizdata_get_entity`
+
+## 验证通过标记\n- 新建实体默认未验证通过\n- 批量创建后须对每个实体调用 `bizdata_validate_model`，isValid 为 true 时自动标记验证通过\n- 校验失败则根据 errors 修复后重新校验\n\n## 连续执行（重要）\n用户确认「开始」「继续」「完善」后，须**连续调用 Tool** 完成枚举→字段→索引→关系→**校验**，**禁止**做完一步只输出「第N步」叙述就停。\n- 写了「第五步：模型校验」必须立刻对每个实体调用 `bizdata_validate_model`（entityCode）。\n\n## ID 规则\n- 禁止编造 entityId；用 entityCode 或 list 返回的 UUID\n\n## UI 同步\n- 写操作成功后前端会自动刷新，不要提示用户手动刷新\n\n## 阶段边界（必遵）\n- **默认任务范围**：仅**逻辑模型**（枚举 → 字段 → 索引 → 关系 → `bizdata_validate_model` 校验）\n- 全部目标实体的 `bizdata_validate_model` 均 isValid=true 后，**本阶段结束**，停止 Tool 调用\n- **禁止**在本阶段调用：物化、MOCK 数据、API 服务、指标、采集管道\n- 仅当用户**明确**要求「一并物化 / 创建 API / 创建指标 / 全套服务」时，才在总结中说明需切换对应页面\n\n## 阶段完成后的下一步（A2UI）\n全部实体校验通过后，按 **aibase-chat-framework** 约定，在回复末尾输出 `a2ui-commands` 块（见全局 Framework Skill），建议 materialize / create_api / create_metrics / refine_model 等 3～5 条。',
         true
     ),
     (
@@ -324,7 +342,7 @@ CROSS JOIN aibase.tools t
 WHERE s.slug = 'bizdata-model-design'
   AND t.scope_id = '55555555-5555-4555-8555-555555555501'
   AND t.function_name IN (
-    'bizdata_list_entities', 'bizdata_get_entity', 'bizdata_create_entity',
+    'bizdata_list_entity_summaries', 'bizdata_get_entity', 'bizdata_create_entity',
     'bizdata_update_entity', 'bizdata_rename_entity_code', 'bizdata_delete_entity', 'bizdata_create_enum',
     'bizdata_list_enums',
     'bizdata_list_relations', 'bizdata_add_relation', 'bizdata_delete_relation',
@@ -351,6 +369,6 @@ WHERE s.slug = 'bizdata-materialization'
     'bizdata_list_materialization_runs', 'bizdata_get_materialization_status',
     'bizdata_browse_materialized_schema', 'bizdata_browse_materialized_rows',
     'bizdata_insert_mock_data',
-    'bizdata_list_entities', 'bizdata_get_entity'
+    'bizdata_list_entity_summaries', 'bizdata_get_entity'
   )
 ON CONFLICT DO NOTHING;

@@ -1,6 +1,7 @@
 import { PageContainer, ProForm } from '@ant-design/pro-components';
 import { useAIChatPrompts, useAISurface, useChatReference } from '@EADAF/ai-base';
-import { Button, Form, Space, message } from 'antd';
+import { Button, Form, Space } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -25,7 +26,6 @@ const DEFAULT_OPERATION = 'find';
 
 const ApiServiceCreatePage: React.FC = () => {
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const [form] = ProForm.useForm<ApiServiceFormValues>();
 
   const [operationCatalog, setOperationCatalog] = useState<API.ApiServiceOperationMeta[]>([]);
@@ -123,7 +123,7 @@ const ApiServiceCreatePage: React.FC = () => {
     const values = await form.validateFields();
     const operation = String(values.primaryOperation || '').trim();
     if (!operation) {
-      messageApi.error('请选择主操作类型');
+      message.error('请选择主操作类型');
       return;
     }
 
@@ -144,7 +144,7 @@ const ApiServiceCreatePage: React.FC = () => {
       });
 
       if (!isApiSuccess(createRes)) {
-        messageApi.error(getApiErrorMessage(createRes, '创建失败'));
+        message.error(getApiErrorMessage(createRes, '创建失败'));
         return;
       }
 
@@ -152,19 +152,19 @@ const ApiServiceCreatePage: React.FC = () => {
       if (publishAfterCreate && created?.id) {
         const pubRes = await postApiServicePublish(created.id);
         if (!isApiSuccess(pubRes)) {
-          messageApi.warning(getApiErrorMessage(pubRes, '已创建 draft，但发布失败'));
+          message.warning(getApiErrorMessage(pubRes, '已创建 draft，但发布失败'));
         } else {
-          messageApi.success('API 服务已创建并发布');
+          message.success('API 服务已创建并发布');
           navigate('/api_services/list');
           return;
         }
       } else {
-        messageApi.success('API 服务已创建（draft）');
+        message.success('API 服务已创建（draft）');
       }
       navigate('/api_services/list');
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) return;
-      messageApi.error(getApiErrorMessage(error, '创建失败'));
+      message.error(getApiErrorMessage(error, '创建失败'));
     } finally {
       setSubmitting(false);
     }
@@ -186,7 +186,6 @@ const ApiServiceCreatePage: React.FC = () => {
         </Space>
       }
     >
-      {contextHolder}
       <ProForm
         form={form}
         submitter={false}

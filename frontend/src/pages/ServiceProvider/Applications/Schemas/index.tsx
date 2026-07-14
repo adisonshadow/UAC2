@@ -2,7 +2,8 @@ import type { MixedFieldType } from "@/types/schema";
 import UUIDDisplay from "@/components/UUIDDisplay";
 import ApplicationLogoUpload from "@/components/ApplicationLogoUpload";
 import TitleWithHelp from '@/components/TitleWithHelp';
-import { Button, message, Modal, Space, Tooltip } from 'antd';
+import { Button, Modal, Space, Tooltip } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import { useState, useMemo } from "react";
 import { Form } from 'antd';
@@ -459,7 +460,7 @@ const Page: React.FC = () => {
                                 <Tooltip title="点击查看使用说明">
                                   <QuestionCircleOutlined
                                     onClick={() => {
-                                      Modal.info({
+                                      modal.info({
                                         title: 'API 访问说明',
                                         width: 600,
                                         content: (

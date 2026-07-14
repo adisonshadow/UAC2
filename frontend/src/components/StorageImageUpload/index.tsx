@@ -1,5 +1,6 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { Upload, message, Space, Typography } from 'antd';
+import { Upload, Space, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import type { UploadFile, UploadProps } from 'antd';
 import ImgCrop from 'antd-img-crop';
 import React, { useEffect, useRef, useState } from 'react';

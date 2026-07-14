@@ -10,7 +10,8 @@ import {
 } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { useSetState } from "ahooks";
-import { Button, Modal, message } from 'antd';
+import { Button } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
 import { buildDepartmentPrompts } from '@/ai/pageChatPrompts';
@@ -47,7 +48,6 @@ const Page: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const actionRef = useRef<ActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [isHighlighted, setIsHighlighted] = useState(false);
@@ -81,7 +81,7 @@ const Page: React.FC = () => {
                 danger
                 icon={<DeleteOutlined />}
                 onClick={() => {
-                  Modal.confirm({
+                  modal.confirm({
                     title: '确认删除',
                     content: '确定要删除该部门吗？',
                     onOk: async () => {
@@ -90,14 +90,14 @@ const Page: React.FC = () => {
                           department_id: record.department_id,
                         });
                         if (response.code && response.code >= 200 && response.code < 300) {
-                          messageApi.success('删除部门成功');
+                          message.success('删除部门成功');
                           initialExpandDoneRef.current = false;
                           actionRef.current?.reload();
                         } else {
-                          messageApi.error(response.message || '删除失败');
+                          message.error(response.message || '删除失败');
                         }
                       } catch (error: unknown) {
-                        messageApi.error(getApiErrorMessage(error, '删除失败'));
+                        message.error(getApiErrorMessage(error, '删除失败'));
                       }
                     },
                   });
@@ -177,7 +177,7 @@ const Page: React.FC = () => {
     try {
       const response = await getDepartmentsTree();
       if (!isApiSuccess(response)) {
-        messageApi.error(getApiErrorMessage(response, '获取部门列表失败'));
+        message.error(getApiErrorMessage(response, '获取部门列表失败'));
         return { data: [], success: false };
       }
 
@@ -200,10 +200,10 @@ const Page: React.FC = () => {
         success: true,
       };
     } catch (error) {
-      messageApi.error(getApiErrorMessage(error, '获取部门列表失败'));
+      message.error(getApiErrorMessage(error, '获取部门列表失败'));
       return { data: [], success: false };
     }
-  }, [messageApi]);
+  }, []);
 
   const proTableColumns = useMemo((): ProColumns<DepartmentWithChildren>[] => {
     const nameColumn: ProColumns<DepartmentWithChildren> = {
@@ -220,7 +220,6 @@ const Page: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <PageContainer pageHeaderRender={() => <></>}>
         <ProTable<DepartmentWithChildren>
           defaultSize="small"

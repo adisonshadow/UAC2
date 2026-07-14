@@ -1,6 +1,7 @@
 import { history } from '@/utils/navigation';
+import { message } from '@/utils/antdAppApis';
 import { getAuthCheck } from '@/services/UAC/api/auth';
-import { message } from 'antd';
+
 import { getApiData } from './apiResponse';
 import { normalizeUploadFileId } from './image';
 

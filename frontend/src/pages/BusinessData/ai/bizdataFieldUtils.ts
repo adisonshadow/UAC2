@@ -152,7 +152,7 @@ export async function resolveBizDataEntityId(args: Record<string, unknown>): Pro
         }
       }
       throw new Error(
-        `无效的 entityId「${raw}」。请用 bizdata_list_entities 获取真实 UUID，或传 entityCode（如 equipment:Device）`,
+        `无效的 entityId「${raw}」。请用 bizdata_list_entity_summaries 或 bizdata_get_entity 获取真实 UUID，或传 entityCode（如 equipment:Device）`,
       );
     }
   }

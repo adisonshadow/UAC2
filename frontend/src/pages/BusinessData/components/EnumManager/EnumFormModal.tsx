@@ -4,7 +4,8 @@ import {
   MinusCircleOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import { Button, Divider, Form, Input, Modal, Space, message } from 'antd';
+import { Button, Divider, Form, Input, Modal, Space } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useState } from 'react';
 import {
   patchBusinessDataEnum,

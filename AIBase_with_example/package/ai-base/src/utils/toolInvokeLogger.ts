@@ -9,6 +9,15 @@ export interface ToolInvokeLogEntry {
   result?: unknown;
   error?: string;
   executionType?: string;
+  conversationKey?: string;
+  turnId?: string;
+  round?: number;
+  envelope?: {
+    ok: boolean;
+    verified?: boolean;
+    kind: string;
+    error?: { code?: string; message: string; hint?: string };
+  };
 }
 
 export type ToolInvokeLogger = (entry: ToolInvokeLogEntry) => void;

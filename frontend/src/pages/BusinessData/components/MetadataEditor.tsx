@@ -1,4 +1,5 @@
-import { Collapse, Form, Input, Select, Spin, message } from 'antd';
+import { Collapse, Form, Input, Select, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   getBizdataMetadataByTarget,

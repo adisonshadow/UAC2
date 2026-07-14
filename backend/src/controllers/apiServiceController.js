@@ -14,6 +14,15 @@ function sendError(ctx, error, options = {}) {
 class ApiServiceController {
   static async list(ctx) {
     try {
+      const rawSize = ctx.query.size;
+      const parsedSize = Number.parseInt(String(rawSize ?? ''), 10);
+      const size =
+        rawSize === '-1' || rawSize === -1 || parsedSize === -1
+          ? -1
+          : Number.isFinite(parsedSize) && parsedSize > 0
+            ? parsedSize
+            : 100;
+
       const data = await apiServiceService.listServices({
         codePrefix: ctx.query.codePrefix,
         status: ctx.query.status,
@@ -21,7 +30,7 @@ class ApiServiceController {
         entityId: ctx.query.entityId,
         connectionId: ctx.query.connectionId,
         page: parseInt(ctx.query.page, 10) || 1,
-        size: parseInt(ctx.query.size, 10) || 100,
+        size,
       });
       ctx.body = { code: 200, message: '获取 API 服务列表成功', data };
     } catch (error) {

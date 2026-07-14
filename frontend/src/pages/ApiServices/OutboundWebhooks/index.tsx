@@ -9,7 +9,8 @@ import {
 import { ActionType } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Popconfirm, message } from 'antd';
+import { Button, Popconfirm } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
@@ -26,7 +27,6 @@ import { getApiData, getApiErrorMessage, isApiSuccess, parseApiListResponse } fr
 
 const OutboundWebhookListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [messageApi, contextHolder] = message.useMessage();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const search = useProTableSearchCollapse('outbound-webhooks.list');
 
@@ -34,28 +34,28 @@ const OutboundWebhookListPage: React.FC = () => {
     try {
       const res = await postOutboundWebhookPublish(id);
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '发布失败'));
+        message.error(getApiErrorMessage(res, '发布失败'));
         return;
       }
       const published = getApiData<API.OutboundWebhook>(res);
       if (published?.status !== 'published') {
-        messageApi.error('发布未生效，请检查配置是否完整');
+        message.error('发布未生效，请检查配置是否完整');
         return;
       }
-      messageApi.success('发布成功');
+      message.success('发布成功');
       await actionRef.current?.reload();
     } catch (error) {
-      messageApi.error(getApiErrorMessage(error, '发布失败'));
+      message.error(getApiErrorMessage(error, '发布失败'));
     }
   };
 
   const handleDelete = async (id: string) => {
     const res = await deleteOutboundWebhook(id);
     if (isApiSuccess(res)) {
-      messageApi.success('已删除');
+      message.success('已删除');
       actionRef.current?.reload();
     } else {
-      messageApi.error(res.message || '删除失败');
+      message.error(res.message || '删除失败');
     }
   };
 
@@ -128,7 +128,6 @@ const OutboundWebhookListPage: React.FC = () => {
 
   return (
     <>
-      {contextHolder}
       <UrlSyncedProTable<API.OutboundWebhook>
         headerTitle="提交外部API"
         actionRef={actionRef}

@@ -1,18 +1,8 @@
 import { PlayCircleOutlined, RobotOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import { sendMockUserMessage, useAISurface } from '@EADAF/ai-base';
-import {
-  Alert,
-  Button,
-  Collapse,
-  Descriptions,
-  Input,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Alert, Button, Collapse, Descriptions, Input, Space, Spin, Tag, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -29,7 +19,6 @@ const { TextArea } = Input;
 const CollectionPipelineTestPage: React.FC = () => {
   const navigate = useNavigate();
   const { id: pipelineId } = useParams<{ id: string }>();
-  const [messageApi, contextHolder] = message.useMessage();
   const [profileLoading, setProfileLoading] = useState(true);
   const [testLoading, setTestLoading] = useState(false);
   const [profile, setProfile] = useState<API.CollectionPipelineTestProfile | null>(null);
@@ -48,7 +37,7 @@ const CollectionPipelineTestPage: React.FC = () => {
     try {
       const res = await getCollectionPipelineTestProfile(pipelineId);
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '加载测试配置失败'));
+        message.error(getApiErrorMessage(res, '加载测试配置失败'));
         return;
       }
       const data = getApiData<API.CollectionPipelineTestProfile>(res);
@@ -57,7 +46,7 @@ const CollectionPipelineTestPage: React.FC = () => {
     } finally {
       setProfileLoading(false);
     }
-  }, [messageApi, pipelineId]);
+  }, [pipelineId]);
 
   useEffect(() => {
     void loadProfile();
@@ -96,16 +85,16 @@ const CollectionPipelineTestPage: React.FC = () => {
       if (!isApiSuccess(res)) {
         const err = getApiErrorMessage(res, '测试失败');
         setTestError(err);
-        messageApi.error(err);
+        message.error(err);
         return;
       }
       const data = getApiData<API.CollectionPipelineTestResult>(res);
       setResult(data);
-      messageApi.success(data?.rolledBack ? '测试完成（已回滚）' : '测试完成');
+      message.success(data?.rolledBack ? '测试完成（已回滚）' : '测试完成');
     } catch (error) {
       const err = getApiErrorMessage(error, '测试失败');
       setTestError(err);
-      messageApi.error(err);
+      message.error(err);
     } finally {
       setTestLoading(false);
     }
@@ -142,7 +131,6 @@ const CollectionPipelineTestPage: React.FC = () => {
         />
       }
     >
-      {contextHolder}
       <Alert
         type="info"
         showIcon

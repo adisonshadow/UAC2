@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { ConfigProvider, Spin, theme } from 'antd';
+import { App as AntdApp, ConfigProvider, Spin, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { AIChatProvider } from '@EADAF/ai-base';
 import '@EADAF/ai-base/style.css';
@@ -10,10 +10,13 @@ import { createAIChatConfig } from '@/config/aiChat';
 import { InitialStateProvider } from '@/providers/InitialStateProvider';
 import AppRoutes from '@/routes';
 import { setupAIMutationRouter } from '@/ai/toolMutation';
+import { AntdAppApiBridge } from '@/utils/antdAppApis';
 import { setupAiToolDevLogger } from '@/utils/aiToolDevLogger';
+import { setupAiToolInvokeFileLogger } from '@/utils/toolInvokeFileLogger';
 import { getAuth } from '@/utils/auth';
 
 setupAiToolDevLogger();
+setupAiToolInvokeFileLogger();
 setupAIMutationRouter();
 
 const originalError = console.error;
@@ -45,31 +48,35 @@ export default function App() {
         },
       }}
     >
-      <InitialStateProvider>
-        <BrowserRouter>
-          <ChatSessionGroupProvider>
-            <AIChatProvider config={aiChatConfig}>
-              <AIChatClientToolsRegistrar />
-              <Suspense
-                fallback={
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      height: '100vh',
-                    }}
+      <AntdApp>
+        <AntdAppApiBridge>
+          <InitialStateProvider>
+            <BrowserRouter>
+              <ChatSessionGroupProvider>
+                <AIChatProvider config={aiChatConfig}>
+                  <AIChatClientToolsRegistrar />
+                  <Suspense
+                    fallback={
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          height: '100vh',
+                        }}
+                      >
+                        <Spin size="large" />
+                      </div>
+                    }
                   >
-                    <Spin size="large" />
-                  </div>
-                }
-              >
-                <AppRoutes />
-              </Suspense>
-            </AIChatProvider>
-          </ChatSessionGroupProvider>
-        </BrowserRouter>
-      </InitialStateProvider>
+                    <AppRoutes />
+                  </Suspense>
+                </AIChatProvider>
+              </ChatSessionGroupProvider>
+            </BrowserRouter>
+          </InitialStateProvider>
+        </AntdAppApiBridge>
+      </AntdApp>
     </ConfigProvider>
   );
 }

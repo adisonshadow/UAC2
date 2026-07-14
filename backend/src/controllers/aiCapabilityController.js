@@ -173,13 +173,53 @@ class AiCapabilityController {
         return;
       }
 
-      const result = await invokeTool(tool, toolArgs || {});
+      const logContext = {
+        userId: ctx.state.user?.id || ctx.state.user?.userId,
+        traceId: ctx.state.traceId,
+      };
+
+      const result = await invokeTool(tool, toolArgs || {}, logContext);
       ctx.body = { data: result };
     } catch (error) {
       logger.error('Tool 调用失败', { error: error.message, functionName });
       ctx.status = 500;
       ctx.body = {
         error: { code: 'TOOL_INVOKE_FAILED', message: error.message, traceId: ctx.state.traceId },
+      };
+    }
+  }
+
+  static async logClientToolInvoke(ctx) {
+    try {
+      const enabled = String(process.env.AI_TOOL_INVOKE_LOG_ENABLED || 'false').toLowerCase() === 'true';
+      if (!enabled) {
+        ctx.body = { data: { logged: false } };
+        return;
+      }
+
+      const body = ctx.request.body || {};
+      const { logAiToolInvokeFailure } = require('../services/ai/aiToolInvokeLogService');
+
+      logAiToolInvokeFailure({
+        userId: ctx.state.user?.id || ctx.state.user?.userId,
+        tool: body.name || body.tool,
+        args: body.args,
+        envelope: body.envelope,
+        error: body.error,
+        executionType: body.executionType || 'client',
+        durationMs: body.durationMs,
+        conversationKey: body.conversationKey,
+        turnId: body.turnId,
+        round: body.round,
+        rawResult: body.result,
+      });
+
+      ctx.body = { data: { logged: true } };
+    } catch (error) {
+      logger.error('记录 Client Tool 日志失败', { error: error.message });
+      ctx.status = 500;
+      ctx.body = {
+        error: { code: 'INTERNAL_ERROR', message: '记录 Tool 日志失败', traceId: ctx.state.traceId },
       };
     }
   }

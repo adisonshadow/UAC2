@@ -50,7 +50,10 @@ export function UrlSyncedProTable<
 
   const [searchParams, setSearchParams] = useSearchParams();
   const internalActionRef = useRef<ActionType | undefined>(undefined);
-  const suppressPaginationResetRef = useRef(true);
+  /** URL 驱动翻页后，ProTable reload 可能异步把 current 重置为 1；在稳定前忽略这类 onChange */
+  const urlPaginationGuardRef = useRef<number | null>(null);
+  const pageRef = useRef(1);
+  const pageSizeRef = useRef(defaultPageSize);
 
   const resolvedDefaultPageSize =
     typeof pagination === 'object' && pagination?.pageSize
@@ -64,13 +67,8 @@ export function UrlSyncedProTable<
     resolvedDefaultPageSize,
   );
 
-  useEffect(() => {
-    suppressPaginationResetRef.current = true;
-    const frameId = requestAnimationFrame(() => {
-      suppressPaginationResetRef.current = false;
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [page, pageSize, searchParams.toString()]);
+  pageRef.current = page;
+  pageSizeRef.current = pageSize;
 
   const syncPaginationToUrl = useCallback(
     (nextPage: number, nextPageSize: number) => {
@@ -125,16 +123,16 @@ export function UrlSyncedProTable<
       current: page,
       pageSize,
       onChange: (nextPage: number, nextPageSize: number) => {
-        if (
-          suppressPaginationResetRef.current
-          && (nextPage !== page || nextPageSize !== pageSize)
-        ) {
+        const guard = urlPaginationGuardRef.current;
+        if (guard != null && nextPage !== guard) {
           return;
         }
+        urlPaginationGuardRef.current = nextPage;
         syncPaginationToUrl(nextPage, nextPageSize);
         base.onChange?.(nextPage, nextPageSize);
       },
       onShowSizeChange: (nextPage: number, nextPageSize: number) => {
+        urlPaginationGuardRef.current = nextPage;
         syncPaginationToUrl(nextPage, nextPageSize);
         base.onShowSizeChange?.(nextPage, nextPageSize);
       },
@@ -145,18 +143,24 @@ export function UrlSyncedProTable<
     if (!request) return undefined;
     if (!syncUrl) return request;
     return async (requestParams: U, sort: Record<string, any>, filter: Record<string, any>) =>
-      request({ ...requestParams, current: page, pageSize } as U, sort, filter);
-  }, [page, pageSize, request, syncUrl]);
+      request(
+        { ...requestParams, current: pageRef.current, pageSize: pageSizeRef.current } as U,
+        sort,
+        filter,
+      );
+  }, [request, syncUrl]);
 
   useEffect(() => {
     if (!syncUrl || !request) return;
+    urlPaginationGuardRef.current = page;
     internalActionRef.current?.reload?.();
+    const timer = window.setTimeout(() => {
+      urlPaginationGuardRef.current = null;
+    }, 500);
+    return () => window.clearTimeout(timer);
   }, [page, pageSize, syncUrl, request]);
 
-  const mergedParams = useMemo(() => {
-    if (!syncUrl) return params;
-    return { ...(params as object), current: page, pageSize } as unknown as U;
-  }, [page, pageSize, params, syncUrl]);
+  const mergedParams = params;
 
   const mergedActionRef = actionRef ?? internalActionRef;
 

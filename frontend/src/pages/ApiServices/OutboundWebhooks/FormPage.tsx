@@ -1,6 +1,7 @@
 import { BulbOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, Form, Input, message, Select, Space, Typography } from 'antd';
+import { Button, Card, Form, Input, Select, Space, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { ProForm, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import Editor from '@monaco-editor/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,7 +29,6 @@ interface FormPageProps {
 const OutboundWebhookFormPage: React.FC<FormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
-  const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(mode === 'edit');
@@ -151,21 +151,21 @@ const OutboundWebhookFormPage: React.FC<FormPageProps> = ({ mode }) => {
       if (mode === 'create') {
         res = await postOutboundWebhook(body);
         if (isApiSuccess(res)) {
-          messageApi.success('创建成功');
+          message.success('创建成功');
           navigate(`/api_services/outbound-webhooks/${res.data?.id}/edit`, { replace: true });
         }
       } else {
         res = await patchOutboundWebhook(id!, body);
         if (isApiSuccess(res)) {
-          messageApi.success('保存成功');
+          message.success('保存成功');
         }
       }
       if (!isApiSuccess(res)) {
-        messageApi.error(res.message || '保存失败');
+        message.error(res.message || '保存失败');
       }
     } catch (err: any) {
       if (err?.errorFields) return;
-      messageApi.error('保存失败');
+      message.error('保存失败');
     } finally {
       setSaving(false);
     }
@@ -190,7 +190,6 @@ const OutboundWebhookFormPage: React.FC<FormPageProps> = ({ mode }) => {
 
   return (
     <>
-      {contextHolder}
       <PageContainer
         title={
           <PageContainerTitleWithBack

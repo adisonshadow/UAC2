@@ -1,4 +1,5 @@
-import { Button, Empty, Form, Input, Modal, Select, Table, message } from 'antd';
+import { Button, Empty, Form, Input, Modal, Select, Table } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { forwardRef, useImperativeHandle, useState } from 'react';
 import { deleteBusinessDataRelation, postBusinessDataRelation } from '@/services/UAC/api/businessData';
 import { getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';

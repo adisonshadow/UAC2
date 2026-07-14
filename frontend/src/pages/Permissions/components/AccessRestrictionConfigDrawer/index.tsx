@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Drawer, Form, Radio, message, Space, Button, Tag, Tooltip, Typography } from 'antd';
+import { Drawer, Form, Radio, Space, Button, Tag, Tooltip, Typography } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import { ProFormSelect } from '@ant-design/pro-components';
 import { getRoles } from '@/services/UAC/api/roles';
 import { putPermissionsPermissionId } from '@/services/UAC/api/permissions';

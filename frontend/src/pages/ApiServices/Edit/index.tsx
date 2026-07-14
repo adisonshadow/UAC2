@@ -1,7 +1,8 @@
 import { RobotOutlined } from '@ant-design/icons';
 import { PageContainer, ProForm } from '@ant-design/pro-components';
 import { sendMockUserMessage, useAISurface, useChatReference } from '@EADAF/ai-base';
-import { Alert, Button, Space, Spin, message } from 'antd';
+import { Alert, Button, Space, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { buildApiServiceReference } from '@/ai/chatReferenceBuilders';
@@ -36,7 +37,6 @@ const ApiServiceEditPage: React.FC = () => {
   const location = useLocation();
   const locationState = (location.state || {}) as EditLocationState;
   const { id: serviceId } = useParams<{ id: string }>();
-  const [messageApi, contextHolder] = message.useMessage();
   const [form] = ProForm.useForm<ApiServiceFormValues>();
 
   const [loading, setLoading] = useState(true);
@@ -63,12 +63,12 @@ const ApiServiceEditPage: React.FC = () => {
     try {
       const res = await getApiService(serviceId);
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '加载 API 服务失败'));
+        message.error(getApiErrorMessage(res, '加载 API 服务失败'));
         return;
       }
       const data = getApiData<API.ApiService>(res);
       if (!data) {
-        messageApi.error('API 服务不存在');
+        message.error('API 服务不存在');
         return;
       }
       setServiceMeta(data);
@@ -89,11 +89,11 @@ const ApiServiceEditPage: React.FC = () => {
         transportProtocols: data.transportProtocols?.length ? data.transportProtocols : ['http'],
       });
     } catch (error) {
-      messageApi.error(getApiErrorMessage(error, '加载 API 服务失败'));
+      message.error(getApiErrorMessage(error, '加载 API 服务失败'));
     } finally {
       setLoading(false);
     }
-  }, [form, messageApi, serviceId]);
+  }, [form, serviceId]);
 
   useEffect(() => {
     void loadService();
@@ -185,19 +185,19 @@ const ApiServiceEditPage: React.FC = () => {
       });
 
       if (!isApiSuccess(res)) {
-        messageApi.error(getApiErrorMessage(res, '保存失败'));
+        message.error(getApiErrorMessage(res, '保存失败'));
         return;
       }
       const updated = getApiData<API.ApiService>(res);
       if (updated) setServiceMeta(updated);
       if (updated?.status === 'draft' && serviceMeta?.status === 'published') {
-        messageApi.success('已保存，服务已回到草稿状态，请重新发布');
+        message.success('已保存，服务已回到草稿状态，请重新发布');
       } else {
-        messageApi.success('API 服务已保存');
+        message.success('API 服务已保存');
       }
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) return;
-      messageApi.error(getApiErrorMessage(error, '保存失败'));
+      message.error(getApiErrorMessage(error, '保存失败'));
     } finally {
       setSubmitting(false);
     }
@@ -274,8 +274,6 @@ const ApiServiceEditPage: React.FC = () => {
         </Space>
       }
     >
-      {contextHolder}
-
       {locationState.fixContext?.errorMessage && (
         <Alert
           type="warning"

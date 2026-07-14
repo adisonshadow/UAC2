@@ -7,15 +7,19 @@ import { buildAutoContinueNudge, shouldAutoContinueAfterTextOnly } from './autoC
 import { buildCombinedSystemPrompt, loadChatSkillContext } from '../registry/skillLoader';
 import { mergeOpenAITools, toOpenAIToolFromMeta } from '../registry/toolManifest';
 import type { AIBaseSkill, AIBaseTool, OpenAIToolDefinition } from '../types';
+import type { ToolResponse } from '../types/toolResponse';
+import { isToolResponse } from '../types/toolResponse';
 import type { AIBaseClient } from '../sdk/client';
+import { executeToolWithEnvelope } from '../utils/executeToolWithEnvelope';
+import { resolveToolStepFromEnvelope } from './resolveToolStepFromEnvelope';
 import { upsertSegment, type AssistantSegment, type ChatToolStep } from './chatToolSteps';
 import { createEADAFChatProvider, type EADAFChatMessage } from './EADAFChatProvider';
 import { streamChatRound } from './streamToolChat';
 import { resolveToolDisplayName } from '../utils/toolDisplayName';
 import { runWithConcurrency } from '../utils/runWithConcurrency';
 import { sleep } from '../utils/sleep';
-import { withToolInvokeLog } from '../utils/toolInvokeLogger';
 import { serializeToolResultForContext, resolveToolResultBudget } from '../utils/toolResultBudget';
+import { normalizeToolResult } from '../utils/normalizeToolResult';
 import {
   buildMultimodalUserContent,
   formatUserDisplayWithAttachments,
@@ -77,41 +81,47 @@ async function invokeToolByMeta(
   tools: AIBaseTool[],
   functionName: string,
   args: Record<string, unknown>,
-) {
+  logContext?: { conversationKey?: string; turnId?: string; round?: number },
+): Promise<ToolResponse> {
   const toolMeta = tools.find((t) => t.functionName === functionName);
   const localDef = getFunctionCallDef(functionName);
+  const requiresVerification =
+    localDef?.requiresVerification ?? toolMeta?.requiresVerification;
 
   // 1. 声明为 client → 本地执行（必经路径）
   if (toolMeta?.executionType === 'client') {
     if (!localDef) {
       throw new Error(`Client Tool 未注册 handler: ${functionName}`);
     }
-    return invokeFunctionCall(functionName, args);
+    return invokeFunctionCall(functionName, args, undefined, logContext);
   }
 
   // 2. 显式允许本地覆盖（allowClientOverride）且本地有 def → 本地执行
   if (toolMeta?.allowClientOverride && localDef) {
-    return invokeFunctionCall(functionName, args);
+    return invokeFunctionCall(functionName, args, undefined, logContext);
   }
 
-  // 3. server_http / server_builtin → 走后端（按声明执行，本地同名 def 不再隐式拦截）。
-  //    走到这里时 executionType 必非 'client'（已被分支 1 拦截），无需重复比较。
+  // 3. server_http / server_builtin → 走后端
   if (toolMeta) {
-    return withToolInvokeLog(
-      'server',
-      functionName,
+    return executeToolWithEnvelope({
+      side: 'server',
+      name: functionName,
       args,
-      async () => {
+      requiresVerification,
+      executionType: toolMeta.executionType || 'server',
+      logContext,
+      fn: async () => {
         const res = await client.invokeServerTool(functionName, args);
-        return res.result ?? res;
+        const payload = res.result ?? res;
+        if (isToolResponse(payload)) return payload;
+        return payload;
       },
-      { executionType: toolMeta.executionType || 'server' },
-    );
+    });
   }
 
   // 4. 无 meta 但本地有 def（exposeAllClientTools 场景）→ 本地执行
   if (localDef) {
-    return invokeFunctionCall(functionName, args);
+    return invokeFunctionCall(functionName, args, undefined, logContext);
   }
 
   throw new Error(`Tool 不可用: ${functionName}`);
@@ -408,6 +418,8 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         let toolsExecutedThisTurn = 0;
         let autoContinueNudges = 0;
         const invokedToolNames = new Set<string>();
+        const toolOutcomes: ToolResponse[] = [];
+        const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
           currentRoundContent = '';
@@ -476,6 +488,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               invokedToolNames,
               toolsExecuted: toolsExecutedThisTurn,
               text: finalContent,
+              toolOutcomes,
             };
 
             if (
@@ -491,7 +504,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               if (roundText) upsertRoundTextSegment(round, roundText);
               loopMessages.push({
                 role: 'user',
-                content: buildAutoContinueNudge(allowedToolNames, skills),
+                content: buildAutoContinueNudge(allowedToolNames, skills, toolOutcomes),
               });
               patchAssistantMessage(
                 {
@@ -631,23 +644,37 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             );
 
             try {
-              const toolResult = await invokeToolByMeta(client, allTools, functionName, args);
+              const envelope = await invokeToolByMeta(client, allTools, functionName, args, {
+                conversationKey,
+                turnId,
+                round,
+              });
+              toolOutcomes.push(envelope);
+
+              const stepOutcome = resolveToolStepFromEnvelope(envelope);
               appendToolStep({
                 id: stepId,
                 functionName,
                 displayName,
-                status: 'success',
+                status: stepOutcome.status,
                 durationMs: Date.now() - startedAt,
+                error: stepOutcome.error,
               });
               return {
                 role: 'tool',
-                content: serializeToolResultForContext(toolResult, budget),
+                content: serializeToolResultForContext(envelope, budget),
                 tool_call_id: call.id,
                 name: functionName,
               };
             } catch (toolError) {
               const errorMessage =
                 toolError instanceof Error ? toolError.message : 'Tool 执行失败';
+              const envelope = normalizeToolResult({
+                tool: functionName,
+                thrownError: toolError,
+                durationMs: Date.now() - startedAt,
+              });
+              toolOutcomes.push(envelope);
               appendToolStep({
                 id: stepId,
                 functionName,
@@ -658,7 +685,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               });
               return {
                 role: 'tool',
-                content: serializeToolResultForContext({ error: errorMessage }, budget),
+                content: serializeToolResultForContext(envelope, budget),
                 tool_call_id: call.id,
                 name: functionName,
               };

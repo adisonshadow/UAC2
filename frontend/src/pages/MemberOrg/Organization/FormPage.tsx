@@ -4,7 +4,8 @@ import {
   type ProFormInstance,
 } from '@ant-design/pro-components';
 import { DeleteOutlined } from '@ant-design/icons';
-import { Button, Modal, Space, Spin, message } from 'antd';
+import { Button, Space, Spin } from 'antd';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -37,7 +38,6 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const formRef = useRef<ProFormInstance>(null);
-  const [messageApi, contextHolder] = message.useMessage();
   const { roleOptions } = useRoleOptions();
   const [loading, setLoading] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
@@ -48,7 +48,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
     try {
       const response = await getDepartmentsTree();
       if (!isApiSuccess(response)) {
-        messageApi.error(getApiErrorMessage(response, '获取部门树失败'));
+        message.error(getApiErrorMessage(response, '获取部门树失败'));
         return;
       }
       const data = getApiData<{ items?: any[] }>(response);
@@ -56,9 +56,9 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
         setDepartmentTree(data.items);
       }
     } catch (error) {
-      messageApi.error(getApiErrorMessage(error, '获取部门树失败'));
+      message.error(getApiErrorMessage(error, '获取部门树失败'));
     }
-  }, [messageApi]);
+  }, []);
 
   const injectFormOptions = useCallback(
     (columns: typeof departmentEditFormColumns) =>
@@ -109,7 +109,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
     try {
       const response = await getDepartmentsDepartmentId({ department_id: id });
       if (response.code !== 200 || !response.data) {
-        messageApi.error('获取部门详情失败');
+        message.error('获取部门详情失败');
         navigate(LIST_PATH, { replace: true });
         return;
       }
@@ -122,12 +122,12 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
       };
       formRef.current?.setFieldsValue(processedData);
     } catch {
-      messageApi.error('获取部门详情失败');
+      message.error('获取部门详情失败');
       navigate(LIST_PATH, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [id, messageApi, mode, navigate]);
+  }, [id, mode, navigate]);
 
   useEffect(() => {
     void loadDepartmentTree();
@@ -151,7 +151,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
         });
 
         if (!response.code || response.code < 200 || response.code >= 300) {
-          messageApi.error(response.message || '创建失败');
+          message.error(response.message || '创建失败');
           return false;
         }
 
@@ -164,7 +164,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
           );
         }
 
-        messageApi.success('创建成功');
+        message.success('创建成功');
         navigate(`${LIST_PATH}?highlight=${departmentId || ''}`);
         return true;
       }
@@ -180,19 +180,19 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
       );
 
       if (!response.code || response.code < 200 || response.code >= 300) {
-        messageApi.error(response.message || '更新失败');
+        message.error(response.message || '更新失败');
         return false;
       }
 
       const roleIds = Array.isArray(value.role_ids) ? value.role_ids : [];
       await putDepartmentsDepartmentIdRoles({ department_id: id }, { role_ids: roleIds });
 
-      messageApi.success('更新成功');
+      message.success('更新成功');
       navigate(LIST_PATH);
       return true;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : '保存失败';
-      messageApi.error(errMsg);
+      message.error(errMsg);
       return false;
     } finally {
       setSaving(false);
@@ -201,7 +201,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
 
   const handleDelete = () => {
     if (!id) return;
-    Modal.confirm({
+    modal.confirm({
       title: '确认删除',
       content: '确定要删除该部门吗？',
       onOk: async () => {
@@ -209,16 +209,16 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
           setDeleteLoading(true);
           const response = await deleteDepartmentsDepartmentId({ department_id: id });
           if (response.code && response.code >= 200 && response.code < 300) {
-            messageApi.success('删除成功');
+            message.success('删除成功');
             navigate(LIST_PATH);
           } else {
-            messageApi.error(response.message || '删除失败');
+            message.error(response.message || '删除失败');
           }
         } catch (error: unknown) {
           const errMsg =
             (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
             '删除失败';
-          messageApi.error(errMsg);
+          message.error(errMsg);
         } finally {
           setDeleteLoading(false);
         }
@@ -228,7 +228,6 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
 
   return (
     <>
-      {contextHolder}
       <PageContainer
         title={<PageContainerTitleWithBack title={PAGE_TITLE[mode]} backTo={LIST_PATH} />}
         extra={

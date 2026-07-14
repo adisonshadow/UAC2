@@ -1,7 +1,8 @@
 import { EyeOutlined } from '@ant-design/icons';
 import { ActionType, PageContainer, ProDescriptions } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Drawer, Spin, message } from 'antd';
+import { Drawer, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useRef, useState } from 'react';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import {
@@ -14,7 +15,6 @@ import { requestLogTableColumns } from './schema';
 
 const RequestLogsPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
-  const [messageApi, contextHolder] = message.useMessage();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Record<string, any>>();
@@ -25,12 +25,12 @@ const RequestLogsPage: React.FC = () => {
       setDrawerOpen(true);
       const response = await getAdminAiRequestLogsId({ id });
       if (!isApiSuccess(response)) {
-        messageApi.error('获取日志详情失败');
+        message.error('获取日志详情失败');
         return;
       }
       setDetail(getApiData<Record<string, any>>(response));
     } catch {
-      messageApi.error('获取日志详情失败');
+      message.error('获取日志详情失败');
     } finally {
       setLoading(false);
     }
@@ -38,7 +38,6 @@ const RequestLogsPage: React.FC = () => {
 
   return (
     <PageContainer pageHeaderRender={() => <></>}>
-      {contextHolder}
       <UrlSyncedProTable
         headerTitle="请求日志"
         actionRef={actionRef}

@@ -107,6 +107,21 @@ function normalizeFieldInput(raw, index = 0) {
   };
 }
 
+function formatEntitySummary(entity, fieldCount = 0) {
+  const d = entity.toJSON ? entity.toJSON() : entity;
+  return {
+    id: d.id,
+    code: d.code,
+    label: d.label,
+    entityKind: d.entity_kind,
+    tableName: d.table_name,
+    status: d.status,
+    version: d.version,
+    fieldCount: Number(fieldCount) || 0,
+    modelValidated: d.entity_info?.modelValidated === true,
+  };
+}
+
 function formatEntity(entity, includeFields = true) {
   const d = entity.toJSON ? entity.toJSON() : entity;
   const result = {
@@ -220,6 +235,49 @@ async function listEntities({ codePrefix, entityKind, page = 1, size = 100 } = {
     items: rows.map((r) => formatEntity(r)),
     page,
     size: limit
+  };
+}
+
+async function listEntitySummaries({ codePrefix, entityKind, page = 1, size = 500 } = {}) {
+  const where = {};
+  if (codePrefix) {
+    where.code = { [Op.like]: `${codePrefix}%` };
+  }
+  if (entityKind) {
+    where.entity_kind = entityKind;
+  }
+
+  const limit = Math.min(Math.max(size, 1), 500);
+  const { count, rows } = await BizdataEntity.findAndCountAll({
+    where,
+    attributes: ['id', 'code', 'label', 'entity_kind', 'table_name', 'status', 'version', 'entity_info'],
+    limit,
+    offset: (page - 1) * limit,
+    order: [['code', 'ASC']],
+  });
+
+  const entityIds = rows.map((r) => r.id).filter(Boolean);
+  const countMap = new Map();
+  if (entityIds.length) {
+    const fieldCounts = await BizdataEntityField.findAll({
+      attributes: [
+        'entity_id',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+      ],
+      where: { entity_id: entityIds },
+      group: ['entity_id'],
+      raw: true,
+    });
+    fieldCounts.forEach((row) => {
+      countMap.set(row.entity_id, Number(row.count) || 0);
+    });
+  }
+
+  return {
+    total: count,
+    items: rows.map((r) => formatEntitySummary(r, countMap.get(r.id) || 0)),
+    page,
+    size: limit,
   };
 }
 
@@ -632,6 +690,7 @@ module.exports = {
   formatRelation,
   getFullSchema,
   listEntities,
+  listEntitySummaries,
   getEntityById,
   createEntity,
   updateEntity,

@@ -3,7 +3,8 @@ import {
   PageContainer,
   type ProFormInstance,
 } from '@ant-design/pro-components';
-import { Button, Spin, message } from 'antd';
+import { Button, Spin } from 'antd';
+import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
@@ -34,7 +35,6 @@ const ApplicationFormPage: React.FC<ApplicationFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const formRef = useRef<ProFormInstance>(null);
-  const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
   const [applicationCode, setApplicationCode] = useState<string>();
@@ -48,25 +48,25 @@ const ApplicationFormPage: React.FC<ApplicationFormPageProps> = ({ mode }) => {
     try {
       const response = await getApplicationsId({ id });
       if (!isApiSuccess(response)) {
-        messageApi.error('获取应用详情失败');
+        message.error('获取应用详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       const data = getApiData<API.Application>(response);
       if (!data) {
-        messageApi.error('获取应用详情失败');
+        message.error('获取应用详情失败');
         navigate(listPath, { replace: true });
         return;
       }
       setApplicationCode(data.code);
       formRef.current?.setFieldsValue(data);
     } catch {
-      messageApi.error('获取应用详情失败');
+      message.error('获取应用详情失败');
       navigate(listPath, { replace: true });
     } finally {
       setLoading(false);
     }
-  }, [id, listPath, messageApi, mode, navigate]);
+  }, [id, listPath, mode, navigate]);
 
   useEffect(() => {
     if (mode === 'edit') {
@@ -115,24 +115,24 @@ const ApplicationFormPage: React.FC<ApplicationFormPageProps> = ({ mode }) => {
       if (mode === 'create') {
         const response = await postApplications(buildSubmitPayload(values));
         if (!isApiSuccess(response)) {
-          messageApi.error(
+          message.error(
             (response as { message?: string }).message || '创建失败',
           );
           return false;
         }
-        messageApi.success('创建成功');
+        message.success('创建成功');
       } else if (id) {
         const response = await putApplicationsId({ id }, values as API.Application);
         if (!isApiSuccess(response)) {
-          messageApi.error(response.message || '更新失败');
+          message.error(response.message || '更新失败');
           return false;
         }
-        messageApi.success('更新成功');
+        message.success('更新成功');
       }
       navigate(listPath);
       return true;
     } catch {
-      messageApi.error('保存失败');
+      message.error('保存失败');
       return false;
     } finally {
       setSaving(false);
@@ -148,7 +148,6 @@ const ApplicationFormPage: React.FC<ApplicationFormPageProps> = ({ mode }) => {
         </Button>
       }
     >
-      {contextHolder}
       <Spin spinning={loading}>
         <BetaSchemaForm
           formRef={formRef}
