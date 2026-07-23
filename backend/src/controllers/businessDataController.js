@@ -190,7 +190,10 @@ class BusinessDataController {
 
   static async listRelations(ctx) {
     try {
-      const data = await businessDataService.listRelations();
+      const data = await businessDataService.listRelations({
+        entityId: ctx.query.entityId,
+        entityCode: ctx.query.entityCode,
+      });
       ctx.body = { code: 200, message: '获取关系列表成功', data };
     } catch (error) {
       sendBizDataError(ctx, error, { fallbackStatus: 500 });

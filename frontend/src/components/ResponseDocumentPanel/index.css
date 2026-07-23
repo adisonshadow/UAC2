@@ -1,0 +1,43 @@
+.response-document-panel__section-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.response-document-panel__split-col-left {
+  border-right: 1px solid var(--ant-color-border-secondary);
+}
+
+.response-document-panel__viewer {
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.response-document-panel__json-key {
+  color: var(--ant-color-primary);
+}
+
+.response-document-panel__ref-btn {
+  padding: 0 4px;
+  height: auto;
+  font-family: inherit;
+  font-size: inherit;
+  vertical-align: baseline;
+}
+
+.response-document-panel__entity-popover {
+  max-width: 420px;
+}
+
+.response-document-panel__entity-interface {
+  margin: 0;
+  padding: 8px;
+  background: var(--ant-color-fill-quaternary);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 280px;
+  overflow: auto;
+}

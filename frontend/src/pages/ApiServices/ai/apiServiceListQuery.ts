@@ -1,6 +1,9 @@
 import { getApiService, getApiServices } from '@/services/UAC/api/apiServices';
 import { getApiData, parseApiListResponse } from '@/utils/apiResponse';
 
+/** 列表类 Tool 回灌预算（字符）；超限时结构化裁剪 items，避免中段砍 JSON */
+export const API_SERVICE_LIST_TOOL_BUDGET_CHARS = 24_000;
+
 export interface ApiServiceListQueryArgs {
   codePrefix?: string;
   status?: string;
@@ -29,7 +32,7 @@ export interface ApiServiceListItemView {
 export interface ApiServiceListToolResult {
   /** 符合 appliedFilters 的总数（来自后端 count，非本页条数） */
   total: number;
-  /** 本页实际返回条数 */
+  /** 本页实际返回条数（截断后为 shownCount） */
   returnedCount: number;
   page?: number;
   hasMore?: boolean;
@@ -47,7 +50,7 @@ export interface ApiServiceListToolResult {
     size: number;
   };
   filterWarning?: string;
-  /** 列表 status 与 get_service 回读不一致时记录 */
+  /** 列表 status 与 get_service 回读不一致时记录（不剔除行） */
   statusDriftWarnings?: string[];
   exactMatch?: {
     id?: string;
@@ -55,6 +58,18 @@ export interface ApiServiceListToolResult {
     name?: string;
     status?: string;
   } | null;
+  /** 因回灌预算对 items 做了条数裁剪 */
+  truncated?: boolean;
+  shownCount?: number;
+  hint?: string;
+}
+
+/** status=ALL / * / 空 → 不过滤（与后端 normalizeListStatus 对齐） */
+export function normalizeApiServiceListStatus(status?: string): string | undefined {
+  if (status == null) return undefined;
+  const s = String(status).trim().toLowerCase();
+  if (!s || s === 'all' || s === '*') return undefined;
+  return s;
 }
 
 function summarizeStatus(items: ApiServiceListItemView[]) {
@@ -94,46 +109,98 @@ function compactServiceForListTool(service: API.ApiService): ApiServiceListItemV
   };
 }
 
-/** 对列表每条记录 get_service 回读，以详情 status 为准 */
-async function revalidateItemsFromSource(
+/**
+ * 抽样回读校验 status 漂移：只告警，不替换/剔除列表行（避免 draft 查询被掏空）。
+ * 全量 N+1 成本过高，最多抽查 12 条。
+ */
+async function collectStatusDriftWarnings(
   items: API.ApiService[],
-): Promise<{ items: ApiServiceListItemView[]; statusDriftWarnings: string[] }> {
+): Promise<string[]> {
   const statusDriftWarnings: string[] = [];
+  const sample = items.filter((item) => item.id).slice(0, 12);
 
-  const refreshed = await Promise.all(
-    items.map(async (item) => {
-      if (!item.id) {
-        return compactServiceForListTool(item);
-      }
+  await Promise.all(
+    sample.map(async (item) => {
       try {
-        const res = await getApiService(item.id);
+        const res = await getApiService(item.id!);
         const fresh = getApiData<API.ApiService>(res);
-        if (!fresh) {
-          return compactServiceForListTool(item);
-        }
+        if (!fresh) return;
         const listStatus = item.status || 'draft';
         const freshStatus = fresh.status || 'draft';
         if (listStatus !== freshStatus) {
           statusDriftWarnings.push(
-            `${item.code}：列表 status=${listStatus}，get_service 回读=${freshStatus}（以回读为准）`,
+            `${item.code}：列表 status=${listStatus}，get_service 回读=${freshStatus}（列表为准，未剔除）`,
           );
         }
-        return compactServiceForListTool(fresh);
       } catch {
-        return compactServiceForListTool(item);
+        // ignore
       }
     }),
   );
 
-  return { items: refreshed, statusDriftWarnings };
+  return statusDriftWarnings;
 }
 
-/** AI Tool 统一列表查询：默认 size=-1；逐条 get_service 回读校验 status */
+function estimateJsonChars(value: unknown): number {
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** 超预算时裁剪 items，保留 total / statusSummary / appliedFilters 等元数据 */
+export function fitApiServiceListResultToBudget(
+  result: ApiServiceListToolResult,
+  maxChars = API_SERVICE_LIST_TOOL_BUDGET_CHARS,
+): ApiServiceListToolResult {
+  if (estimateJsonChars(result) <= maxChars) {
+    return result;
+  }
+
+  let lo = 0;
+  let hi = result.items.length;
+  let best = 0;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const candidate: ApiServiceListToolResult = {
+      ...result,
+      items: result.items.slice(0, mid),
+      returnedCount: mid,
+      shownCount: mid,
+      truncated: true,
+      hint: `结果超预算已只返回前 ${mid} 条（共 total=${result.total}），请缩小 codePrefix 或使用 page/size 分页`,
+      statusSummary: summarizeStatus(result.items.slice(0, mid)),
+    };
+    if (estimateJsonChars(candidate) <= maxChars) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  const sliced = result.items.slice(0, best);
+  return {
+    ...result,
+    items: sliced,
+    returnedCount: best,
+    shownCount: best,
+    truncated: true,
+    hasMore: true,
+    hint: `结果超预算已只返回前 ${best} 条（共 total=${result.total}），请缩小 codePrefix 或使用 page/size 分页`,
+    statusSummary: summarizeStatus(sliced),
+  };
+}
+
+/** AI Tool 统一列表查询：默认 size=-1；status=ALL 不过滤 */
 export async function queryApiServicesForTool(
   args: ApiServiceListQueryArgs,
 ): Promise<ApiServiceListToolResult> {
   const codePrefix = args.codePrefix ? String(args.codePrefix).trim() : undefined;
-  const requestedStatus = args.status ? String(args.status).trim().toLowerCase() : undefined;
+  const requestedStatus = normalizeApiServiceListStatus(
+    args.status ? String(args.status) : undefined,
+  );
   const size = args.size ?? -1;
   const page = args.page && args.page > 0 ? args.page : 1;
 
@@ -148,23 +215,11 @@ export async function queryApiServicesForTool(
 
   const data = getApiData<API.ApiServiceListResult>(res);
   const backendTotal = data?.total ?? parseApiListResponse(res).total ?? 0;
-  let items = data?.items ?? parseApiListResponse(res).items;
+  const rawItems = data?.items ?? parseApiListResponse(res).items;
+  const items = rawItems.map((item) => compactServiceForListTool(item));
 
-  const { items: revalidated, statusDriftWarnings } = await revalidateItemsFromSource(items);
-  items = revalidated;
-
+  const statusDriftWarnings = await collectStatusDriftWarnings(rawItems);
   const warnings: string[] = [...statusDriftWarnings];
-  if (requestedStatus) {
-    const beforeCount = items.length;
-    items = items.filter(
-      (item) => (item.status || 'draft').toLowerCase() === requestedStatus,
-    );
-    if (items.length < beforeCount) {
-      warnings.push(
-        `回读校验后 ${beforeCount - items.length} 条不符合 status=${requestedStatus}，已从结果剔除`,
-      );
-    }
-  }
 
   const exactMatch =
     codePrefix && codePrefix.includes(':')
@@ -173,7 +228,7 @@ export async function queryApiServicesForTool(
 
   const filterWarning = warnings.length ? warnings.join('；') : undefined;
 
-  return {
+  const result: ApiServiceListToolResult = {
     total: backendTotal,
     returnedCount: items.length,
     page: size === -1 ? undefined : page,
@@ -198,4 +253,6 @@ export async function queryApiServicesForTool(
         }
       : null,
   };
+
+  return fitApiServiceListResultToBudget(result);
 }

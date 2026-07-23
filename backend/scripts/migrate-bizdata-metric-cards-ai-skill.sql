@@ -1,0 +1,5 @@
+-- 增量：指标看板卡片 AI Tools + Skill
+-- 幂等重跑完整 seed（含新 card tools）：
+--   psql ... -f backend/scripts/bizdata-metrics-ai-seed.sql
+--
+-- 表结构见：migrate-bizdata-metric-cards.sql

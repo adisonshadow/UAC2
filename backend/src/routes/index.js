@@ -24,6 +24,7 @@ const apiServiceStreamRoutes = require('./apiServiceStreamRoutes');
 const collectionPipelineAdminRoutes = require('./collectionPipelineAdminRoutes');
 const builtinApiRoutes = require('./builtinApiRoutes');
 const outboundWebhookRoutes = require('./outboundWebhookRoutes');
+const exceptionResponseRoutes = require('./exceptionResponseRoutes');
 const systemRoutes = require('./systemRoutes');
 
 const router = new Router();
@@ -386,6 +387,7 @@ router.use(apiServiceStreamRoutes.routes());
 router.use(collectionPipelineAdminRoutes.routes());
 router.use(builtinApiRoutes.routes());
 router.use(outboundWebhookRoutes.routes());
+router.use(exceptionResponseRoutes.routes());
 router.use(systemRoutes.routes());
 
 module.exports = router; 

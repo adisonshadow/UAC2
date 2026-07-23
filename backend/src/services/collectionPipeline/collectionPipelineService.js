@@ -301,6 +301,54 @@ async function updatePipeline(id, payload) {
     updates.store_script = payload.storeScript ?? payload.store_script;
   }
 
+  // 允许修改 Scope / 管道短名 → 同步 code、route_path、base_path
+  const wantsCodeChange = Boolean(
+    payload.code
+    || payload.scopeCode || payload.scope_code
+    || payload.pipelineSlug || payload.pipeline_slug
+    || payload.serviceSlug || payload.service_slug,
+  );
+  if (wantsCodeChange) {
+    let nextCode;
+    try {
+      if (payload.code) {
+        nextCode = validateCode(payload.code);
+      } else {
+        const scopeCode = payload.scopeCode || payload.scope_code
+          || resolveScopeCode({}, pipeline.code);
+        const pipelineSlug = payload.pipelineSlug || payload.pipeline_slug
+          || payload.serviceSlug || payload.service_slug
+          || parseServiceSlugFromCode(pipeline.code, scopeCode);
+        if (!scopeCode || !pipelineSlug) {
+          throw Object.assign(new Error('修改编码须提供 scopeCode 与 pipelineSlug'), { status: 400 });
+        }
+        nextCode = buildCodeFromScopeAndSlug(scopeCode, pipelineSlug);
+      }
+    } catch (err) {
+      if (err.status) throw err;
+      throw Object.assign(new Error(err.message || '编码无效'), { status: 400 });
+    }
+
+    if (nextCode !== pipeline.code) {
+      const dupCode = await BizdataCollectionPipeline.findOne({
+        where: { code: nextCode, id: { [Op.ne]: id }, status: { [Op.ne]: 'deleted' } },
+      });
+      if (dupCode) {
+        throw Object.assign(new Error(`code "${nextCode}" 已存在`), { status: 409 });
+      }
+      const nextRoute = codeToRoutePath(nextCode);
+      const dupRoute = await BizdataCollectionPipeline.findOne({
+        where: { route_path: nextRoute, id: { [Op.ne]: id }, status: { [Op.ne]: 'deleted' } },
+      });
+      if (dupRoute) {
+        throw Object.assign(new Error(`routePath "${nextRoute}" 已存在`), { status: 409 });
+      }
+      updates.code = nextCode;
+      updates.route_path = nextRoute;
+      updates.base_path = `${INGEST_BASE}/${nextRoute}`;
+    }
+  }
+
   const entityId = payload.entityId ?? payload.entity_id;
   if (entityId !== undefined) {
     if (entityId) {

@@ -1,11 +1,16 @@
 import { PlayCircleOutlined, RobotOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
-import { PageContainer } from '@ant-design/pro-components';
 import { sendMockUserMessage, useAISurface, useChatReference } from '@EADAF/ai-base';
 import { Alert, Button, Collapse, Descriptions, Input, Space, Spin, Tag, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
+import FixHeaderPage, { useFixHeaderPageScroll } from '@/components/FixHeaderPage';
+import OperationParameterPanel, {
+  isQueryOnlyMethod,
+  type ParameterRow,
+} from '@/components/OperationParameterPanel';
+import { ResponseExampleViewer, ResponseSchemaViewer } from '@/components/ResponseDocumentPanel/ResponseSchemaViewer';
 import { buildApiServiceReference } from '@/ai/chatReferenceBuilders';
 import { buildApiServiceTestParamsPrompt } from '@/pages/ApiServices/ai/buildApiServiceTestParamsPrompt';
 import { buildApiServiceTestAutoFixPrompt } from '@/pages/ApiServices/ai/buildApiServiceTestAutoFixPrompt';
@@ -19,6 +24,19 @@ import {
   postApiServiceSuggestTestParams,
   postApiServiceTest,
 } from '@/services/UAC/api/apiServices';
+import {
+  buildParameterRowsFromInterface,
+  collectEnumCodesFromInterface,
+  ensureExampleValues,
+  loadEnumOptionsByCodes,
+  type EnumOptionsByCode,
+} from '@/pages/ApiServices/utils/buildParameterRowsFromInterface';
+import {
+  extractRequestExampleFromPayload,
+  formatRequestExampleText,
+  REQUEST_EXAMPLE_FIELD_LABEL,
+} from '@/pages/ApiServices/utils/requestOverrides';
+import { formatHandlerDiagnostics } from '@/pages/ApiServices/utils/handlerTypeCheckClient';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 
 const { Text, Paragraph } = Typography;
@@ -44,6 +62,52 @@ function parseParametersJson(text: string): Record<string, unknown> {
   return JSON.parse(trimmed) as Record<string, unknown>;
 }
 
+function patchProfileRequestExample(
+  profile: API.ApiServiceTestProfile | null,
+  operation: string | undefined,
+  requestExample: Record<string, unknown>,
+): API.ApiServiceTestProfile | null {
+  if (!profile) return profile;
+  const targetOp = operation || profile.enabledOperations?.[0]?.operation;
+  if (!targetOp) return profile;
+  return {
+    ...profile,
+    enabledOperations: profile.enabledOperations?.map((item) => (
+      item.operation === targetOp
+        ? { ...item, mockParameters: requestExample, mockParametersSource: 'saved' as const }
+        : item
+    )),
+  };
+}
+
+function applyRequestExampleToTestState(
+  payload: unknown,
+  selectedOperation: string | undefined,
+  setParametersText: (text: string) => void,
+  setProfile: React.Dispatch<React.SetStateAction<API.ApiServiceTestProfile | null>>,
+) {
+  const { operation, requestExample } = extractRequestExampleFromPayload(payload);
+  if (!requestExample) return;
+  setParametersText(formatRequestExampleText(requestExample));
+  setProfile((prev) => patchProfileRequestExample(prev, operation || selectedOperation, requestExample));
+}
+
+/** 测试结果被渲染后，将 FixHeaderPage 内容区滚动到底部 */
+const TestResultScrollAnchor: React.FC<{ result: API.ApiServiceTestResult | null }> = ({ result }) => {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const { scrollToElement, scrollReady } = useFixHeaderPageScroll();
+
+  useEffect(() => {
+    if (!result || !scrollReady) return;
+    const frame = requestAnimationFrame(() => {
+      scrollToElement(anchorRef.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [result, scrollReady, scrollToElement]);
+
+  return <div ref={anchorRef} aria-hidden style={{ height: 0 }} />;
+};
+
 const ApiServiceTestPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,6 +123,7 @@ const ApiServiceTestPage: React.FC = () => {
   const [testError, setTestError] = useState<string | null>(null);
   const [result, setResult] = useState<API.ApiServiceTestResult | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [enumOptionsByCode, setEnumOptionsByCode] = useState<EnumOptionsByCode>({});
   const autoRunConsumedRef = useRef(false);
 
   const parametersRef = useRef(parametersText);
@@ -74,6 +139,79 @@ const ApiServiceTestPage: React.FC = () => {
     () => profile?.enabledOperations?.find((item) => item.operation === selectedOperation),
     [profile, selectedOperation],
   );
+
+  const isGetOperation = isQueryOnlyMethod(currentOpProfile?.httpMethod);
+  const interfaceText = profile?.requestParameterInterface;
+
+  const neededEnumCodesKey = useMemo(
+    () => collectEnumCodesFromInterface(interfaceText).slice().sort().join('|'),
+    [interfaceText],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const codes = collectEnumCodesFromInterface(interfaceText);
+    if (!codes.length) {
+      setEnumOptionsByCode({});
+      return undefined;
+    }
+    void (async () => {
+      try {
+        const next = await loadEnumOptionsByCodes(codes);
+        if (!cancelled) setEnumOptionsByCode(next);
+      } catch {
+        if (!cancelled) setEnumOptionsByCode({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [neededEnumCodesKey, interfaceText]);
+
+  /** 与编辑页同源：由 requestParameterInterface 生成参数结构 */
+  const parameterRows = useMemo<ParameterRow[]>(
+    () =>
+      buildParameterRowsFromInterface({
+        interfaceText,
+        httpMethod: currentOpProfile?.httpMethod,
+        routePattern: currentOpProfile?.routePattern,
+        enumOptionsByCode,
+      }),
+    [interfaceText, currentOpProfile?.httpMethod, currentOpProfile?.routePattern, enumOptionsByCode],
+  );
+
+  const showStructuredPanel =
+    isGetOperation && (parameterRows.length > 0 || Boolean(currentOpProfile?.parameterSchema));
+
+  // Example 值：在 interface 默认结构上保留已填内容，空则补齐
+  const structuredValues = useMemo<Record<string, unknown>>(() => {
+    if (!showStructuredPanel) return {};
+    let current: Record<string, unknown> = {};
+    try {
+      const parsed = parseParametersJson(parametersText);
+      current = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      current = {};
+    }
+    if (parameterRows.length) {
+      return ensureExampleValues(parameterRows, current);
+    }
+    return current;
+  }, [parametersText, showStructuredPanel, parameterRows]);
+
+  // Example 为空时写入默认值（Example 不应是空对象）
+  useEffect(() => {
+    if (!isGetOperation || !parameterRows.length) return;
+    let current: Record<string, unknown> = {};
+    try {
+      current = parseParametersJson(parametersText) || {};
+    } catch {
+      current = {};
+    }
+    if (Object.keys(current).length > 0) return;
+    const ensured = ensureExampleValues(parameterRows, {});
+    setParametersText(JSON.stringify(ensured, null, 2));
+  }, [isGetOperation, parameterRows, parametersText, selectedOperation]);
 
   const loadProfile = useCallback(async () => {
     if (!serviceId) return;
@@ -127,11 +265,16 @@ const ApiServiceTestPage: React.FC = () => {
     }),
     applyMutation: (mutation) => {
       if (mutation.type === 'apiservice.test_params.suggested' || mutation.type === 'apiservice.test_params.set') {
-        const payload = mutation.payload as { mockParameters?: Record<string, unknown> } | undefined;
-        if (payload?.mockParameters) {
-          setParametersText(JSON.stringify(payload.mockParameters, null, 2));
-          setParseError(null);
-        }
+        applyRequestExampleToTestState(
+          mutation.payload,
+          selectedOperationRef.current,
+          (text) => {
+            setParametersText(text);
+            setParseError(null);
+            setTestError(null);
+          },
+          setProfile,
+        );
         return;
       }
       if (mutation.type === 'apiservice.test_completed') {
@@ -143,6 +286,7 @@ const ApiServiceTestPage: React.FC = () => {
           executableReason?: string;
           validationErrors?: Array<{ path?: string; message?: string }>;
           savedMockParameters?: Record<string, unknown>;
+          operation?: string;
         };
         if (payload?.success === false) {
           setTestError(payload.error || '测试失败');
@@ -151,10 +295,15 @@ const ApiServiceTestPage: React.FC = () => {
         }
         setTestError(null);
         setResult(payload as API.ApiServiceTestResult);
-        if (payload?.savedMockParameters) {
-          setParametersText(JSON.stringify(payload.savedMockParameters, null, 2));
-          setParseError(null);
-        }
+        applyRequestExampleToTestState(
+          payload,
+          selectedOperationRef.current,
+          (text) => {
+            setParametersText(text);
+            setParseError(null);
+          },
+          setProfile,
+        );
       }
     },
     matchMutation: (mutation) =>
@@ -171,15 +320,15 @@ const ApiServiceTestPage: React.FC = () => {
     try {
       const res = await postApiServiceSuggestTestParams(serviceId, { operation: selectedOperation });
       if (!isApiSuccess(res)) {
-        message.error(getApiErrorMessage(res, '重置模拟参数失败'));
+        message.error(getApiErrorMessage(res, '重置请求参数 Example 失败'));
         return;
       }
       const data = getApiData<API.ApiServiceSuggestTestParamsResult>(res);
-      setParametersText(JSON.stringify(data?.mockParameters || {}, null, 2));
+      setParametersText(formatRequestExampleText(data?.mockParameters));
       setParseError(null);
-      message.success('已重置为默认模拟参数');
+      message.success('已重置为默认请求参数 Example');
     } catch (err) {
-      message.error(getApiErrorMessage(err, '重置模拟参数失败'));
+      message.error(getApiErrorMessage(err, '重置请求参数 Example 失败'));
     }
   };
 
@@ -258,8 +407,13 @@ const ApiServiceTestPage: React.FC = () => {
         const data = getApiData<API.ApiServiceTestResult>(res) || null;
         setResult(data);
         if (data?.savedMockParameters) {
-          setParametersText(JSON.stringify(data.savedMockParameters, null, 2));
+          setParametersText(formatRequestExampleText(data.savedMockParameters));
           setParseError(null);
+          setProfile((prev) => patchProfileRequestExample(
+            prev,
+            selectedOperation,
+            data.savedMockParameters as Record<string, unknown>,
+          ));
         }
         const failureMessage = describeApiServiceTestFailure(data);
         if (isApiServiceTestFailure(data)) {
@@ -268,11 +422,21 @@ const ApiServiceTestPage: React.FC = () => {
           setTestError(null);
         }
       } else {
-        const errMsg = getApiErrorMessage(res, '测试请求失败');
+        const diagnostics = (res as { data?: { diagnostics?: Array<{ line: number; column: number; message: string }> } })
+          ?.data?.diagnostics;
+        const errMsg = diagnostics?.length
+          ? `Handler 语法检查未通过：\n${formatHandlerDiagnostics(diagnostics)}`
+          : getApiErrorMessage(res, '测试请求失败');
         setTestError(formatApiServiceTestError(res, errMsg));
       }
     } catch (err) {
-      const errMsg = formatApiServiceTestError(err, '测试请求失败');
+      const diagnostics =
+        err && typeof err === 'object' && 'data' in err
+          ? (err as { data?: { diagnostics?: Array<{ line: number; column: number; message: string }> } }).data?.diagnostics
+          : undefined;
+      const errMsg = diagnostics?.length
+        ? `Handler 语法检查未通过：\n${formatHandlerDiagnostics(diagnostics)}`
+        : formatApiServiceTestError(err, '测试请求失败');
       setTestError(errMsg);
     } finally {
       setTestLoading(false);
@@ -317,7 +481,7 @@ const ApiServiceTestPage: React.FC = () => {
       ? [
           {
             key: 'schema',
-            label: '运行时 JSON Schema',
+            label: '请求参数 运行时 JSON Schema',
             children: (
               <pre style={{ margin: 0, fontSize: 12, whiteSpace: 'pre-wrap' }}>
                 {JSON.stringify(currentOpProfile.parameterSchema, null, 2)}
@@ -326,14 +490,63 @@ const ApiServiceTestPage: React.FC = () => {
           },
         ]
       : []),
+    ...(currentOpProfile?.responseInterface
+      ? [
+          {
+            key: 'responseInterface',
+            label: '响应结构 TypeScript interface',
+            children: (
+              <pre style={{ margin: 0, fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                {currentOpProfile.responseInterface}
+              </pre>
+            ),
+          },
+        ]
+      : []),
+    ...(currentOpProfile?.responsesSchema || currentOpProfile?.responseSchema
+      ? [
+          {
+            key: 'responseSchema',
+            label: '响应 Schema (200)',
+            children: (
+              <ResponseSchemaViewer
+                value={currentOpProfile.responsesSchema || {
+                  200: {
+                    description: '获取成功',
+                    content: {
+                      'application/json': {
+                        schema: currentOpProfile.responseSchema,
+                      },
+                    },
+                  },
+                }}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(currentOpProfile?.responseExample != null
+      ? [
+          {
+            key: 'responseExample',
+            label: '响应 Example (200)',
+            children: <ResponseExampleViewer value={currentOpProfile.responseExample} />,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <PageContainer
-      title={
+    <FixHeaderPage
+      title={(
         <PageContainerTitleWithBack
           title={`测试请求${profile?.code ? ` · ${profile.code}` : ''}`}
         />
+      )}
+      extra={
+        serviceId ? (
+          <Button onClick={() => navigate(`/api_services/${serviceId}/edit`)}>去编辑</Button>
+        ) : null
       }
     >
       {profileLoading && (
@@ -347,7 +560,7 @@ const ApiServiceTestPage: React.FC = () => {
       )}
 
       {!profileLoading && profile && (
-        <>
+        <div style={{ maxWidth: 888, margin: '0 auto' }}>
           {profile.testAutoRollback === false
             && isWriteOperation(selectedOperation)
             && currentOpProfile?.executable !== false && (
@@ -372,7 +585,7 @@ const ApiServiceTestPage: React.FC = () => {
               )}
               {currentOpProfile?.mockParametersSource === 'saved' && (
                 <Tag color="success" style={{ marginLeft: 8 }}>
-                  已保存 mock
+                  已保存 Example
                 </Tag>
               )}
             </Descriptions.Item>
@@ -406,29 +619,59 @@ const ApiServiceTestPage: React.FC = () => {
             <Collapse items={schemaCollapseItems} style={{ marginBottom: 12 }} />
           )}
 
+          {/* GET 操作：参数在 URL query string 说明 */}
+          {/* {isGetOperation && currentOpProfile?.parameterSchema ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 8 }}
+              message={`${String(currentOpProfile.httpMethod || 'GET').toUpperCase()} 请求参数通过 URL query string 传递，无 request body`}
+            />
+          ) : null} */}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              模拟参数（JSON）
+              {showStructuredPanel
+                ? `${REQUEST_EXAMPLE_FIELD_LABEL}（Query）`
+                : `${REQUEST_EXAMPLE_FIELD_LABEL}（JSON）`}
             </Paragraph>
             <Button
               size="small"
               className="ai-btn"
               icon={<RobotOutlined />}
+              style={{ marginLeft: 'auto' }}
               onClick={handleAiGenerate}
             >
               AI 生成参数
             </Button>
           </div>
-          <TextArea
-            rows={10}
-            value={parametersText}
-            onChange={(e) => {
-              setParametersText(e.target.value);
-              setParseError(null);
-              setTestError(null);
-            }}
-            style={{ fontFamily: 'monospace', fontSize: 12, marginBottom: 8 }}
-          />
+          {showStructuredPanel ? (
+            <div className="operation-parameter-panel--bounded" style={{ marginBottom: 8 }}>
+              <OperationParameterPanel
+                httpMethod={currentOpProfile?.httpMethod}
+                parameters={parameterRows.length ? parameterRows : undefined}
+                parametersSchema={parameterRows.length ? undefined : currentOpProfile?.parameterSchema}
+                routePattern={currentOpProfile?.routePattern}
+                values={structuredValues}
+                onChange={(next) => {
+                  setParametersText(JSON.stringify(next, null, 2));
+                  setParseError(null);
+                  setTestError(null);
+                }}
+              />
+            </div>
+          ) : (
+            <TextArea
+              rows={10}
+              value={parametersText}
+              onChange={(e) => {
+                setParametersText(e.target.value);
+                setParseError(null);
+                setTestError(null);
+              }}
+              style={{ fontFamily: 'monospace', fontSize: 12, marginBottom: 8 }}
+            />
+          )}
           {parseError && (
             <Alert type="error" message={parseError} showIcon style={{ marginBottom: 12 }} />
           )}
@@ -446,7 +689,7 @@ const ApiServiceTestPage: React.FC = () => {
               发送测试
             </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void handleResetMock()}>
-              重置 mock
+              重置 Example
             </Button>
             <Button
               icon={<ToolOutlined />}
@@ -458,64 +701,102 @@ const ApiServiceTestPage: React.FC = () => {
           </Space>
 
           {result && (
-            <>
-              <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-                <Text code>
-                  {result.httpMethod} {result.url}
-                </Text>
-                {result.query && Object.keys(result.query).length > 0 && (
-                  <span style={{ marginLeft: 8 }}>Query: {JSON.stringify(result.query)}</span>
-                )}
-                {typeof result.durationMs === 'number' && (
-                  <span style={{ marginLeft: 8 }}>耗时 {result.durationMs} ms</span>
-                )}
-                {result.rolledBack && (
-                  <Tag color="blue" style={{ marginLeft: 8 }}>
-                    写操作已回滚
-                  </Tag>
-                )}
-                {result.rolledBack === false
-                  && isWriteOperation(result.operation || selectedOperation)
-                  && result.executable !== false && (
-                  <Tag color="orange" style={{ marginLeft: 8 }}>
-                    已落库
-                  </Tag>
-                )}
-                {result.executable === false && (
-                  <Tag color="warning" style={{ marginLeft: 8 }}>
-                    未执行
-                  </Tag>
-                )}
-              </Paragraph>
+            <div className="api-service-test__result" style={{ paddingBottom: 40 }}>
               {result.executableReason && result.executable === false && (
                 <Alert
                   type="warning"
-                  message={result.executableReason}
+                  title={result.executableReason}
                   showIcon
                   style={{ marginBottom: 12 }}
                 />
               )}
-              {result.preview != null && (
-                <div
-                  style={{
-                    background: '#fafafa',
-                    border: '1px solid #f0f0f0',
-                    borderRadius: 6,
-                    padding: 12,
-                    maxHeight: 480,
-                    overflow: 'auto',
-                  }}
-                >
-                  <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                    {JSON.stringify(result.preview, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </>
+              <Collapse
+                defaultActiveKey={['response']}
+                items={[
+                  {
+                    key: 'response',
+                    label: '响应结果',
+                    children:
+                      result.preview != null ? (
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.5 }}>
+                          {JSON.stringify(result.preview, null, 2)}
+                        </pre>
+                      ) : (
+                        <Text type="secondary">无响应体</Text>
+                      ),
+                  },
+                  ...(result.requestPreview
+                    || result.query
+                    || result.body
+                    || result.pathParams
+                    || result.parameters
+                    ? [{
+                        key: 'request',
+                        label: '请求信息',
+                        children: (
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.5 }}>
+                            {JSON.stringify(
+                              result.requestPreview || {
+                                method: result.httpMethod,
+                                url: result.url,
+                                pathParams: result.pathParams,
+                                query: result.query,
+                                body: result.body,
+                                parameters: result.parameters,
+                              },
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        ),
+                      }]
+                    : []),
+                  {
+                    key: 'meta',
+                    label: '执行信息',
+                    children: (
+                      <Descriptions size="small" column={1}>
+                        <Descriptions.Item label="请求">
+                          <Text code>
+                            {result.httpMethod} {result.url}
+                          </Text>
+                        </Descriptions.Item>
+                        {typeof result.durationMs === 'number' && (
+                          <Descriptions.Item label="耗时">{result.durationMs} ms</Descriptions.Item>
+                        )}
+                        <Descriptions.Item label="状态">
+                          <Space size={8} wrap>
+                            {result.rolledBack && <Tag color="blue">写操作已回滚</Tag>}
+                            {result.rolledBack === false
+                              && isWriteOperation(result.operation || selectedOperation)
+                              && result.executable !== false && (
+                              <Tag color="orange">已落库</Tag>
+                            )}
+                            {result.executable === false && <Tag color="warning">未执行</Tag>}
+                            {result.executable !== false
+                              && !result.rolledBack
+                              && !(
+                                result.rolledBack === false
+                                && isWriteOperation(result.operation || selectedOperation)
+                              ) && (
+                              <Tag color="success">成功</Tag>
+                            )}
+                          </Space>
+                        </Descriptions.Item>
+                        {result.operation ? (
+                          <Descriptions.Item label="操作">{result.operation}</Descriptions.Item>
+                        ) : null}
+                      </Descriptions>
+                    ),
+                  },
+                ]}
+              />
+              <TestResultScrollAnchor result={result} />
+            </div>
           )}
-        </>
+        </div>
       )}
-    </PageContainer>
+    </FixHeaderPage>
   );
 };
 

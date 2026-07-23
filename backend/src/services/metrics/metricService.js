@@ -1,6 +1,5 @@
 const { Op } = require('sequelize');
 const logger = require('../../utils/logger');
-const { deriveDashboardGroup } = require('./metricCodeUtils');
 const {
   BizdataMetric,
   BizdataMetricRun,
@@ -322,50 +321,9 @@ async function listValues(metricId, { from, to, dimensionKey, page = 1, size = 5
   return { total: count, items: rows.map(formatValue) };
 }
 
-async function getDashboard({ codePrefix, refresh } = {}) {
-  const where = { status: 'enabled' };
-  if (codePrefix) where.code = { [Op.like]: `${codePrefix}%` };
-
-  const metrics = await BizdataMetric.findAll({
-    where,
-    order: [['code', 'ASC']],
-  });
-
-  const metricRedis = require('./metricRedis');
-  const metricExecutor = require('./metricExecutor');
-
-  const grouped = {};
-  for (const row of metrics) {
-    const metric = formatMetric(row);
-    if (refresh && ['on_demand', 'both'].includes(metric.computeMode)) {
-      try {
-        await metricExecutor.executeOnDemand(metric.id);
-        const updated = await BizdataMetric.findByPk(metric.id);
-        if (updated) {
-          Object.assign(metric, formatMetric(updated));
-        }
-      } catch {
-        // 单个失败不阻断看板
-      }
-    } else {
-      const cached = await metricRedis.getLatest(metric.code);
-      if (cached?.value != null) {
-        metric.lastValue = Number(cached.value);
-        metric.lastComputedAt = cached.computedAt;
-      }
-    }
-
-    const groupKey = deriveDashboardGroup(metric.code);
-    if (!grouped[groupKey]) grouped[groupKey] = [];
-    grouped[groupKey].push(metric);
-  }
-
-  return {
-    categories: Object.keys(grouped).map((name) => ({
-      name,
-      metrics: grouped[name],
-    })),
-  };
+async function getDashboard(options = {}) {
+  const metricCardService = require('./metricCardService');
+  return metricCardService.getDashboard(options);
 }
 
 async function listScheduledMetrics() {

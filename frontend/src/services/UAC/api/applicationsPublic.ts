@@ -7,8 +7,12 @@ export interface ApplicationApiCatalogOperation {
   routePattern?: string;
   parametersSchema?: Record<string, unknown>;
   mockParameters?: Record<string, unknown>;
+  /** 与 mockParameters 相同：请求参数 Example（编辑/测试页同源） */
+  requestExample?: Record<string, unknown>;
   responseInterface?: string;
+  responsesSchema?: Record<string, unknown>;
   responseSchema?: Record<string, unknown>;
+  responseExample?: unknown;
   label?: string;
   category?: string;
 }
@@ -50,6 +54,28 @@ export interface BuiltinApiCatalogItem {
   description: string;
 }
 
+/** 采集管道 API 明细（公开目录展示用） */
+export interface CollectionApiCatalogItem {
+  id?: string;
+  code: string;
+  label: string;
+  name?: string;
+  description?: string;
+  protocolType?: string;
+  status?: string;
+  routePath?: string;
+  basePath?: string;
+  httpMethods?: string[];
+  entityCode?: string | null;
+  entityLabel?: string | null;
+  sampleData?: string;
+  targetStructure?: string;
+  authHint?: string;
+  bodyHint?: string;
+  responseInterface?: string;
+  responseExample?: unknown;
+}
+
 export interface ApplicationApiCatalogResult {
   application: {
     application_id: string;
@@ -62,6 +88,9 @@ export interface ApplicationApiCatalogResult {
   services: ApplicationApiCatalogService[];
   builtinApis?: BuiltinApiCatalogItem[];
   builtinApiTree?: ApplicationApiCatalogTreeNode[];
+  collectionApis?: CollectionApiCatalogItem[];
+  collectionApiTree?: ApplicationApiCatalogTreeNode[];
+  exceptionResponses?: API.ExceptionResponseDocItem[];
   generatedAt?: string;
 }
 

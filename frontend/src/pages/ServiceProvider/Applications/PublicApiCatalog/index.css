@@ -24,6 +24,10 @@
 
 .application-api-catalog__header-actions {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-right: 8px;
 }
 
 .application-api-catalog__header-title {
@@ -86,14 +90,25 @@
 }
 
 .application-api-catalog__service-meta {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   color: rgba(0, 0, 0, 0.65);
+}
+
+.application-api-catalog__operations {
+  margin-top: 8px;
+}
+
+.application-api-catalog__operation-group {
+  margin-bottom: 24px;
+}
+
+.application-api-catalog__operation-meta {
+  margin: 0 0 12px !important;
 }
 
 .application-api-catalog__operation {
   border: 1px solid #e8e8e8;
   border-radius: 4px;
-  margin-bottom: 16px;
   background: #fff;
   overflow: hidden;
 }
@@ -101,10 +116,53 @@
 .application-api-catalog__operation-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 16px;
-  cursor: pointer;
+  margin-bottom: 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  background: #fff;
   user-select: none;
+}
+
+.application-api-catalog__doc-collapse > .ant-collapse-item > .ant-collapse-header {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.application-api-catalog__doc-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 12px 16px 16px;
+}
+
+.application-api-catalog__doc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.application-api-catalog__doc-section-title {
+  display: block;
+  margin-top: 4px;
+}
+
+.application-api-catalog__doc-section-title:first-child {
+  margin-top: 0;
+}
+
+.application-api-catalog__inner-collapse {
+  margin-top: 4px;
+}
+
+.application-api-catalog__response-example .response-document-panel__viewer {
+  margin: 0;
+  padding: 12px;
+  background: #41444e;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow: auto;
+  max-height: 320px;
 }
 
 .application-api-catalog__operation-head:hover {
@@ -135,11 +193,6 @@
   word-break: break-all;
 }
 
-.application-api-catalog__operation-body {
-  border-top: 1px solid #e8e8e8;
-  padding: 16px;
-}
-
 .application-api-catalog__schema {
   margin: 0;
   padding: 12px;
@@ -162,4 +215,22 @@
 
 .application-api-catalog__tree .ant-tree-node-content-wrapper {
   white-space: nowrap;
+}
+
+.application-api-catalog__skill {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+}
+
+.application-api-catalog__skill-body {
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  line-height: 1.7;
+}
+
+.application-api-catalog__skill-body pre {
+  overflow-x: auto;
 }

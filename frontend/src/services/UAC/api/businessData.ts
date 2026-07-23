@@ -108,9 +108,13 @@ export async function deleteBusinessDataEnum(id: string) {
   });
 }
 
-export async function getBusinessDataRelations() {
+export async function getBusinessDataRelations(params?: {
+  entityCode?: string;
+  entityId?: string;
+}) {
   return request<{ code: number; message: string; data: API.BusinessDataRelation[] }>(`${BASE}/relations`, {
     method: 'GET',
+    params,
   });
 }
 
@@ -320,13 +324,66 @@ export async function getBizdataMetricValue(id: string, refresh?: boolean) {
   );
 }
 
-export async function getBizdataMetricsDashboard(params?: { codePrefix?: string; refresh?: boolean }) {
+export async function getBizdataMetricsDashboard(params?: {
+  codePrefix?: string;
+  domainCode?: string;
+  refresh?: boolean;
+}) {
   return request<{ code: number; message: string; data: API.BizdataMetricDashboard }>(
     `${BASE}/metrics/dashboard`,
     {
       method: 'GET',
       params: params?.refresh ? { ...params, refresh: '1' } : params,
     },
+  );
+}
+
+export async function getBizdataMetricCards(params?: {
+  domainCode?: string;
+  status?: string;
+  page?: number;
+  size?: number;
+}) {
+  return request<{ code: number; message: string; data: API.BizdataMetricCardList }>(
+    `${BASE}/metrics/cards`,
+    { method: 'GET', params },
+  );
+}
+
+export async function getBizdataMetricCard(id: string) {
+  return request<{ code: number; message: string; data: API.BizdataMetricCard }>(
+    `${BASE}/metrics/cards/${id}`,
+    { method: 'GET' },
+  );
+}
+
+export async function postBizdataMetricCard(body: Partial<API.BizdataMetricCard> & { metricCode?: string }) {
+  return request<{ code: number; message: string; data: API.BizdataMetricCard }>(`${BASE}/metrics/cards`, {
+    method: 'POST',
+    data: body,
+  });
+}
+
+export async function patchBizdataMetricCard(
+  id: string,
+  body: Partial<API.BizdataMetricCard> & { metricCode?: string },
+) {
+  return request<{ code: number; message: string; data: API.BizdataMetricCard }>(
+    `${BASE}/metrics/cards/${id}`,
+    { method: 'PATCH', data: body },
+  );
+}
+
+export async function deleteBizdataMetricCard(id: string) {
+  return request<{ code: number; message: string; data: null }>(`${BASE}/metrics/cards/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getBizdataMetricCardSuggest(params?: { metricId?: string; metricCode?: string }) {
+  return request<{ code: number; message: string; data: Partial<API.BizdataMetricCard> & { hint?: string } }>(
+    `${BASE}/metrics/cards/suggest`,
+    { method: 'GET', params },
   );
 }
 

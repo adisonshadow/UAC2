@@ -1,5 +1,6 @@
 import { AIChatPageScope, useAIChatDisplayMode } from '@EADAF/ai-base';
 import { Outlet, useLocation } from 'react-router-dom';
+import { AI_CHAT_TOOL_VERIFICATION_RULES } from '@/config/aiChat';
 
 const COLLECTION_PIPELINE_SKILL = 'api-services-collection-pipeline';
 
@@ -39,8 +40,17 @@ export default function ApiServicesAI() {
           ? 'API 服务编辑助手'
           : 'API 服务助手';
 
+  const collectionRules = [
+    AI_CHAT_TOOL_VERIFICATION_RULES,
+    '',
+    '你是 EADAF 采集数据结构化助手。列表路径：/api_services/collection-pipelines（不在业务数据菜单）。',
+    '【持久化】collection_pipeline_suggest_scripts 只写编辑页草稿；run_test 读库内脚本。改脚本后必须 collection_pipeline_upsert 再测。',
+    '【脚本】parse(raw,ctx) / store(data,ctx)；ctx 仅有 protocolType、pipeline、entity、tableQualified、queryPg。禁止未声明变量（channel/val/idx 等）；禁止 ctx.bizdata。',
+    '【成功】upsert 须 verified===true 且 listedOk；创建后 navigate list，并提示用户左侧选对应域（如 fmms）。',
+  ].join('\n');
+
   const systemPromptPrefix = isCollectionPipeline
-    ? '你是 EADAF 采集数据结构化助手，帮助用户在 API 服务菜单下的「采集数据结构化」页配置管道、编写 parse/store 脚本并完成测试。页面路径前缀 /api_services/collection-pipelines。'
+    ? collectionRules
     : isApiServiceCreate
       ? '你是 EADAF API 服务设计助手。禁止向用户询问数据库连接或 connectionId；仅一个连接时自动使用，多个连接时根据引用 Scope/Entity 的物化记录自动推断。'
       : isApiServiceTest || isApiServiceEdit
@@ -52,7 +62,7 @@ export default function ApiServicesAI() {
         title: '采集数据结构化',
         description: isCollectionTest
           ? '我可读取测试页样本与脚本，执行 collection_pipeline_run_test 并解读结果。'
-          : '配置样本数据、目标结构与 parse/store 脚本；可用 collection_pipeline_suggest_scripts 写入脚本草稿。',
+          : '脚本须经 upsert 落库后再测试；suggest_scripts 仅草稿。列表在 API 服务 → 采集数据结构化。',
       }
     : {
         title: isApiServiceCreate ? '新建 API 服务' : isApiServiceTest ? 'API 测试' : 'API 服务',

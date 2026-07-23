@@ -20,11 +20,22 @@ const router = new Router({ prefix: '/api/v1/admin/tools' });
  *         name: size
  *         schema: { type: integer }
  *       - in: query
+ *         name: name
+ *         schema: { type: string }
+ *         description: 按名称模糊匹配
+ *       - in: query
+ *         name: functionName
+ *         schema: { type: string }
+ *         description: 按 functionName 模糊匹配
+ *       - in: query
  *         name: scopeId
  *         schema: { type: string, format: uuid }
  *       - in: query
  *         name: executionType
  *         schema: { type: string, enum: [client, server_http, server_builtin] }
+ *       - in: query
+ *         name: isActive
+ *         schema: { type: boolean }
  *     responses:
  *       200:
  *         description: 获取成功

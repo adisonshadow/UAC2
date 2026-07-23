@@ -98,7 +98,7 @@ const FirstLoginSetupModal: React.FC<FirstLoginSetupModalProps> = ({ open }) => 
       title="首次登录：请修改默认密码"
       open={open}
       closable={false}
-      maskClosable={false}
+      mask={{ closable: false }}
       keyboard={false}
       footer={null}
       centered
@@ -120,7 +120,7 @@ const FirstLoginSetupModal: React.FC<FirstLoginSetupModalProps> = ({ open }) => 
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="为保障账户安全，首次登录必须修改默认密码。"
+        title="为保障账户安全，首次登录必须修改默认密码。"
         description="建议同时设置邮箱，用于找回密码和接收系统通知（可选，可稍后在个人资料中补充）。"
       />
 
@@ -170,7 +170,7 @@ const FirstLoginSetupModal: React.FC<FirstLoginSetupModalProps> = ({ open }) => 
           <Input placeholder="name@example.com（可选）" />
         </Form.Item>
         <Form.Item>
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={12}>
             <Button type="primary" htmlType="submit" loading={loading} block>
               完成设置
             </Button>

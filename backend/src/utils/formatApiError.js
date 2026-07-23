@@ -76,18 +76,18 @@ function formatApiError(error, options = {}) {
   }
 
   const status = error?.status || fallbackStatus;
-  const data =
-    process.env.NODE_ENV === 'development' && error?.name
-      ? { errorType: error.name, ...(error.validationErrors ? { validationErrors: error.validationErrors } : {}) }
-      : error?.validationErrors
-        ? { validationErrors: error.validationErrors }
-        : null;
+  const extra = {};
+  if (error?.validationErrors) extra.validationErrors = error.validationErrors;
+  if (error?.diagnostics) extra.diagnostics = error.diagnostics;
+  if (process.env.NODE_ENV === 'development' && error?.name) {
+    extra.errorType = error.name;
+  }
 
   return {
     status,
     code: status,
     message: error?.message || '请求失败',
-    data,
+    data: Object.keys(extra).length ? extra : null,
   };
 }
 

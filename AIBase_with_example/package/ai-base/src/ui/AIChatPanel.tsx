@@ -369,6 +369,19 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
     setActiveConversationKey(key);
   };
 
+  /** 会话列表 DESC：新会话（Date.now key）在前；非数字 key（如 default）靠后 */
+  const conversationItems = useMemo(() => {
+    const rank = (key: string) => {
+      const n = Number(key);
+      return Number.isFinite(n) ? n : 0;
+    };
+    return [...conversations]
+      .sort((a, b) => rank(String(b.key)) - rank(String(a.key)))
+      .map((item) =>
+        item.key === activeConversationKey ? { ...item, label: `[当前] ${item.label}` } : item,
+      );
+  }, [conversations, activeConversationKey]);
+
   const chatHeader = (
     <div className="aibase-chat-header">
       <div className="aibase-chat-header-title">{config.headerCaption}</div>
@@ -382,13 +395,26 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
         <Popover
           placement="bottomRight"
           trigger="click"
-          styles={{ container: { padding: 0, maxHeight: 480 } }}
+          styles={{
+            container: {
+              padding: 0,
+              maxHeight: 'calc(80vh - 60px)',
+              overflowY: 'auto',
+              boxShadow:
+                '0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05)',
+            },
+          }}
           content={
             <Conversations
               className="aibase-chat-conversations"
-              items={conversations.map((item) =>
-                item.key === activeConversationKey ? { ...item, label: `[当前] ${item.label}` } : item,
-              )}
+              items={[...conversations]
+                // key 多为 Date.now()；DESC 让最新会话排在分组最前
+                .sort((a, b) => String(b.key).localeCompare(String(a.key), undefined, { numeric: true }))
+                .map((item) =>
+                  item.key === activeConversationKey
+                    ? { ...item, label: `[当前] ${item.label}` }
+                    : item,
+                )}
               activeKey={activeConversationKey}
               groupable
               onActiveChange={setActiveConversationKey}

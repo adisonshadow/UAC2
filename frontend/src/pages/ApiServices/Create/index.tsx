@@ -1,10 +1,12 @@
-import { PageContainer, ProForm } from '@ant-design/pro-components';
+import { ProForm } from '@ant-design/pro-components';
 import { useAIChatPrompts, useAISurface, useChatReference } from '@EADAF/ai-base';
 import { Button, Form, Space } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
+import FixHeaderPage from '@/components/FixHeaderPage';
+import ApiServiceSectionNav from '../components/ApiServiceSectionNav';
 import {
   getApiServiceOperationCatalog,
   postApiService,
@@ -17,10 +19,19 @@ import {
 } from '@/utils/apiResponse';
 import ApiServiceForm, {
   buildAccessRestrictionPayload,
-  parseTagsInput,
+  buildDefaultRequestExample,
   type ApiServiceFormValues,
 } from '../components/ApiServiceForm';
 import { buildApiServiceCreatePrompts } from '@/pages/ApiServices/ai/buildApiServiceCreatePrompts';
+import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
+import { buildResponseOverridesPayload, resolveResponseExample } from '../utils/responseOverrides';
+import { buildRequestOverridesPayload } from '../utils/requestOverrides';
+import { tryParseJson } from '@/components/ResponseDocumentPanel';
+import {
+  ensureHandlerScriptValid,
+  formatHandlerDiagnostics,
+} from '../utils/handlerTypeCheckClient';
+import { normalizeHandlerBody } from '../utils/handlerEditorShell';
 
 const DEFAULT_OPERATION = 'find';
 
@@ -32,6 +43,9 @@ const ApiServiceCreatePage: React.FC = () => {
   const [definitionScript, setDefinitionScript] = useState('');
   const [handlerScript, setHandlerScript] = useState('');
   const [requestParameterInterface, setRequestParameterInterface] = useState('');
+  const [requestExampleText, setRequestExampleText] = useState('{}');
+  const [responsesSchemaText, setResponsesSchemaText] = useState('{}');
+  const [responseExampleText, setResponseExampleText] = useState('{}');
   const [submitting, setSubmitting] = useState(false);
 
   const primaryOperation = Form.useWatch('primaryOperation', form);
@@ -45,7 +59,26 @@ const ApiServiceCreatePage: React.FC = () => {
   handlerScriptRef.current = handlerScript;
   const requestParameterInterfaceRef = useRef(requestParameterInterface);
   requestParameterInterfaceRef.current = requestParameterInterface;
+  const requestExampleTextRef = useRef(requestExampleText);
+  requestExampleTextRef.current = requestExampleText;
   const { references } = useChatReference();
+
+  const entityCodeFromRefs = useMemo(() => {
+    const entityRef = references.find((r: { type?: string }) => r.type === 'entity');
+    return (entityRef?.content as { code?: string } | undefined)?.code;
+  }, [references]);
+
+  useEffect(() => {
+    const preview = buildOperationResponsePreview(
+      primaryOperation,
+      entityCodeFromRefs,
+      requestParameterInterface,
+    );
+    if (!preview) return;
+    setResponsesSchemaText(JSON.stringify(preview.responsesSchema, null, 2));
+    setResponseExampleText(JSON.stringify(preview.responseExample, null, 2));
+    setRequestExampleText(JSON.stringify(buildDefaultRequestExample(requestParameterInterface), null, 2));
+  }, [primaryOperation, entityCodeFromRefs, requestParameterInterface]);
 
   const previewCode = useMemo(() => {
     const scope = String(scopeCode || '').trim();
@@ -95,16 +128,26 @@ const ApiServiceCreatePage: React.FC = () => {
         definitionScript: definitionScriptRef.current,
         handlerScript: handlerScriptRef.current,
         requestParameterInterface: requestParameterInterfaceRef.current,
+        requestExampleText: requestExampleTextRef.current,
         accessRestriction: buildAccessRestrictionPayload(values),
         chatReferences: { scopes: scopeRefs, entities: entityRefs },
       };
     },
     applyMutation: (mutation: any) => {
-      if (
-        mutation.type === 'apiservice.created'
-        || mutation.type === 'apiservice.batch_created'
-      ) {
-        navigate('/api_services/list');
+      if (mutation.type === 'apiservice.created') {
+        const id = mutation.resourceId
+          || (mutation.payload as API.ApiService | undefined)?.id;
+        if (id) {
+          navigate(`/api_services/${id}/edit`);
+        }
+        return;
+      }
+      if (mutation.type === 'apiservice.batch_created') {
+        const created = (mutation.payload as { created?: API.ApiService[] } | undefined)?.created;
+        const firstId = created?.find((item) => item.id)?.id;
+        if (firstId) {
+          navigate(`/api_services/${firstId}/edit`);
+        }
       }
     },
     matchMutation: (mutation: any) =>
@@ -127,17 +170,58 @@ const ApiServiceCreatePage: React.FC = () => {
       return;
     }
 
+    const schemaParsed = tryParseJson(responsesSchemaText);
+    const exampleParsed = tryParseJson(responseExampleText);
+    const requestExampleParsed = tryParseJson(requestExampleText);
+    if (!schemaParsed.ok) {
+      message.error(`Responses Schema JSON 无效：${schemaParsed.error}`);
+      return;
+    }
+    if (!exampleParsed.ok) {
+      message.error(`Response Example JSON 无效：${exampleParsed.error}`);
+      return;
+    }
+    const sanitizedResponseExample = resolveResponseExample(
+      exampleParsed.value,
+      operation,
+      entityCodeFromRefs,
+      requestParameterInterface,
+    );
+    if (!requestExampleParsed.ok) {
+      message.error(`请求 Example JSON 无效：${requestExampleParsed.error}`);
+      return;
+    }
+
+    if ((values.scriptMode || 'sql') === 'typescript') {
+      const check = await ensureHandlerScriptValid(
+        normalizeHandlerBody(handlerScript),
+        requestParameterInterface,
+      );
+      if (check) {
+        message.error(`Handler 语法检查未通过：\n${formatHandlerDiagnostics(check.diagnostics)}`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const createRes = await postApiService({
         scopeCode: values.scopeCode,
         serviceSlug: values.serviceSlug,
         name: String(values.name || '').trim(),
-        tags: parseTagsInput(values.tags),
+        tags: values.tags || [],
         scriptMode: values.scriptMode || 'sql',
         definitionScript: values.scriptMode === 'typescript' ? undefined : definitionScript.trim() || undefined,
-        handlerScript: values.scriptMode === 'typescript' ? handlerScript.trim() || undefined : undefined,
+        handlerScript: values.scriptMode === 'typescript'
+          ? normalizeHandlerBody(handlerScript).trim() || undefined
+          : undefined,
         requestParameterInterface: requestParameterInterface.trim() || undefined,
+        responseOverrides: buildResponseOverridesPayload(
+          operation,
+          schemaParsed.value as Record<string, unknown>,
+          sanitizedResponseExample,
+        ),
+        requestOverrides: buildRequestOverridesPayload(operation, requestExampleParsed.value),
         accessRestriction: buildAccessRestrictionPayload(values),
         enabledOperations: [operation],
         transportProtocols: values.transportProtocols,
@@ -171,10 +255,9 @@ const ApiServiceCreatePage: React.FC = () => {
   };
 
   return (
-    <PageContainer
-      title={
-        <PageContainerTitleWithBack title="新建 API 服务" />
-      }
+    <FixHeaderPage
+      title={<PageContainerTitleWithBack title="新建 API 服务" />}
+      centerSlot={<ApiServiceSectionNav />}
       extra={
         <Space>
           <Button loading={submitting} onClick={() => void submit(false)}>
@@ -204,12 +287,19 @@ const ApiServiceCreatePage: React.FC = () => {
           definitionScript={definitionScript}
           onDefinitionScriptChange={setDefinitionScript}
           handlerScript={handlerScript}
-          onHandlerScriptChange={setHandlerScript}
+          onHandlerScriptChange={(value) => setHandlerScript(normalizeHandlerBody(value))}
           requestParameterInterface={requestParameterInterface}
           onRequestParameterInterfaceChange={setRequestParameterInterface}
+          requestExampleText={requestExampleText}
+          onRequestExampleTextChange={setRequestExampleText}
+          entityCode={entityCodeFromRefs}
+          responsesSchemaText={responsesSchemaText}
+          onResponsesSchemaTextChange={setResponsesSchemaText}
+          responseExampleText={responseExampleText}
+          onResponseExampleTextChange={setResponseExampleText}
         />
       </ProForm>
-    </PageContainer>
+    </FixHeaderPage>
   );
 };
 

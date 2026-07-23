@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import {
   buildEnumTree,
   collectEnumTreeKeys,
+  countEnumOptions,
   filterEnums,
   type EnumTreeNode,
 } from '../../utils/enumUtils';
@@ -33,7 +34,7 @@ const EnumSelectModal: React.FC<EnumSelectModalProps> = ({
   const expandedKeys = useMemo(() => collectEnumTreeKeys(treeData), [treeData]);
 
   const renderOptionCount = (enumRecord: API.BusinessDataEnum) => {
-    const count = Object.keys(enumRecord.items || {}).length;
+    const count = countEnumOptions(enumRecord);
     return (
       <Popover
         content={<EnumOptionsPreview record={enumRecord} />}

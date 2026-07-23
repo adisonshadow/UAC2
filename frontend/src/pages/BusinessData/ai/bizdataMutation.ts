@@ -49,6 +49,9 @@ export function applyBizdataModelMutation(
         void handlers.refresh();
       }
       break;
+    case 'enum.updated':
+      void handlers.refresh();
+      break;
     case 'relation.created':
     case 'schema.invalidate':
       void handlers.refresh();

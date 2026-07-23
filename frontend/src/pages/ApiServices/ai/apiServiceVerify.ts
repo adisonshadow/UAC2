@@ -10,26 +10,55 @@ export interface ApiServiceVerification {
   routePath?: string;
   entityCode?: string;
   message?: string;
+  /** 请求参数 TypeScript interface 是否非空（编辑页「请求参数结构」来源） */
+  hasRequestParameterInterface?: boolean;
+  requestDocsComplete?: boolean;
 }
 
 export interface VerifyApiServiceOptions {
   expectedCode?: string;
   /** 指定时期望的 status；不满足时 verified=false */
   expectedStatus?: 'draft' | 'published' | 'disabled';
+  /** 为 true 时要求 requestParameterInterface 非空，否则 verified=false */
+  requireRequestParameterInterface?: boolean;
+}
+
+export function assessRequestParameterInterface(service?: Partial<API.ApiService> | null): {
+  hasRequestParameterInterface: boolean;
+  requestDocsComplete: boolean;
+  message?: string;
+} {
+  const text = String(service?.requestParameterInterface || '').trim();
+  const has = text.length > 0;
+  return {
+    hasRequestParameterInterface: has,
+    requestDocsComplete: has,
+    message: has
+      ? undefined
+      : 'requestParameterInterface 为空；编辑页「请求参数结构」将显示为空，Example 不能代替 interface',
+  };
 }
 
 function buildVerificationMessage(
   data: API.ApiService,
   options?: VerifyApiServiceOptions,
+  docs?: ReturnType<typeof assessRequestParameterInterface>,
 ): string {
   const code = data.code || options?.expectedCode || data.id || '';
+  let base: string;
   if (options?.expectedStatus) {
     if (data.status === options.expectedStatus) {
-      return `已验证「${code}」status=${data.status}`;
+      base = `已验证「${code}」status=${data.status}`;
+    } else {
+      base = `校验失败：期望 status=${options.expectedStatus}，实际为 ${data.status ?? '未知'}`;
     }
-    return `校验失败：期望 status=${options.expectedStatus}，实际为 ${data.status ?? '未知'}`;
+  } else {
+    base = `已验证「${code}」存在（status=${data.status ?? '未知'}）`;
   }
-  return `已验证「${code}」存在（status=${data.status ?? '未知'}）`;
+  if (options?.requireRequestParameterInterface && docs && !docs.requestDocsComplete) {
+    return `${base}；但${docs.message}`;
+  }
+  return base;
 }
 
 /** 创建/发布后回读服务，供 AI Tool 返回与 Skill 校验 */
@@ -53,16 +82,20 @@ export async function verifyApiServiceById(
 
   const statusOk =
     !opts.expectedStatus || data.status === opts.expectedStatus;
+  const docs = assessRequestParameterInterface(data);
+  const docsOk = !opts.requireRequestParameterInterface || docs.requestDocsComplete;
 
   return {
-    verified: statusOk,
+    verified: statusOk && docsOk,
     id: data.id,
     code: data.code || opts.expectedCode || serviceId,
     name: data.name,
     status: data.status,
     routePath: data.routePath,
     entityCode: data.entityCode,
-    message: buildVerificationMessage(data, opts),
+    hasRequestParameterInterface: docs.hasRequestParameterInterface,
+    requestDocsComplete: docs.requestDocsComplete,
+    message: buildVerificationMessage(data, opts, docs),
   };
 }
 

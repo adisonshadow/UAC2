@@ -190,7 +190,10 @@ class ApiServiceController {
   static async test(ctx) {
     try {
       const body = ctx.request.body || {};
-      const data = await apiServiceExecutionService.testService(ctx.params.id, body);
+      const data = await apiServiceExecutionService.testService(ctx.params.id, {
+        ...body,
+        enforceHandlerTypeCheck: true,
+      });
       if (!data) {
         ctx.status = 404;
         ctx.body = { code: 404, message: 'API 服务不存在', data: null };
@@ -212,6 +215,39 @@ class ApiServiceController {
       }
 
       ctx.body = { code: 200, message: '测试请求成功', data };
+    } catch (error) {
+      sendError(ctx, error);
+    }
+  }
+
+  static async checkHandler(ctx) {
+    try {
+      const body = ctx.request.body || {};
+      const handlerScript = body.handlerScript || body.handler_script || '';
+      const requestParameterInterface = body.requestParameterInterface
+        || body.request_parameter_interface
+        || '';
+      const { checkHandlerScript } = require('../services/apiService/handlerTypeCheck');
+      const data = checkHandlerScript(handlerScript, { requestParameterInterface });
+      ctx.body = {
+        code: 200,
+        message: data.ok ? 'Handler 检查通过' : 'Handler 检查未通过',
+        data,
+      };
+    } catch (error) {
+      sendError(ctx, error);
+    }
+  }
+
+  static async handlerSdkDts(ctx) {
+    try {
+      const { getHandlerSdkDts } = require('../services/apiService/handlerTypeCheck');
+      const dts = getHandlerSdkDts();
+      ctx.body = {
+        code: 200,
+        message: '获取 Handler SDK 类型声明成功',
+        data: { dts },
+      };
     } catch (error) {
       sendError(ctx, error);
     }

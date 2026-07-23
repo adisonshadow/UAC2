@@ -29,19 +29,67 @@ export function filterEnums(enums: API.BusinessDataEnum[], keyword: string) {
   });
 }
 
+/** 统一解析枚举选项：优先 items，为空时回退 values（兼容 AI 只写 values 的历史数据） */
 export function optionsFromEnum(record: API.BusinessDataEnum): EnumOptionRow[] {
   const items = record.items || {};
-  return Object.entries(items)
-    .map(([value, meta]) => {
-      const row = meta as { label?: string; description?: string; sort?: number };
-      return {
-        value,
-        label: row.label || String(record.values?.[value] ?? value),
-        description: row.description,
-        order: row.sort,
-      };
-    })
+  const itemEntries = Object.entries(items);
+  if (itemEntries.length) {
+    return itemEntries
+      .map(([value, meta]) => {
+        const row = meta as { label?: string; description?: string; sort?: number };
+        return {
+          value,
+          label: row.label || String(record.values?.[value] ?? value),
+          description: row.description,
+          order: row.sort,
+        };
+      })
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+
+  const values = record.values || {};
+  return Object.entries(values)
+    .map(([value, label], index) => ({
+      value,
+      label: String(label || value),
+      order: index + 1,
+    }))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+export function countEnumOptions(record: API.BusinessDataEnum): number {
+  return optionsFromEnum(record).length;
+}
+
+/** 创建/更新时 values ↔ items 互相同步（一侧为空则从另一侧补齐） */
+export function normalizeEnumValuesItems(
+  values: Record<string, unknown> = {},
+  items: Record<string, unknown> = {},
+): {
+  values: Record<string, unknown>;
+  items: Record<string, unknown>;
+} {
+  const valueKeys = Object.keys(values || {});
+  const itemKeys = Object.keys(items || {});
+  if (valueKeys.length && !itemKeys.length) {
+    const nextItems: Record<string, unknown> = {};
+    valueKeys.forEach((key, index) => {
+      const raw = values[key];
+      nextItems[key] = {
+        label: typeof raw === 'string' && raw ? raw : key,
+        sort: index + 1,
+      };
+    });
+    return { values: { ...values }, items: nextItems };
+  }
+  if (itemKeys.length && !valueKeys.length) {
+    const nextValues: Record<string, unknown> = {};
+    itemKeys.forEach((key) => {
+      nextValues[key] = key;
+    });
+    return { values: nextValues, items: { ...items } };
+  }
+  return { values: { ...values }, items: { ...items } };
 }
 
 export function buildEnumPayloadFromOptions(

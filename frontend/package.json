@@ -15,6 +15,7 @@
   "dependencies": {
     "@EADAF/ai-base": "workspace:*",
     "@ant-design/icons": "^5.0.1",
+    "@ant-design/plots": "^2.6.8",
     "@ant-design/pro-components": "^2.8.10",
     "@ant-design/use-emotion-css": "^1.0.4",
     "@ant-design/x": "^2.8.0",
@@ -33,6 +34,7 @@
     "antd-style": "^3.7.1",
     "axios": "^1.9.0",
     "classnames": "^2.5.1",
+    "constrained-editor-plugin": "^1.4.0",
     "dayjs": "^1.11.21",
     "framer-motion": "^12.42.2",
     "lottie-react": "^2.4.1",

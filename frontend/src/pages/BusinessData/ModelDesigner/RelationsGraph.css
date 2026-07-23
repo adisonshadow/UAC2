@@ -1,0 +1,23 @@
+.relations-graph-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ant-color-bg-container, #fff);
+}
+
+.relations-graph-page__canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.relations-graph-page__loading,
+.relations-graph-page__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+}

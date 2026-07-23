@@ -3,13 +3,16 @@ import type { ProColumns } from '@ant-design/pro-components';
 import React from 'react';
 import UrlSyncedProTable from '@/components/UrlSyncedProTable';
 import { materializationRunStatusEnum } from '@/enums';
+import { getMaterializationRuns } from '@/services/UAC/api/businessData';
+import { getApiErrorMessage, parseApiListResponse } from '@/utils/apiResponse';
+import { message } from '@/utils/antdAppApis';
 import { formatTableDateTime } from '@/utils/createdUpdatedAtColumn';
 import { renderStatusBadge } from '@/utils/statusBadge';
 
 interface MaterializationRunTableProps {
-  runs: API.MaterializationRun[];
-  loading?: boolean;
-  total?: number;
+  connectionId?: string;
+  /** 外部刷新时递增，触发表格 reload */
+  refreshKey?: number;
 }
 
 function isFailedRunStatus(status?: string): boolean {
@@ -43,9 +46,8 @@ function renderRunStatus(run: API.MaterializationRun) {
 }
 
 const MaterializationRunTable: React.FC<MaterializationRunTableProps> = ({
-  runs,
-  loading,
-  total = 0,
+  connectionId,
+  refreshKey = 0,
 }) => {
   const columns: ProColumns<API.MaterializationRun>[] = [
     { title: '连接', dataIndex: 'connectionName', width: 140, ellipsis: true },
@@ -73,13 +75,27 @@ const MaterializationRunTable: React.FC<MaterializationRunTableProps> = ({
     <UrlSyncedProTable<API.MaterializationRun>
       size="small"
       rowKey="id"
-      loading={loading}
       columns={columns}
-      dataSource={runs}
       search={false}
       options={false}
       defaultPageSize={10}
-      pagination={{ total, showSizeChanger: false }}
+      urlFilterKeys={[]}
+      params={{ connectionId, refreshKey }}
+      pagination={{ showSizeChanger: false }}
+      request={async (params) => {
+        try {
+          const res = await getMaterializationRuns({
+            page: params.current,
+            size: params.pageSize,
+            connectionId,
+          });
+          const { items, total, success } = parseApiListResponse<API.MaterializationRun>(res);
+          return { data: items, total, success };
+        } catch (error) {
+          message.error(getApiErrorMessage(error, '加载物化历史失败'));
+          return { data: [], total: 0, success: false };
+        }
+      }}
     />
   );
 };

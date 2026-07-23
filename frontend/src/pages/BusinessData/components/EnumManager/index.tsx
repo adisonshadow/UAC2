@@ -25,6 +25,7 @@ import EnumOptionsPreview from './EnumOptionsPreview';
 import {
   buildEnumTree,
   collectEnumTreeKeys,
+  countEnumOptions,
   filterEnums,
   type EnumTreeNode,
 } from '../../utils/enumUtils';
@@ -88,7 +89,7 @@ const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefre
       title: '选项数',
       width: 88,
       render: (_: unknown, r: API.BusinessDataEnum) => {
-        const count = Object.keys(r.items || {}).length;
+        const count = countEnumOptions(r);
         return (
           <Popover content={<OptionsPreview record={r} />} title="枚举选项" trigger={['hover', 'click']}>
             <Tag color="green" style={{ cursor: 'pointer' }}>
@@ -142,7 +143,7 @@ const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefre
       width: 88,
       render: (_: unknown, node: EnumTreeNode) => {
         if (!node.enumRecord) return null;
-        const count = Object.keys(node.enumRecord.items || {}).length;
+        const count = countEnumOptions(node.enumRecord);
         return (
           <Popover content={<OptionsPreview record={node.enumRecord} />} title="枚举选项" trigger={['hover', 'click']}>
             <Tag color="green" style={{ cursor: 'pointer' }}>
@@ -178,13 +179,14 @@ const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefre
   return (
     <>
       <Modal
-        title="ADB 枚举管理"
+        title="枚举管理"
         open={open}
         onCancel={onClose}
+        centered
         footer={null}
         width="min(1200px, calc(100vw - 40px))"
         styles={{ body: { maxHeight: 'calc(100vh - 120px)', overflow: 'auto' } }}
-        destroyOnClose
+        destroyOnHidden
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
           <Space>

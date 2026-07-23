@@ -17,6 +17,7 @@ import type { AIMutation } from '@EADAF/ai-base';
 import { useAISurface, useChatReference, useAIChatPrompts, sendMockUserMessage } from '@EADAF/ai-base';
 import { buildEntityContextPrompts } from '@/ai/pageChatPrompts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AISurfaceMarker from '@/components/AISurfaceMarker';
 import ChatReferenceTarget from '@/components/ChatReferenceTarget';
 import { buildEntityReference } from '../ai/chatReferenceUtils';
@@ -26,7 +27,7 @@ import FieldsManager from '../components/FieldsManager';
 import JsonSchemaEditor from '../components/JsonSchemaEditor';
 import EnumManager from '../components/EnumManager';
 import EntityDeletionModal from '../components/EntityDeletionModal';
-import { buildEntityValidatePrompt } from '../utils/entityValidation';
+import { buildEntityValidatePrompt, buildBatchValidatePrompt } from '../utils/entityValidation';
 import {
   getBusinessDataSchema,
   getMaterializationStatus,
@@ -43,6 +44,7 @@ import {
 } from '../utils/entityTableName';
 
 const ModelDesigner: React.FC = () => {
+  const navigate = useNavigate();
   const [schema, setSchema] = useState<API.BusinessDataSchema>({ entities: [], enums: [], relations: [] });
   const [materializedEntityIds, setMaterializedEntityIds] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<API.BusinessDataEntity | null>(null);
@@ -341,6 +343,9 @@ const ModelDesigner: React.FC = () => {
               <Button size="small" onClick={() => setEnumModalOpen(true)}>
                 枚举管理
               </Button>
+              <Button size="small" onClick={() => navigate('/business_data/model-design/relations-graph')}>
+                关系图谱
+              </Button>
               <Button size="small" variant='filled' color="default" icon={<RedoOutlined />} loading={loading} onClick={() => loadSchema()} />
             </Space>
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
@@ -354,6 +359,9 @@ const ModelDesigner: React.FC = () => {
                 onEditEntity={openEditModal}
                 onDeleteEntity={handleDeleteEntity}
                 onAiValidate={(entity) => sendMockUserMessage(buildEntityValidatePrompt(entity))}
+                onAiBatchValidate={(scopeCode) =>
+                  sendMockUserMessage(buildBatchValidatePrompt(scopeCode))
+                }
               />
             </div>
           </div>

@@ -78,3 +78,5 @@ EADAF_backend/install/images/*.tar
 
 # --- AIBase_with_example ---
 AIBase_with_example/ref-demo/
+
+tmp/

@@ -133,9 +133,28 @@ function parseServiceSlugFromCode(code, scopeCode) {
   return fullCode.split(':').pop() || '';
 }
 
+/** 转义 SQL LIKE 通配符，供手工拼 LIKE 时使用 */
+function escapeLikePattern(value) {
+  return String(value ?? '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/**
+ * code 前缀匹配：精确、域段边界（prefix:）、末段软前缀（prefix%）。
+ * 例：IPS:production:BomInstance 可匹配 IPS:production:BomInstanceCreate
+ */
 function matchesCodePrefix(code, codePrefix) {
   if (!codePrefix) return true;
-  return code === codePrefix || code.startsWith(`${codePrefix}:`);
+  const c = String(code || '');
+  const p = String(codePrefix);
+  return c === p || c.startsWith(`${p}:`) || c.startsWith(p);
+}
+
+/** 列表 status：ALL / * / 空 视为不过滤 */
+function normalizeListStatus(status) {
+  if (status == null) return undefined;
+  const s = String(status).trim().toLowerCase();
+  if (!s || s === 'all' || s === '*') return undefined;
+  return s;
 }
 
 /** 将 API 服务挂到域树叶子（深拷贝） */
@@ -198,4 +217,6 @@ module.exports = {
   buildDomainTreeFromServices,
   attachApiServicesToDomainTree,
   matchesCodePrefix,
+  escapeLikePattern,
+  normalizeListStatus,
 };

@@ -1,10 +1,10 @@
 import { useAIChatDisplayMode } from '@EADAF/ai-base';
-import { ApiOutlined, PartitionOutlined, CopyOutlined } from '@ant-design/icons';
+import { ApiOutlined, PartitionOutlined, CopyOutlined, WarningOutlined, ReadOutlined } from '@ant-design/icons';
 import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import type { DataNode } from 'antd/es/tree';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   getApplicationsPublicApiCatalog,
   type ApplicationApiCatalogOperation,
@@ -12,12 +12,21 @@ import {
   type ApplicationApiCatalogTreeNode,
   type ApplicationApiCatalogResult,
   type BuiltinApiCatalogItem,
+  type CollectionApiCatalogItem,
 } from '@/services/UAC/api/applicationsPublic';
+import OperationParameterPanel, { isQueryOnlyMethod } from '@/components/OperationParameterPanel';
+import { ResponseExampleViewer } from '@/components/ResponseDocumentPanel/ResponseSchemaViewer';
 import {
   buildApplicationApiDocsPath,
+  buildExceptionResponsesDocsPath,
+  buildApiSkillDocsPath,
   parseApiDocsRoutePathFromPathname,
 } from '@/utils/applicationApiDocsUrl';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
+import {
+  getTransportProtocolLabel,
+  normalizeTransportProtocols,
+} from '@/pages/ApiServices/utils/apiServiceTransport';
 import './index.css';
 
 const { Text, Paragraph } = Typography;
@@ -150,110 +159,303 @@ function BuiltinApiDetail({ api }: { api: BuiltinApiCatalogItem }) {
   );
 }
 
-function OperationBlock({
-  operation,
-  basePath,
-  requestParameterInterface,
-}: {
-  operation: ApplicationApiCatalogOperation;
-  basePath?: string;
-  requestParameterInterface?: string;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const path = buildOperationPath(basePath, operation.routePattern);
-  const hasInterface = Boolean(requestParameterInterface?.trim());
-  const hasSchema = Boolean(operation.parametersSchema && Object.keys(operation.parametersSchema).length);
-  const hasMock = Boolean(operation.mockParameters && Object.keys(operation.mockParameters).length);
-  const hasResponse = Boolean(operation.responseInterface?.trim());
+const PROTOCOL_LABEL: Record<string, string> = {
+  serial: '串口',
+  modbus_rtu: 'Modbus RTU',
+  modbus_tcp: 'Modbus TCP',
+};
 
-  const schemaBlock = hasSchema ? (
-    <pre className="application-api-catalog__schema">
-      {JSON.stringify(operation.parametersSchema, null, 2)}
-    </pre>
-  ) : null;
+function CollectionApiDetail({
+  api,
+  applicationKey,
+}: {
+  api: CollectionApiCatalogItem;
+  applicationKey: string;
+}) {
+  const navigate = useNavigate();
+  const path = api.basePath || (api.routePath ? `/api/v1/ingest/${api.routePath}` : '');
+  const hasResponseInterface = Boolean(api.responseInterface?.trim());
+  const hasResponseExample = api.responseExample != null
+    && typeof api.responseExample === 'object'
+    && Object.keys(api.responseExample as object).length > 0;
+
+  const requestPanel = (
+    <div className="application-api-catalog__doc-section">
+      <Alert
+        type="info"
+        showIcon
+        message={api.authHint || '使用应用 JWT 调用采集接口'}
+        description={api.bodyHint}
+      />
+      {api.sampleData ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">样本数据（Request Body）</Text>
+          <pre className="application-api-catalog__schema">{api.sampleData}</pre>
+        </>
+      ) : (
+        <Text type="secondary">暂无样本数据</Text>
+      )}
+      {api.targetStructure ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            解析目标结构（parseOutput）
+          </Text>
+          <pre className="application-api-catalog__schema">{api.targetStructure}</pre>
+        </>
+      ) : null}
+    </div>
+  );
+
+  const responsePanel = (
+    <div className="application-api-catalog__doc-section">
+      {hasResponseInterface ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            响应结构（TypeScript interface）
+          </Text>
+          <pre className="application-api-catalog__schema">
+            {api.responseInterface!.trim()}
+          </pre>
+        </>
+      ) : null}
+      {hasResponseExample ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            响应示例（Example）
+          </Text>
+          <div className="application-api-catalog__response-example">
+            <ResponseExampleViewer value={api.responseExample} />
+          </div>
+        </>
+      ) : null}
+      {!hasResponseInterface && !hasResponseExample ? (
+        <Text type="secondary">暂无响应文档</Text>
+      ) : null}
+    </div>
+  );
 
   return (
-    <div className="application-api-catalog__operation">
-      <div
-        className="application-api-catalog__operation-head"
-        onClick={() => setExpanded((prev) => !prev)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') setExpanded((prev) => !prev);
-        }}
-      >
-        <span className={methodClass(operation.httpMethod)}>{operation.httpMethod}</span>
-        <span className="application-api-catalog__path">{path}</span>
-        <Text type="secondary">{operation.label || operation.operation}</Text>
-      </div>
-      {expanded ? (
-        <div className="application-api-catalog__operation-body">
-          <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            Operation: <Text code>{operation.operation}</Text>
-            {operation.category ? (
-              <>
-                {' '}
-                · Category: <Text code>{operation.category}</Text>
-              </>
-            ) : null}
-          </Paragraph>
-          {hasInterface ? (
-            <>
-              <Text strong>请求参数结构（TypeScript interface）</Text>
-              <pre className="application-api-catalog__schema">
-                {requestParameterInterface!.trim()}
-              </pre>
-            </>
+    <div className="application-api-catalog__detail">
+      <h1 className="application-api-catalog__service-title">{api.label || api.name || api.code}</h1>
+      <div className="application-api-catalog__service-meta">
+        <div>
+          <Text code>{api.code}</Text>
+          {api.status === 'draft' ? (
+            <Tag color="orange" style={{ marginLeft: 8 }}>未发布</Tag>
+          ) : api.status === 'published' ? (
+            <Tag color="green" style={{ marginLeft: 8 }}>已发布</Tag>
           ) : null}
-          {hasSchema && hasInterface ? (
-            <Collapse
-              ghost
-              style={{ marginTop: 16 }}
-              items={[
-                {
-                  key: 'schema',
-                  label: 'Parameters Schema（运行时 JSON Schema）',
-                  children: schemaBlock,
-                },
-              ]}
-            />
+          {api.protocolType ? (
+            <Tag style={{ marginLeft: 8 }}>{PROTOCOL_LABEL[api.protocolType] || api.protocolType}</Tag>
           ) : null}
-          {hasSchema && !hasInterface ? (
-            <>
-              <Text strong style={{ display: 'block', marginTop: 0 }}>
-                Parameters Schema
-              </Text>
-              {schemaBlock}
-            </>
-          ) : null}
-          {hasMock ? (
-            <>
-              <Text strong style={{ display: 'block', marginTop: hasInterface || hasSchema ? 16 : 0 }}>
-                模拟参数（JSON）
-              </Text>
-              <pre className="application-api-catalog__schema">
-                {JSON.stringify(operation.mockParameters, null, 2)}
-              </pre>
-            </>
-          ) : null}
-          {hasResponse ? (
-            <>
-              <Text strong style={{ display: 'block', marginTop: 16 }}>
-                响应结构（TypeScript interface）
-              </Text>
-              <pre className="application-api-catalog__schema">
-                {operation.responseInterface!.trim()}
-              </pre>
-            </>
-          ) : null}
+          {api.entityCode ? <Tag style={{ marginLeft: 8 }}>{api.entityLabel || api.entityCode}</Tag> : null}
         </div>
-      ) : null}
+        {api.description ? <Paragraph style={{ marginTop: 8 }}>{api.description}</Paragraph> : null}
+        <div style={{ marginTop: 12 }}>
+          <div className="application-api-catalog__operation-head" style={{ cursor: 'default' }}>
+            <span className={methodClass('POST')}>POST</span>
+            <span className="application-api-catalog__path">{path}</span>
+          </div>
+        </div>
+        {api.status === 'draft' ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginTop: 12 }}
+            message="此采集管道尚未发布，仅供开发查阅；发布后方可实际调用。"
+          />
+        ) : null}
+      </div>
+
+      <div className="application-api-catalog__operations" style={{ marginTop: 16 }}>
+        <Collapse
+          className="application-api-catalog__doc-collapse"
+          defaultActiveKey={['request', 'response']}
+          items={[
+            { key: 'request', label: '请求', children: requestPanel },
+            { key: 'response', label: '响应', children: responsePanel },
+          ]}
+        />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <Button
+          type="link"
+          icon={<WarningOutlined />}
+          style={{ padding: 0 }}
+          onClick={() => navigate(buildExceptionResponsesDocsPath(applicationKey))}
+        >
+          异常响应信息明细
+        </Button>
+      </div>
     </div>
   );
 }
 
-function ServiceDetail({ service }: { service: ApplicationApiCatalogService }) {
+function OperationEndpointHead({
+  operation,
+  basePath,
+}: {
+  operation: ApplicationApiCatalogOperation;
+  basePath?: string;
+}) {
+  const path = buildOperationPath(basePath, operation.routePattern);
+  return (
+    <div className="application-api-catalog__operation-head">
+      <span className={methodClass(operation.httpMethod)}>{operation.httpMethod}</span>
+      <span className="application-api-catalog__path">{path}</span>
+      <Text type="secondary">{operation.label || operation.operation}</Text>
+    </div>
+  );
+}
+
+function OperationBlock({
+  operation,
+  requestParameterInterface,
+}: {
+  operation: ApplicationApiCatalogOperation;
+  requestParameterInterface?: string;
+}) {
+  const hasInterface = Boolean(requestParameterInterface?.trim());
+  const hasSchema = Boolean(operation.parametersSchema && Object.keys(operation.parametersSchema).length);
+  const requestExample = operation.requestExample || operation.mockParameters;
+  const hasRequestExample = Boolean(requestExample && Object.keys(requestExample).length);
+  const hasResponseInterface = Boolean(operation.responseInterface?.trim());
+  const hasResponseExample = operation.responseExample != null
+    && typeof operation.responseExample === 'object'
+    && Object.keys(operation.responseExample as object).length > 0;
+
+  const isQuery = isQueryOnlyMethod(operation.httpMethod);
+
+  const requestPanel = (
+    <div className="application-api-catalog__doc-section">
+      {hasInterface ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            请求参数结构（TypeScript interface）
+          </Text>
+          <pre className="application-api-catalog__schema">
+            {requestParameterInterface!.trim()}
+          </pre>
+        </>
+      ) : null}
+      {isQuery && hasSchema ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            请求参数 Example（Query）
+          </Text>
+          <OperationParameterPanel
+            httpMethod={operation.httpMethod}
+            parametersSchema={operation.parametersSchema}
+            routePattern={operation.routePattern}
+            values={requestExample}
+            readOnly
+            emptyText="无参数"
+          />
+        </>
+      ) : null}
+      {!isQuery && hasRequestExample ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            请求参数 Example（JSON）
+          </Text>
+          <pre className="application-api-catalog__schema">
+            {JSON.stringify(requestExample, null, 2)}
+          </pre>
+        </>
+      ) : null}
+      {!isQuery && !hasRequestExample && hasSchema ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">Parameters</Text>
+          <OperationParameterPanel
+            httpMethod={operation.httpMethod}
+            parametersSchema={operation.parametersSchema}
+            routePattern={operation.routePattern}
+            readOnly
+            emptyText="无参数"
+          />
+        </>
+      ) : null}
+      {hasSchema ? (
+        <Collapse
+          ghost
+          className="application-api-catalog__inner-collapse"
+          items={[
+            {
+              key: 'schema',
+              label: 'Parameters Schema（运行时 JSON Schema）',
+              children: (
+                <pre className="application-api-catalog__schema">
+                  {JSON.stringify(operation.parametersSchema, null, 2)}
+                </pre>
+              ),
+            },
+          ]}
+        />
+      ) : null}
+    </div>
+  );
+
+  const responsePanel = (
+    <div className="application-api-catalog__doc-section">
+      {hasResponseInterface ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            响应结构（TypeScript interface）
+          </Text>
+          <pre className="application-api-catalog__schema">
+            {operation.responseInterface!.trim()}
+          </pre>
+        </>
+      ) : null}
+      {hasResponseExample ? (
+        <>
+          <Text strong className="application-api-catalog__doc-section-title">
+            响应示例（Example）
+          </Text>
+          <div className="application-api-catalog__response-example">
+            <ResponseExampleViewer value={operation.responseExample} />
+          </div>
+        </>
+      ) : null}
+      {!hasResponseInterface && !hasResponseExample ? (
+        <Text type="secondary">暂无响应文档</Text>
+      ) : null}
+    </div>
+  );
+
+  const collapseItems = [
+    {
+      key: 'request',
+      label: '请求',
+      children: requestPanel,
+    },
+    {
+      key: 'response',
+      label: '响应',
+      children: responsePanel,
+    },
+  ];
+
+  return (
+    <div className="application-api-catalog__operation">
+      <Collapse
+        className="application-api-catalog__doc-collapse"
+        defaultActiveKey={['request', 'response']}
+        items={collapseItems}
+      />
+    </div>
+  );
+}
+
+function ServiceDetail({
+  service,
+  applicationKey,
+}: {
+  service: ApplicationApiCatalogService;
+  applicationKey: string;
+}) {
+  const navigate = useNavigate();
   return (
     <div className="application-api-catalog__detail">
       <h1 className="application-api-catalog__service-title">{service.name || service.code}</h1>
@@ -270,9 +472,9 @@ function ServiceDetail({ service }: { service: ApplicationApiCatalogService }) {
             </Tag>
           ) : null}
           {service.version != null ? <Tag style={{ marginLeft: 8 }}>v{service.version}</Tag> : null}
-          {(service.transportProtocols || ['http']).map((p) => (
+          {normalizeTransportProtocols(service.transportProtocols).map((p) => (
             <Tag key={p} style={{ marginLeft: 4 }}>
-              {p.toUpperCase()}
+              {getTransportProtocolLabel(p)}
             </Tag>
           ))}
         </div>
@@ -309,22 +511,41 @@ function ServiceDetail({ service }: { service: ApplicationApiCatalogService }) {
         ) : null}
       </div>
 
-      <Text strong style={{ fontSize: 16, display: 'block', marginTop: 20 }}>
-        Operations
-      </Text>
-      <div style={{ marginTop: 12 }}>
+      <div className="application-api-catalog__operations">
         {(service.operations || []).length ? (
           service.operations!.map((op) => (
-            <OperationBlock
-              key={`${service.code}-${op.operation}`}
-              operation={op}
-              basePath={service.basePath}
-              requestParameterInterface={service.requestParameterInterface}
-            />
+            <div key={`${service.code}-${op.operation}`} className="application-api-catalog__operation-group">
+              <OperationEndpointHead operation={op} basePath={service.basePath} />
+              <Paragraph type="secondary" className="application-api-catalog__operation-meta">
+                Operation: <Text code>{op.operation}</Text>
+                {op.category ? (
+                  <>
+                    {' '}
+                    · Category: <Text code>{op.category}</Text>
+                  </>
+                ) : null}
+              </Paragraph>
+              <OperationBlock
+                operation={op}
+                requestParameterInterface={service.requestParameterInterface}
+              />
+            </div>
           ))
         ) : (
           <Alert type="info" showIcon message="该 API 服务暂无已启用的 Operation" />
         )}
+      </div>
+
+      {/* 异常响应明细链接（所有 API 共享，打开专门的异常响应页） */}
+      <div style={{ marginTop: 16 }}>
+        <Button
+          type="link"
+          icon={<WarningOutlined />}
+          style={{ padding: 0 }}
+          onClick={() => navigate(buildExceptionResponsesDocsPath(applicationKey))}
+        >
+          异常响应信息明细
+        </Button>
       </div>
     </div>
   );
@@ -333,13 +554,15 @@ function ServiceDetail({ service }: { service: ApplicationApiCatalogService }) {
 const ApplicationPublicApiCatalogPage: React.FC = () => {
   useAIChatDisplayMode('hidden');
   const location = useLocation();
+  const navigate = useNavigate();
   const { code } = useParams<{ code: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ApplicationApiCatalogResult | undefined>(undefined);
   const [selectedServiceCode, setSelectedServiceCode] = useState<string>();
-  const [tab, setTab] = useState<'business' | 'builtin'>('business');
+  const [tab, setTab] = useState<'business' | 'builtin' | 'ingest'>('business');
   const [selectedBuiltinCode, setSelectedBuiltinCode] = useState<string>();
+  const [selectedCollectionCode, setSelectedCollectionCode] = useState<string>();
 
   const routePathFromUrl = useMemo(
     () => (code ? parseApiDocsRoutePathFromPathname(location.pathname, code) : undefined),
@@ -376,11 +599,14 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
         }
         const data = getApiData<ApplicationApiCatalogResult>(res);
         setCatalog(data);
-        // 默认 Tab：业务 API 为空且内置 API 非空时，切到内置 API
+        // 默认 Tab：业务 → 内置 → 采集，取第一个非空
         const businessEmpty = !data?.tree?.length;
         const builtinHas = !!data?.builtinApiTree?.length;
+        const collectionHas = !!data?.collectionApiTree?.length;
         if (businessEmpty && builtinHas) {
           setTab('builtin');
+        } else if (businessEmpty && !builtinHas && collectionHas) {
+          setTab('ingest');
         }
       } catch (err) {
         if (!cancelled) setError(getApiErrorMessage(err, '加载 API 目录失败'));
@@ -413,6 +639,10 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
     () => (catalog?.builtinApiTree ? toBuiltinTreeNodes(catalog.builtinApiTree) : []),
     [catalog?.builtinApiTree],
   );
+  const collectionTreeNodes = useMemo(
+    () => (catalog?.collectionApiTree ? toBuiltinTreeNodes(catalog.collectionApiTree) : []),
+    [catalog?.collectionApiTree],
+  );
   const selectedService = useMemo(
     () => catalog?.services?.find((item) => item.code === selectedServiceCode),
     [catalog?.services, selectedServiceCode],
@@ -421,9 +651,14 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
     () => catalog?.builtinApis?.find((item) => item.code === selectedBuiltinCode),
     [catalog?.builtinApis, selectedBuiltinCode],
   );
+  const selectedCollectionApi = useMemo(
+    () => catalog?.collectionApis?.find((item) => item.code === selectedCollectionCode),
+    [catalog?.collectionApis, selectedCollectionCode],
+  );
 
   const hasBusinessApis = treeNodes.length > 0;
   const hasBuiltinApis = builtinTreeNodes.length > 0;
+  const hasCollectionApis = collectionTreeNodes.length > 0;
 
   const handleSelectService = useCallback(
     (serviceCode: string) => {
@@ -485,6 +720,24 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
             type="primary"
             ghost
             size="small"
+            icon={<WarningOutlined />}
+            onClick={() => code && navigate(buildExceptionResponsesDocsPath(code))}
+          >
+            异常响应
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            size="small"
+            icon={<ReadOutlined />}
+            onClick={() => code && navigate(buildApiSkillDocsPath(code))}
+          >
+            API SKILL
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            size="small"
             icon={<CopyOutlined />}
             onClick={handleCopyJsonUrl}
             disabled={!openApiJsonUrl}
@@ -496,14 +749,15 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
 
       <div className="application-api-catalog__body">
         <aside className="application-api-catalog__sidebar application-api-catalog__tree">
-          {hasBusinessApis || hasBuiltinApis ? (
+          {hasBusinessApis || hasBuiltinApis || hasCollectionApis ? (
             <Segmented
               block
               value={tab}
-              onChange={(val) => setTab(val as 'business' | 'builtin')}
+              onChange={(val) => setTab(val as 'business' | 'builtin' | 'ingest')}
               options={[
-                { label: '业务 API', value: 'business', disabled: !hasBusinessApis },
-                { label: '内置 API', value: 'builtin', disabled: !hasBuiltinApis },
+                { label: '业务 API', value: 'business' },
+                { label: '内置 API', value: 'builtin' },
+                { label: '采集 API', value: 'ingest' },
               ]}
               style={{ marginBottom: 12 }}
             />
@@ -524,37 +778,63 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
             ) : (
               <Text type="secondary">暂无已授权的业务 API 域，请在应用 API 配置中勾选可访问域</Text>
             )
-          ) : builtinTreeNodes.length ? (
+          ) : tab === 'builtin' ? (
+            builtinTreeNodes.length ? (
+              <Tree
+                showLine
+                defaultExpandAll
+                motion={false}
+                selectedKeys={selectedBuiltinCode ? [selectedBuiltinCode] : []}
+                treeData={builtinTreeNodes}
+                onSelect={(keys) => {
+                  const key = keys[0] as string | undefined;
+                  if (key) setSelectedBuiltinCode(key);
+                }}
+              />
+            ) : (
+              <Text type="secondary">暂无已授权的内置 API，请在应用 API 配置中勾选可访问内置 API</Text>
+            )
+          ) : collectionTreeNodes.length ? (
             <Tree
               showLine
               defaultExpandAll
               motion={false}
-              selectedKeys={selectedBuiltinCode ? [selectedBuiltinCode] : []}
-              treeData={builtinTreeNodes}
+              selectedKeys={selectedCollectionCode ? [selectedCollectionCode] : []}
+              treeData={collectionTreeNodes}
               onSelect={(keys) => {
                 const key = keys[0] as string | undefined;
-                if (key) setSelectedBuiltinCode(key);
+                if (key) setSelectedCollectionCode(key);
               }}
             />
           ) : (
-            <Text type="secondary">暂无已授权的内置 API，请在应用 API 配置中勾选可访问内置 API</Text>
+            <Text type="secondary">
+              暂无对本应用开放的采集 API（需为草稿/已发布，且未限制来源或已将本应用加入白名单）
+            </Text>
           )}
         </aside>
 
         <main className="application-api-catalog__content">
           {tab === 'business' ? (
             selectedService ? (
-              <ServiceDetail service={selectedService} />
+              <ServiceDetail service={selectedService} applicationKey={code!} />
             ) : (
               <div className="application-api-catalog__detail application-api-catalog__empty">
                 请从左侧选择一个 API 服务查看明细
               </div>
             )
-          ) : selectedBuiltinApi ? (
-            <BuiltinApiDetail api={selectedBuiltinApi} />
+          ) : tab === 'builtin' ? (
+            selectedBuiltinApi ? (
+              <BuiltinApiDetail api={selectedBuiltinApi} />
+            ) : (
+              <div className="application-api-catalog__detail application-api-catalog__empty">
+                请从左侧选择一个内置 API 查看明细
+              </div>
+            )
+          ) : selectedCollectionApi ? (
+            <CollectionApiDetail api={selectedCollectionApi} applicationKey={code!} />
           ) : (
             <div className="application-api-catalog__detail application-api-catalog__empty">
-              请从左侧选择一个内置 API 查看明细
+              请从左侧选择一个采集 API 查看明细
             </div>
           )}
         </main>

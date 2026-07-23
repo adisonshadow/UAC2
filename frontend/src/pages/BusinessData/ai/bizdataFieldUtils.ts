@@ -4,9 +4,31 @@ import { getApiData, parseApiListResponse } from '@/utils/apiResponse';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** status / *_status / state / *_state / type / *_type */
+export const ENUM_LIKE_FIELD_RE = /(^status$|_status$|^state$|_state$|_type$|^type$)/i;
+
 /** 判断是否为 PostgreSQL UUID（避免 AI 编造 id 导致后端 500） */
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
+}
+
+/** 由 fieldKey 推导建议 enumCode 后缀，如 station_type → StationType */
+export function suggestEnumNameFromFieldKey(fieldKey: string): string {
+  return fieldKey
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('');
+}
+
+/** 可执行的枚举字段修复提示（给 AI 下一步） */
+export function buildEnumFieldFixHint(fieldKey: string, enumCodeHint?: string): string {
+  const enumCode = enumCodeHint || `<Scope>:${suggestEnumNameFromFieldKey(fieldKey)}`;
+  return (
+    `修复：1) bizdata_list_enums 2) 无则 bizdata_create_enum(code="${enumCode}", values) ` +
+    `3) update/create_entity 字段传 { "fieldKey": "${fieldKey}", "type": "adb-enum", "enumCode": "${enumCode}" } ` +
+    `4) bizdata_validate_model。禁止只用 varchar，或只传 type=adb-enum 不传 enumCode，或只改 typeormConfig.type`
+  );
 }
 
 /** 将 AI 常见字段写法规范化为 API 结构 */
@@ -52,6 +74,12 @@ export function normalizeBizDataField(raw: Record<string, unknown>, index = 0): 
     columnInfo.extendType === 'adb-enum' ||
     !!enumCode;
 
+  if (ENUM_LIKE_FIELD_RE.test(fieldKey) && !isEnumField) {
+    throw new Error(
+      `fields[${index}] 字段「${fieldKey}」疑似状态/类型字段，须使用 type=adb-enum 并关联 enumCode。${buildEnumFieldFixHint(fieldKey)}`,
+    );
+  }
+
   if (isEnumField) {
     columnInfo.extendType = 'adb-enum';
     columnInfo.enumConfig = {
@@ -61,7 +89,9 @@ export function normalizeBizDataField(raw: Record<string, unknown>, index = 0): 
       isMultiple: Boolean(rawEnumConfig.isMultiple),
     };
     if (!enumCode) {
-      throw new Error(`fields[${index}] 枚举字段「${fieldKey}」缺少 enumCode`);
+      throw new Error(
+        `fields[${index}] 枚举字段「${fieldKey}」缺少 enumCode。${buildEnumFieldFixHint(fieldKey)}`,
+      );
     }
     typeormConfig.type = 'varchar';
   }

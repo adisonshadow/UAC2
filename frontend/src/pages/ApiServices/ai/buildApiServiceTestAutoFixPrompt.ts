@@ -37,8 +37,8 @@ export function buildApiServiceTestAutoFixPrompt(ctx: ApiServiceTestAutoFixConte
 3. 仍失败则重新分类；成功则简要说明改了哪些参数
 
 ### 4. 配置修复（SQL/脚本问题）
-1. \`apiservice_update_service\` 修改 definitionScript / enabledOperations / connectionId 等（**自动保存**，执行后自动跳转至服务列表）
-2. \`apiservice_navigate\` target=test autoRunTest=true
+1. \`apiservice_update_service\` 修改 definitionScript 等（**自动保存**，留在当前编辑/测试页）
+2. \`apiservice_navigate\` target=test autoRunTest=true（勿跳 list）
 3. 解读自动重测结果；成功则告知用户；失败则继续修复直至成功或明确阻塞原因
 
 ## 约束

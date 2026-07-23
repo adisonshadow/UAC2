@@ -94,7 +94,7 @@ const Page: React.FC = () => {
       try {
         const res = await getBuiltinApis();
         if (!cancelled && isApiSuccess(res)) {
-          setBuiltinApiTree(getApiData(res)?.tree || []);
+          setBuiltinApiTree(getApiData<{ tree: BuiltinApiTreeNode[] }>(res)?.tree || []);
         }
       } catch {
         if (!cancelled) setBuiltinApiTree([]);

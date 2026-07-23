@@ -1,8 +1,13 @@
 const { v4: uuidv4 } = require('uuid');
+const { Op } = require('sequelize');
 const { Tool, Scope } = require('../models');
 const { isValidSlug, resolveUniqueSlug } = require('../constants/aiCapabilities');
 const { EXECUTION_TYPES } = require('../services/ai/toolInvokeService');
 const logger = require('../utils/logger');
+
+function escapeIlike(value) {
+  return String(value).replace(/[%_\\]/g, '\\$&');
+}
 
 function formatTool(tool) {
   const data = tool.toJSON ? tool.toJSON() : tool;
@@ -31,8 +36,8 @@ class ToolController {
       const size = Math.min(Math.max(parseInt(ctx.query.size, 10) || 10, 1), 100);
       const where = {};
 
-      if (ctx.query.isActive !== undefined) {
-        where.is_active = ctx.query.isActive === 'true';
+      if (ctx.query.isActive !== undefined && ctx.query.isActive !== '') {
+        where.is_active = ctx.query.isActive === 'true' || ctx.query.isActive === true;
       }
       if (ctx.query.scopeId) {
         where.scope_id = ctx.query.scopeId;
@@ -40,13 +45,20 @@ class ToolController {
       if (ctx.query.executionType) {
         where.execution_type = ctx.query.executionType;
       }
+      if (ctx.query.name) {
+        where.name = { [Op.iLike]: `%${escapeIlike(ctx.query.name)}%` };
+      }
+      if (ctx.query.functionName) {
+        where.function_name = { [Op.iLike]: `%${escapeIlike(ctx.query.functionName)}%` };
+      }
 
       const { count, rows } = await Tool.findAndCountAll({
         where,
         include: [{ model: Scope, as: 'scope', attributes: ['id', 'name', 'slug'] }],
         limit: size,
         offset: (page - 1) * size,
-        order: [['created_at', 'DESC']]
+        order: [['created_at', 'DESC']],
+        distinct: true,
       });
 
       ctx.body = {

@@ -66,7 +66,7 @@ export default function AssistantMarkdown({
         streaming={{
           hasNextChunk: mainContentStreaming,
           enableAnimation: mainContentStreaming,
-          tail: mainContentStreaming,
+          tail: false,
         }}
       />
     </>

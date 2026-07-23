@@ -1,22 +1,25 @@
 import { RobotOutlined } from '@ant-design/icons';
-import { PageContainer, ProForm } from '@ant-design/pro-components';
+import { ProForm } from '@ant-design/pro-components';
 import { sendMockUserMessage, useAISurface, useChatReference } from '@EADAF/ai-base';
-import { Alert, Button, Space, Spin } from 'antd';
+import { Alert, Button, Popconfirm, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { buildApiServiceReference } from '@/ai/chatReferenceBuilders';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
+import FixHeaderPage from '@/components/FixHeaderPage';
+import ApiServiceSectionNav from '../components/ApiServiceSectionNav';
 import { buildApiServiceEditPolishPrompt } from '@/pages/ApiServices/ai/buildApiServiceEditPolishPrompt';
 import ApiServiceForm, {
   buildAccessRestrictionPayload,
-  parseTagsInput,
+  buildDefaultRequestExample,
   type ApiServiceFormValues,
 } from '../components/ApiServiceForm';
 import {
   getApiService,
   getApiServiceOperationCatalog,
   patchApiService,
+  postApiServicePublish,
 } from '@/services/UAC/api/apiServices';
 import {
   getApiData,
@@ -25,6 +28,19 @@ import {
 } from '@/utils/apiResponse';
 import { apiServiceStatusEnum } from '@/enums';
 import { renderStatusBadge } from '@/utils/statusBadge';
+import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
+import {
+  buildResponseOverridesPayload,
+  readResponseOverride,
+  resolveResponseExample,
+} from '../utils/responseOverrides';
+import { buildRequestOverridesPayload, formatRequestExampleText, readRequestOverride } from '../utils/requestOverrides';
+import { tryParseJson } from '@/components/ResponseDocumentPanel';
+import {
+  ensureHandlerScriptValid,
+  formatHandlerDiagnostics,
+} from '../utils/handlerTypeCheckClient';
+import { normalizeHandlerBody } from '../utils/handlerEditorShell';
 
 type EditLocationState = {
   autoRunTest?: boolean;
@@ -44,7 +60,11 @@ const ApiServiceEditPage: React.FC = () => {
   const [definitionScript, setDefinitionScript] = useState('');
   const [handlerScript, setHandlerScript] = useState('');
   const [requestParameterInterface, setRequestParameterInterface] = useState('');
+  const [requestExampleText, setRequestExampleText] = useState('{}');
+  const [responsesSchemaText, setResponsesSchemaText] = useState('{}');
+  const [responseExampleText, setResponseExampleText] = useState('{}');
   const [submitting, setSubmitting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [serviceMeta, setServiceMeta] = useState<API.ApiService | null>(null);
 
   const definitionScriptRef = useRef(definitionScript);
@@ -53,6 +73,8 @@ const ApiServiceEditPage: React.FC = () => {
   handlerScriptRef.current = handlerScript;
   const requestParameterInterfaceRef = useRef(requestParameterInterface);
   requestParameterInterfaceRef.current = requestParameterInterface;
+  const requestExampleTextRef = useRef(requestExampleText);
+  requestExampleTextRef.current = requestExampleText;
   const serviceIdRef = useRef(serviceId);
   serviceIdRef.current = serviceId;
   const { references, addReference } = useChatReference();
@@ -73,14 +95,46 @@ const ApiServiceEditPage: React.FC = () => {
       }
       setServiceMeta(data);
       setDefinitionScript(data.definitionScript || '');
-      setHandlerScript(data.handlerScript || '');
+      setHandlerScript(normalizeHandlerBody(data.handlerScript || ''));
       setRequestParameterInterface(data.requestParameterInterface || '');
+      const operation = data.enabledOperations?.[0];
+      const savedOverride = readResponseOverride(data.securityConfig, operation);
+      const savedRequestOverride = readRequestOverride(data.securityConfig, operation);
+      if (savedOverride?.responsesSchema) {
+        setResponsesSchemaText(JSON.stringify(savedOverride.responsesSchema, null, 2));
+        const resolvedExample = resolveResponseExample(
+          savedOverride.responseExample ?? {},
+          operation,
+          data.entityCode,
+          data.requestParameterInterface,
+        );
+        setResponseExampleText(JSON.stringify(resolvedExample, null, 2));
+      } else {
+        const preview = buildOperationResponsePreview(
+          operation,
+          data.entityCode,
+          data.requestParameterInterface,
+        );
+        if (preview) {
+          setResponsesSchemaText(JSON.stringify(preview.responsesSchema, null, 2));
+          setResponseExampleText(JSON.stringify(preview.responseExample, null, 2));
+        }
+      }
+      if (savedRequestOverride?.requestExample != null) {
+        setRequestExampleText(JSON.stringify(savedRequestOverride.requestExample, null, 2));
+      } else {
+        setRequestExampleText(JSON.stringify(
+          buildDefaultRequestExample(data.requestParameterInterface),
+          null,
+          2,
+        ));
+      }
       const restriction = data.accessRestriction || { mode: 'none' as const };
       form.setFieldsValue({
         scopeCode: data.scopeCode,
         serviceSlug: data.serviceSlug,
         name: data.name,
-        tags: data.tags?.join(', '),
+        tags: data.tags || [],
         primaryOperation: data.enabledOperations?.[0],
         accessRestrictionMode: restriction.mode || 'none',
         roleIds: restriction.roleIds,
@@ -132,6 +186,7 @@ const ApiServiceEditPage: React.FC = () => {
         definitionScript: definitionScriptRef.current,
         handlerScript: handlerScriptRef.current,
         requestParameterInterface: requestParameterInterfaceRef.current,
+        requestExampleText: requestExampleTextRef.current,
         accessRestriction: buildAccessRestrictionPayload(values),
         fixContext: locationState.fixContext,
         chatReferences: { scopes: scopeRefs, entities: entityRefs },
@@ -145,16 +200,28 @@ const ApiServiceEditPage: React.FC = () => {
         setDefinitionScript(payload.definitionScript);
       }
       if (payload?.handlerScript != null) {
-        setHandlerScript(payload.handlerScript);
+        setHandlerScript(normalizeHandlerBody(payload.handlerScript));
       }
       if (payload?.requestParameterInterface != null) {
         setRequestParameterInterface(payload.requestParameterInterface);
+      }
+      const operation = String(
+        payload?.enabledOperations?.[0]
+        || form.getFieldValue('primaryOperation')
+        || '',
+      ).trim();
+      const savedRequestExample = readRequestOverride(
+        payload?.securityConfig as Record<string, unknown> | undefined,
+        operation,
+      )?.requestExample;
+      if (savedRequestExample != null) {
+        setRequestExampleText(formatRequestExampleText(savedRequestExample));
       }
       if (payload) {
         setServiceMeta((prev) => ({ ...prev, ...payload }));
         form.setFieldsValue({
           name: payload.name ?? form.getFieldValue('name'),
-          tags: payload.tags?.join(', ') ?? form.getFieldValue('tags'),
+          tags: payload.tags ?? form.getFieldValue('tags'),
           scopeCode: payload.scopeCode ?? form.getFieldValue('scopeCode'),
           serviceSlug: payload.serviceSlug ?? form.getFieldValue('serviceSlug'),
           scriptMode: payload.scriptMode ?? form.getFieldValue('scriptMode'),
@@ -168,17 +235,63 @@ const ApiServiceEditPage: React.FC = () => {
   const submit = async () => {
     if (!serviceId) return;
     const values = await form.validateFields();
+    const operation = String(values.primaryOperation || '').trim();
+    const schemaParsed = tryParseJson(responsesSchemaText);
+    const exampleParsed = tryParseJson(responseExampleText);
+    const requestExampleParsed = tryParseJson(requestExampleText);
+    if (!schemaParsed.ok) {
+      message.error(`Responses Schema JSON 无效：${schemaParsed.error}`);
+      return;
+    }
+    if (!exampleParsed.ok) {
+      message.error(`Response Example JSON 无效：${exampleParsed.error}`);
+      return;
+    }
+    const sanitizedResponseExample = resolveResponseExample(
+      exampleParsed.value,
+      operation,
+      serviceMeta?.entityCode,
+      requestParameterInterface,
+    );
+    if (!requestExampleParsed.ok) {
+      message.error(`请求 Example JSON 无效：${requestExampleParsed.error}`);
+      return;
+    }
+
+    if (values.scriptMode === 'typescript') {
+      const check = await ensureHandlerScriptValid(
+        normalizeHandlerBody(handlerScript),
+        requestParameterInterface,
+      );
+      if (check) {
+        message.error(`Handler 语法检查未通过：\n${formatHandlerDiagnostics(check.diagnostics)}`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const res = await patchApiService(serviceId, {
         scopeCode: values.scopeCode,
         serviceSlug: values.serviceSlug,
         name: String(values.name || '').trim(),
-        tags: parseTagsInput(values.tags),
+        tags: values.tags || [],
         scriptMode: values.scriptMode,
         definitionScript: values.scriptMode === 'typescript' ? undefined : definitionScript.trim() || undefined,
-        handlerScript: values.scriptMode === 'typescript' ? handlerScript.trim() || undefined : undefined,
+        handlerScript: values.scriptMode === 'typescript'
+          ? normalizeHandlerBody(handlerScript).trim() || undefined
+          : undefined,
         requestParameterInterface: requestParameterInterface.trim() || undefined,
+        responseOverrides: operation
+          ? buildResponseOverridesPayload(
+            operation,
+            schemaParsed.value as Record<string, unknown>,
+            sanitizedResponseExample,
+          )
+          : undefined,
+        requestOverrides: operation
+          ? buildRequestOverridesPayload(operation, requestExampleParsed.value)
+          : undefined,
         accessRestriction: buildAccessRestrictionPayload(values),
         enabledOperations: values.primaryOperation ? [String(values.primaryOperation)] : undefined,
         transportProtocols: values.transportProtocols,
@@ -227,37 +340,63 @@ const ApiServiceEditPage: React.FC = () => {
     );
   };
 
+  const handlePublish = async () => {
+    if (!serviceId) return;
+    setPublishing(true);
+    try {
+      const res = await postApiServicePublish(serviceId);
+      if (!isApiSuccess(res)) {
+        message.error(getApiErrorMessage(res, '发布失败'));
+        return;
+      }
+      const data = getApiData<API.ApiService>(res);
+      if (data) setServiceMeta(data);
+      message.success('发布成功');
+    } catch {
+      message.error('发布失败');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const showPublishAction = serviceMeta
+    && (serviceMeta.status === 'draft' || serviceMeta.status === 'disabled' || !serviceMeta.status);
+
   if (loading) {
     return (
-      <PageContainer
-        title={
-          <PageContainerTitleWithBack title="编辑 API 服务" />
-        }
-      >
+      <FixHeaderPage title={<PageContainerTitleWithBack title="编辑 API 服务" />}>
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <Spin description="加载中…" />
         </div>
-      </PageContainer>
+      </FixHeaderPage>
     );
   }
 
   return (
-    <PageContainer
-      title={
+    <FixHeaderPage
+      title={(
         <PageContainerTitleWithBack
           title={`编辑 API 服务${serviceMeta?.code ? ` · ${serviceMeta.code}` : ''}`}
         />
-      }
+      )}
       subTitle={
         serviceMeta ? (
           <Space size={8} wrap>
             <span>版本 v{serviceMeta.version ?? 0}</span>
             {renderStatusBadge(serviceMeta.status || 'draft', apiServiceStatusEnum)}
+            {showPublishAction ? (
+              <Popconfirm title="确定发布该 API 服务？" onConfirm={() => void handlePublish()}>
+                <Button size="small" type="primary" loading={publishing}>
+                  发布
+                </Button>
+              </Popconfirm>
+            ) : null}
           </Space>
         ) : (
           '修改 Scope、访问限制、参数 interface 与 SQL/TypeScript Handler'
         )
       }
+      centerSlot={<ApiServiceSectionNav />}
       extra={
         <Space>
           {serviceId && (
@@ -296,14 +435,21 @@ const ApiServiceEditPage: React.FC = () => {
           definitionScript={definitionScript}
           onDefinitionScriptChange={setDefinitionScript}
           handlerScript={handlerScript}
-          onHandlerScriptChange={setHandlerScript}
+          onHandlerScriptChange={(value) => setHandlerScript(normalizeHandlerBody(value))}
           requestParameterInterface={requestParameterInterface}
           onRequestParameterInterfaceChange={setRequestParameterInterface}
+          requestExampleText={requestExampleText}
+          onRequestExampleTextChange={setRequestExampleText}
           readonlyCode={serviceMeta?.code}
           entityId={serviceMeta?.entityId}
+          entityCode={serviceMeta?.entityCode}
+          responsesSchemaText={responsesSchemaText}
+          onResponsesSchemaTextChange={setResponsesSchemaText}
+          responseExampleText={responseExampleText}
+          onResponseExampleTextChange={setResponseExampleText}
         />
       </ProForm>
-    </PageContainer>
+    </FixHeaderPage>
   );
 };
 

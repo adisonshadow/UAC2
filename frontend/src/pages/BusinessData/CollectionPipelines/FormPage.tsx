@@ -1,19 +1,25 @@
-import { PageContainer, ProForm } from '@ant-design/pro-components';
-import { useAISurface } from '@EADAF/ai-base';
-import { Button, Space, Spin } from 'antd';
+import { RobotOutlined } from '@ant-design/icons';
+import { ProForm } from '@ant-design/pro-components';
+import { sendMockUserMessage, useAISurface } from '@EADAF/ai-base';
+import { Button, Popconfirm, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
+import FixHeaderPage from '@/components/FixHeaderPage';
 import CollectionPipelineForm, {
   type CollectionPipelineFormValues,
 } from './components/CollectionPipelineForm';
+import CollectionPipelineSectionNav from './components/CollectionPipelineSectionNav';
+import { buildCollectionPipelineScriptPrompt } from '@/pages/BusinessData/ai/buildCollectionPipelineTestPrompt';
 import {
   getCollectionPipeline,
   patchCollectionPipeline,
   postCollectionPipeline,
   postCollectionPipelinePublish,
 } from '@/services/UAC/api/businessData';
+import { apiServiceStatusEnum } from '@/enums';
+import { renderStatusBadge } from '@/utils/statusBadge';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 
 export type CollectionPipelinePageMode = 'create' | 'edit';
@@ -28,6 +34,7 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
   const [form] = ProForm.useForm<CollectionPipelineFormValues>();
   const [loading, setLoading] = useState(mode !== 'create');
   const [submitting, setSubmitting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [meta, setMeta] = useState<API.CollectionPipeline | null>(null);
   const [sampleData, setSampleData] = useState('');
   const [targetStructure, setTargetStructure] = useState('');
@@ -123,6 +130,8 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
       form.setFieldsValue({
         name: payload.name ?? form.getFieldValue('name'),
         protocolType: payload.protocolType ?? form.getFieldValue('protocolType'),
+        scopeCode: payload.scopeCode ?? form.getFieldValue('scopeCode'),
+        pipelineSlug: payload.pipelineSlug ?? form.getFieldValue('pipelineSlug'),
       });
     },
     matchMutation: (mutation) =>
@@ -178,9 +187,9 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
       message.warning('请先保存管道');
       return;
     }
-    const values = await form.validateFields();
-    setSubmitting(true);
+    setPublishing(true);
     try {
+      const values = await form.validateFields();
       await patchCollectionPipeline(id, buildPayload(values));
       const res = await postCollectionPipelinePublish(id);
       if (!isApiSuccess(res)) {
@@ -189,70 +198,117 @@ const CollectionPipelineFormPage: React.FC<CollectionPipelineFormPageProps> = ({
       }
       message.success('已发布');
       await loadPipeline();
+    } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) return;
+      message.error(getApiErrorMessage(error, '发布失败'));
     } finally {
-      setSubmitting(false);
+      setPublishing(false);
     }
   };
 
+  const handleAiPolish = () => {
+    const values = form.getFieldsValue();
+    sendMockUserMessage(
+      buildCollectionPipelineScriptPrompt({
+        code: meta?.code || buildPreviewLabel(values),
+        name: values.name || meta?.name,
+        protocolType: values.protocolType || meta?.protocolType,
+      }),
+    );
+  };
+
+  const pageTitle =
+    mode === 'create'
+      ? '新建采集管道'
+      : `编辑采集管道${meta?.code ? ` · ${meta.code}` : ''}`;
+
+  const showPublishAction = mode === 'edit'
+    && meta
+    && (meta.status === 'draft' || meta.status === 'disabled' || !meta.status);
+
+  const formBody = (
+    <ProForm
+      form={form}
+      submitter={false}
+      layout="vertical"
+      initialValues={{ protocolType: 'serial', restrictSources: false }}
+    >
+      <CollectionPipelineForm
+        form={form}
+        mode={mode}
+        sampleData={sampleData}
+        onSampleDataChange={setSampleData}
+        targetStructure={targetStructure}
+        onTargetStructureChange={setTargetStructure}
+        parseScript={parseScript}
+        onParseScriptChange={setParseScript}
+        storeScript={storeScript}
+        onStoreScriptChange={setStoreScript}
+        readonlyCode={meta?.code}
+        entityId={entityId}
+        onEntityIdChange={setEntityId}
+      />
+    </ProForm>
+  );
+
   if (loading) {
     return (
-      <PageContainer title={mode === 'create' ? '新建采集管道' : '编辑采集管道'}>
+      <FixHeaderPage title={<PageContainerTitleWithBack title={pageTitle} />}>
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <Spin description="加载中…" />
         </div>
-      </PageContainer>
+      </FixHeaderPage>
     );
   }
 
   return (
-    <PageContainer
-      title={
-        <PageContainerTitleWithBack
-          title={mode === 'create' ? '新建采集管道' : '编辑采集管道'}
-        />
+    <FixHeaderPage
+      title={<PageContainerTitleWithBack title={pageTitle} />}
+      subTitle={
+        mode === 'edit' && meta ? (
+          <Space size={8} wrap>
+            <span>版本 v{meta.version ?? 0}</span>
+            {renderStatusBadge(
+              meta.status === 'disabled' ? 'draft' : (meta.status || 'draft'),
+              apiServiceStatusEnum,
+            )}
+            {showPublishAction ? (
+              <Popconfirm title="确定发布该采集管道？" onConfirm={() => void publish()}>
+                <Button size="small" type="primary" loading={publishing}>
+                  发布
+                </Button>
+              </Popconfirm>
+            ) : null}
+          </Space>
+        ) : mode === 'create' ? (
+          '配置 Scope、样本数据与解析/存储脚本'
+        ) : undefined
       }
+      centerSlot={<CollectionPipelineSectionNav />}
       extra={
         <Space>
           {mode === 'edit' && id ? (
-            <Button onClick={() => navigate(`${listPath}/${id}/test`)}>测试</Button>
+            <Button onClick={() => navigate(`${listPath}/${id}/test`)}>去测试</Button>
           ) : null}
+          <Button className="ai-btn" icon={<RobotOutlined />} onClick={handleAiPolish}>
+            AI 完善
+          </Button>
           <Button type="primary" loading={submitting} onClick={() => void submit()}>
             保存
           </Button>
-          {mode === 'edit' ? (
-            <Button loading={submitting} onClick={() => void publish()}>
-              发布
-            </Button>
-          ) : null}
         </Space>
       }
     >
-      <ProForm
-        form={form}
-        submitter={false}
-        layout="vertical"
-        initialValues={{ protocolType: 'serial', restrictSources: false }}
-      >
-        <CollectionPipelineForm
-          form={form}
-          mode={mode}
-          sampleData={sampleData}
-          onSampleDataChange={setSampleData}
-          targetStructure={targetStructure}
-          onTargetStructureChange={setTargetStructure}
-          parseScript={parseScript}
-          onParseScriptChange={setParseScript}
-          storeScript={storeScript}
-          onStoreScriptChange={setStoreScript}
-          readonlyCode={meta?.code}
-          readonlyBasePath={meta?.basePath}
-          readonlyRoutePath={meta?.routePath}
-          entityId={entityId}
-          onEntityIdChange={setEntityId}
-        />
-      </ProForm>
-    </PageContainer>
+      {formBody}
+    </FixHeaderPage>
   );
 };
+
+function buildPreviewLabel(values: CollectionPipelineFormValues) {
+  const scope = String(values.scopeCode || '').trim();
+  const slug = String(values.pipelineSlug || '').trim();
+  if (scope && slug) return `${scope}:${slug}`;
+  return undefined;
+}
 
 export default CollectionPipelineFormPage;

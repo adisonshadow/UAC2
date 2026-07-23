@@ -1084,6 +1084,27 @@ class ApplicationController {
       };
     }
   }
+
+  /**
+   * 返回 EADAF API 调用 Skill（纯 Markdown，供 AI / 工具直接读取）。
+   * 不套 { code, message, data } 外壳。
+   */
+  static async getPublicApiSkill(ctx) {
+    try {
+      const { getPublicApiSkillMarkdown } = require('../services/eadafApiSkillService');
+      const { markdown, version, contentType } = await getPublicApiSkillMarkdown(ctx.params.key);
+      ctx.set('Content-Type', contentType);
+      if (version) {
+        ctx.set('X-EADAF-Api-Skill-Version', version);
+      }
+      ctx.body = markdown;
+    } catch (error) {
+      const status = error.status || 500;
+      ctx.status = status;
+      ctx.set('Content-Type', 'text/plain; charset=utf-8');
+      ctx.body = error.message || '获取 API Skill 失败';
+    }
+  }
 }
 
 module.exports = ApplicationController; 

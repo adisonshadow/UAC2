@@ -143,7 +143,7 @@
 /* business_error：业务失败（Tool 已执行但校验未过）— 蓝色，区别于 system_error 红色 */
 .aibase-tool-invoke-steps--business-error .aibase-tool-step-business-error-icon,
 .aibase-tool-invoke-steps--business-error .ant-thought-chain-node-title {
-  color: var(--ant-color-primary, #1677ff);
+  color: #953300;
 }
 
 .aibase-tool-invoke-steps--business-error .ant-thought-chain-node-description {

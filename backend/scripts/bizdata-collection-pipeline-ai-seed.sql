@@ -37,10 +37,10 @@ VALUES
         '创建或更新采集管道',
         'collection-pipeline-upsert',
         'collection_pipeline_upsert',
-        '创建或更新采集管道（样本、目标 interface、解析/存储脚本）',
+        '创建或更新采集管道并持久化（含脚本）。suggest_scripts 仅草稿不能代替；成功须 verified=true',
         'client',
         '{"type":"object","properties":{"pipelineId":{"type":"string"},"scopeCode":{"type":"string"},"pipelineSlug":{"type":"string"},"name":{"type":"string"},"protocolType":{"type":"string","enum":["serial","modbus_rtu","modbus_tcp"]},"entityId":{"type":"string"},"sampleData":{"type":"string"},"targetStructure":{"type":"string"},"parseScript":{"type":"string"},"storeScript":{"type":"string"},"restrictSources":{"type":"boolean"},"applicationIds":{"type":"array","items":{"type":"string"}}}}'::jsonb,
-        E'## collection_pipeline_upsert\n\n- 有 pipelineId 则更新，否则创建\n- parse 导出 function parse(raw, ctx)\n- store 导出 async function store(data, ctx)\n- 绑定 entityId 前须已物化',
+        E'## collection_pipeline_upsert\n\n**唯一**持久化管道配置/脚本的 Tool。\n\n### 参数\n- 有 pipelineId → 更新；否则创建（须 scopeCode + pipelineSlug → code）\n- parseScript / storeScript：写入数据库，供 run_test / ingest 使用\n\n### 脚本契约（纯 JS；禁止未声明标识符）\n```javascript\nfunction parse(raw, ctx) {\n  // 仅可用 raw、ctx（protocolType/pipeline/entity）\n  // 禁止全局 channel/val/idx\n  return { field1: 1 };\n}\nasync function store(data, ctx) {\n  const { queryPg, tableQualified } = ctx;\n  const rows = await queryPg(\n    `INSERT INTO ${tableQualified} (id, col1) VALUES (gen_random_uuid(), $1) RETURNING id`,\n    [data.field1],\n  );\n  return { insertedId: rows[0]?.id };\n}\n```\n- 禁止 store(ctx, data)；禁止 ctx.bizdata\n\n### 成功判定\n- verified===true 且 listedOk；列表 `/api_services/collection-pipelines`，左侧选域如 fmms\n- 禁止未 verified 声称创建完成',
         '{}'::jsonb,
         true
     ),
@@ -102,10 +102,10 @@ VALUES
         '执行采集管道测试',
         'collection-pipeline-run-test',
         'collection_pipeline_run_test',
-        '使用 rawInput 执行解析+存储测试（事务回滚）',
+        '执行测试（读库内已持久化脚本）。须先 upsert；仅 suggest 不会生效',
         'client',
         '{"type":"object","properties":{"pipelineId":{"type":"string"},"code":{"type":"string"},"rawInput":{"type":"string"},"runType":{"type":"string","enum":["test","ai_test"]}}}'::jsonb,
-        E'## collection_pipeline_run_test\n\n- rawInput 省略时使用 sampleData\n- rolledBack=true 表示存储已回滚\n- 失败返回 success=false 与 error',
+        E'## collection_pipeline_run_test\n\n- 执行的是**数据库中**的 parseScript/storeScript\n- 若刚 suggest_scripts 未 upsert，测到的是旧脚本\n- rawInput 省略时用 sampleData；rolledBack 表示存储已回滚\n- 失败返回 success=false 与 error（如 ReferenceError: xxx is not defined = 脚本用了未声明变量）',
         '{}'::jsonb,
         true
     ),
@@ -115,10 +115,10 @@ VALUES
         '写入脚本草稿',
         'collection-pipeline-suggest-scripts',
         'collection_pipeline_suggest_scripts',
-        '将 AI 生成的 parse/store 脚本同步到编辑页',
+        '仅同步草稿到编辑页（不写库）。测试前必须 upsert 持久化',
         'client',
         '{"type":"object","properties":{"pipelineId":{"type":"string"},"parseScript":{"type":"string"},"storeScript":{"type":"string"},"targetStructure":{"type":"string"}},"required":["parseScript","storeScript"]}'::jsonb,
-        E'## collection_pipeline_suggest_scripts\n\n通过 mutation 同步到 edit/create Surface。\n\n### 脚本契约（必须）\n- parse(raw, ctx) → 对象，字段对齐 targetStructure\n- **store(data, ctx)** — 第一参数为 parse 结果，第二参数为 ctx\n- **禁止** `store(ctx, data)` 或 `store(ctx, parsed)` 参数顺序\n- **禁止** `ctx.bizdata.find/create` — 不存在该 API\n- store 须使用 **ctx.queryPg**、**ctx.tableQualified** 写入绑定实体的物化表\n- 物化表 id 列通常无默认值，INSERT 须显式 `gen_random_uuid()` 或传入 UUID',
+        E'## collection_pipeline_suggest_scripts\n\n**不持久化**。只 mutation 到 create/edit 表单。\n\n返回 persisted=false。下一步必须 `collection_pipeline_upsert` 带上同一 parseScript/storeScript，再 `run_test`。\n\n### 脚本契约\n- parse(raw, ctx) → 对象\n- store(data, ctx) 用 ctx.queryPg、ctx.tableQualified\n- 禁止 store(ctx, data)；禁止 ctx.bizdata；禁止未声明变量',
         '{}'::jsonb,
         true
     ),
@@ -128,10 +128,10 @@ VALUES
         '采集管道页面跳转',
         'collection-pipeline-navigate',
         'collection_pipeline_navigate',
-        '在 list / test 页面间跳转',
+        '跳转 list / create / edit / test',
         'client',
-        '{"type":"object","properties":{"target":{"type":"string","enum":["list","test"]},"pipelineId":{"type":"string"}},"required":["target"]}'::jsonb,
-        E'## collection_pipeline_navigate\n\n页面路径前缀 `/api_services/collection-pipelines`：\n- list → 列表\n- test → `/api_services/collection-pipelines/{id}/test`',
+        '{"type":"object","properties":{"target":{"type":"string","enum":["list","create","edit","test"]},"pipelineId":{"type":"string"}},"required":["target"]}'::jsonb,
+        E'## collection_pipeline_navigate\n\n前缀 `/api_services/collection-pipelines`：\n- list / create / edit / test\n- 创建成功后应 navigate list，并说明左侧选域',
         '{}'::jsonb,
         true
     ),
@@ -166,8 +166,8 @@ VALUES
         '55555555-5555-4555-8555-555555555501',
         '采集数据结构化',
         'api-services-collection-pipeline',
-        '配置 API 服务菜单下的采集管道：parse/store 脚本、测试与发布',
-        E'# 采集数据结构化助手（API 服务）\n\n你是 EADAF 采集数据结构化助手，帮助用户在 **API 服务 → 采集数据结构化**（路径 `/api_services/collection-pipelines`）配置采集管道。\n\n业务系统 POST plain text / 二进制数据，经 parse + store 脚本写入物化表。\n\n## 页面与 Surface\n- 列表：surfaceId=`bizdata.collection-pipelines.list`\n- 新建/编辑：surfaceId=`bizdata.collection-pipeline.create` / `bizdata.collection-pipeline.edit`\n- 测试：surfaceId=`bizdata.collection-pipeline.test`\n- 先用 `aibase_read_surfaces` 读取当前页，禁止向用户索要 pipelineId\n\n## 协议类型\n- serial / modbus_rtu / modbus_tcp 由管道固定，parse 脚本通过 ctx.protocolType 读取\n- application/octet-stream 时 raw 为 hex 字符串\n\n## 脚本契约\n- parse(raw, ctx) → 结构化对象，对齐 targetStructure\n- store(data, ctx) → 使用 ctx.queryPg、ctx.tableQualified 写入物化表\n\n## 工作流程\n1. `aibase_read_surfaces` 读取当前页\n2. `collection_pipeline_upsert` 保存配置\n3. `collection_pipeline_suggest_scripts` 写入 AI 生成的脚本\n4. `collection_pipeline_run_test` 测试（rolledBack 由系统设置决定）\n5. `collection_pipeline_publish` 发布\n\n## 测试协助\n- 测试页：`collection_pipeline_get_test_profile` → `collection_pipeline_run_test`\n\n## 来源限制\n- restrictSources=true 时仅允许 applicationIds 中的业务系统调用 ingest API',
+        '配置采集管道：脚本须 upsert 落库；测试读库；列表在 API 服务菜单',
+        E'# 采集数据结构化助手\n\n路径：**API 服务 → 采集数据结构化** `/api_services/collection-pipelines`（不在「业务数据」下）。\n\n## 硬规则（最高优先级）\n1. `collection_pipeline_suggest_scripts` = **仅编辑页草稿**（persisted=false）\n2. `collection_pipeline_run_test` = 执行**库里**的脚本；只 suggest 未 upsert → 测到旧脚本或空脚本\n3. 改脚本正确顺序：写脚本 → **`collection_pipeline_upsert`** → `run_test`\n4. 声称创建成功前：upsert 信封 `verified===true` / `listedOk`，并 `navigate list`\n5. 列表左侧按 code 域过滤；code=`fmms:digital_measure` 须选 **fmms** 或「全部」才能看见\n\n## Surface\n- list / create / edit / test：`bizdata.collection-pipelines.*` / `bizdata.collection-pipeline.*`\n- 先 `aibase_read_surfaces`，禁止向用户索要 pipelineId\n\n## ctx 与脚本（常见 ReferenceError 根因）\n- parse(raw, ctx)：只有 raw、ctx\n- store(data, ctx)：只有 data、ctx\n- ctx 字段：protocolType、pipeline、entity、tableQualified、queryPg\n- **没有**全局 channel / val / idx；须 `const`/`let` 自行声明\n- 禁止 ctx.bizdata；store 签名必须 store(data, ctx)\n\n## 推荐工作流\n1. read_surfaces\n2. list_entity_summaries / get_entity（确认已物化）\n3. **upsert**（一次带上 name/protocol/entityId/sampleData/parseScript/storeScript）\n4. 确认 verified → navigate list\n5. （可选）run_test；失败则根据 error 改脚本再 upsert 再测\n6. publish\n\n## 禁止\n- 未 upsert 就 run_test 并声称脚本已更新\n- 未 verified / 未 list 回读就声称「创建完成」\n- 把草稿 suggest 当成落库',
         true
     )
 ON CONFLICT (slug) DO UPDATE SET

@@ -1,12 +1,19 @@
 import Editor from '@monaco-editor/react';
 import { ProForm, ProFormCheckbox, ProFormRadio, ProFormSelect, ProFormText } from '@ant-design/pro-components';
-import { Alert, Card, Col, Form, Row, Segmented, Spin, Tag, Typography } from 'antd';
+import { QuestionCircleOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Col, Form, Popover, Row, Segmented, Select, Spin, Tag, Tooltip, Typography } from 'antd';
 import type { FormInstance } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import TitleWithHelp from '@/components/TitleWithHelp';
+import HandlerSdkHelpModalContent from './HandlerSdkHelpModalContent';
+import AntdTagInput from '@/components/AntdTagInput';
+import OperationParameterPanel, {
+  isQueryOnlyMethod,
+  type ParameterRow,
+} from '@/components/OperationParameterPanel';
+import ResponseDocumentEditor, { tryParseJson } from '@/components/ResponseDocumentPanel';
 import ApiServiceScopeLookup from './ApiServiceScopeLookup';
 import DepartmentLookup from './DepartmentLookup';
-import DataModelReferenceTree from './DataModelReferenceTree';
 import { useRoleOptions } from '@/hooks/useRoleOptions';
 import { postApiServiceResolveConnection } from '@/services/UAC/api/apiServices';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
@@ -16,16 +23,60 @@ import {
   normalizeTransportProtocols,
   type ApiServiceTransportProtocol,
 } from '../utils/apiServiceTransport';
+import {
+  appendFieldsToInterface,
+  extractHandlerParams,
+  guessHandlerParamTsType,
+} from '../utils/extractHandlerParams';
+import {
+  buildParameterRowsFromInterface,
+  collectEnumCodesFromInterface,
+  ensureExampleValues,
+  loadEnumOptionsByCodes,
+  type EnumOptionsByCode,
+} from '../utils/buildParameterRowsFromInterface';
+import { parseInterfaceFields } from '../utils/parseInterfaceFields';
+import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
+import {
+  buildParamsAmbientDts,
+  formatHandlerDiagnostics,
+  loadHandlerSdkDts,
+} from '../utils/handlerTypeCheckClient';
+import {
+  buildHandlerBodyRestriction,
+  normalizeHandlerBody,
+  wrapHandlerBodyForEditor,
+} from '../utils/handlerEditorShell';
+import { constrainedEditor } from 'constrained-editor-plugin';
+import './ApiServiceForm.css';
 
 const { Text } = Typography;
 
 const PARAM_INTERFACE_HELP = (
-  <div style={{ maxWidth: 360 }}>
+  <div style={{ maxWidth: 400 }}>
     <p style={{ margin: '0 0 8px' }}>
-      设计期在此声明参数结构；运行时客户端仍传 JSON。
+      设计期在此声明参数结构（唯一真相源）。请求参数 Example / 测试页仅当参数类型连接到枚举时才渲染 Select。
+    </p>
+    <p style={{ margin: '0 0 8px' }}>
+      枚举连接（推荐）：
+      <Text code>type StatusType = getADBEnumByCode&lt;&quot;fmms:Xxx&quot;&gt;;</Text>
+      {' '}再写 <Text code>status?: StatusType</Text> 或 <Text code>StatusType[]</Text>（多选）。
+      须用泛型尖括号，不能写成函数调用 <Text code>getADBEnumByCode(&quot;...&quot;)</Text>。
+    </p>
+    <p style={{ margin: '0 0 8px' }}>
+      文件字段标注 <Text code>@file</Text>（storage objectId / UUID）。
     </p>
     <p style={{ margin: 0 }}>
-      文件字段须标注 <Text code>@file</Text> 或注明 storage objectId，值为 storage objectId（UUID）。
+      必填字段不要写 <Text code>?</Text>，Example 面板会显示 <Text code>*</Text>。
+    </p>
+  </div>
+);
+
+const GET_PARAM_EXAMPLE_HELP = (
+  <div style={{ maxWidth: 360 }}>
+    <p style={{ margin: 0 }}>
+      左侧 interface 决定参数结构（控件类型）；此处为「请求参数 Example」示例值（与测试页同源），可在默认值上修改。
+      Example 不应为空；未填时会按类型生成默认值（如 boolean→false）。
     </p>
   </div>
 );
@@ -36,13 +87,7 @@ const SQL_SCRIPT_HELP = (
   </div>
 );
 
-const HANDLER_SCRIPT_HELP = (
-  <div style={{ maxWidth: 360 }}>
-    <p style={{ margin: 0 }}>
-      导出 <Text code>async function handler(ctx)</Text>，ctx 提供 params、queryPg(sql, bindings) 等；服务端沙箱执行，超时 5s。
-    </p>
-  </div>
-);
+const HANDLER_SCRIPT_HELP = <HandlerSdkHelpModalContent />;
 
 const TRANSPORT_HELP = (
   <div style={{ maxWidth: 380 }}>
@@ -52,6 +97,14 @@ const TRANSPORT_HELP = (
       <li><Text strong>SSE</Text>：读操作流式推送（find/count 等）</li>
       <li><Text strong>WebSocket</Text>：双向 JSON 消息，适合实时交互</li>
     </ul>
+  </div>
+);
+
+const RESPONSE_SCHEMA_HELP = (
+  <div style={{ maxWidth: 360 }}>
+    <p style={{ margin: 0 }}>
+      Responses Schema 与 Example（JSON）分开维护；Schema 中可用 $refEntity 引用数据模型实体（如 @web:user）。
+    </p>
   </div>
 );
 
@@ -66,17 +119,22 @@ const CATEGORY_LABEL: Record<string, string> = {
 const SQL_PLACEHOLDER = `-- 在此编写服务 SQL，可跨多张物化表 JOIN、聚合、子查询
 -- 命名参数示例：WHERE o.status = :status LIMIT :limit OFFSET :skip`;
 
-const PARAM_INTERFACE_PLACEHOLDER = `interface RequestParams {
+const PARAM_INTERFACE_PLACEHOLDER = `type StatusType = getADBEnumByCode<"fmms:WorkCardStatus">;
+
+interface RequestParams {
   /** 分页条数 */
   limit?: number;
+  skip?: number;
+  /** 工卡状态（单选） */
+  status?: StatusType;
   /** 文件字段须填 storage objectId（UUID） */
   avatarId?: string; // @file storage objectId
 }`;
 
-const HANDLER_PLACEHOLDER = `export async function handler(ctx) {
-  const { params, queryPg } = ctx;
-  const rows = await queryPg('SELECT 1 AS ok', []);
-  return { items: rows };
+const REQUEST_EXAMPLE_PLACEHOLDER = `{
+  "limit": 10,
+  "skip": 0,
+  "nearest_only": false
 }`;
 
 const CODE_SEGMENT_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -92,6 +150,34 @@ function buildPreviewCode(scopeCode?: string, serviceSlug?: string) {
   return `${scope}:${slug}`;
 }
 
+export function buildDefaultRequestExample(interfaceText?: string) {
+  const fields = parseInterfaceFields(interfaceText);
+  if (!fields.length) return {};
+  const result: Record<string, unknown> = {};
+  fields.forEach((field) => {
+    const type = String(field.type || '').toLowerCase();
+    const name = field.name;
+    if (name === 'id') {
+      result[name] = '00000000-0000-4000-8000-000000000001';
+    } else if (name === 'limit') {
+      result[name] = 10;
+    } else if (name === 'skip' || name === 'offset') {
+      result[name] = 0;
+    } else if (type.includes('number')) {
+      result[name] = 0;
+    } else if (type.includes('boolean')) {
+      result[name] = false;
+    } else if (type.includes('[]')) {
+      result[name] = [];
+    } else if (type.includes('object') || type.includes('record')) {
+      result[name] = {};
+    } else {
+      result[name] = name ? `sample_${name}` : '';
+    }
+  });
+  return result;
+}
+
 export type ApiServiceAccessRestrictionMode = 'none' | 'role' | 'department';
 
 export type ApiServiceFormValues = {
@@ -99,7 +185,7 @@ export type ApiServiceFormValues = {
   scopeCode?: string;
   serviceSlug?: string;
   name?: string;
-  tags?: string;
+  tags?: string[];
   transportProtocols?: ApiServiceTransportProtocol[];
   accessRestrictionMode?: ApiServiceAccessRestrictionMode;
   roleIds?: string[];
@@ -117,8 +203,15 @@ export type ApiServiceFormProps = {
   onHandlerScriptChange: (value: string) => void;
   requestParameterInterface: string;
   onRequestParameterInterfaceChange: (value: string) => void;
+  requestExampleText: string;
+  onRequestExampleTextChange: (value: string) => void;
   readonlyCode?: string;
   entityId?: string;
+  entityCode?: string;
+  responsesSchemaText: string;
+  onResponsesSchemaTextChange: (value: string) => void;
+  responseExampleText: string;
+  onResponseExampleTextChange: (value: string) => void;
 };
 
 const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
@@ -131,8 +224,15 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
   onHandlerScriptChange,
   requestParameterInterface,
   onRequestParameterInterfaceChange,
+  requestExampleText,
+  onRequestExampleTextChange,
   readonlyCode,
   entityId,
+  entityCode,
+  responsesSchemaText,
+  onResponsesSchemaTextChange,
+  responseExampleText,
+  onResponseExampleTextChange,
 }) => {
   const { roleOptions, roleOptionsLoading } = useRoleOptions();
   const scopeCode = Form.useWatch('scopeCode', form);
@@ -140,10 +240,139 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
   const accessRestrictionMode = Form.useWatch('accessRestrictionMode', form);
   const scriptMode = Form.useWatch('scriptMode', form) || 'sql';
   const transportProtocols = Form.useWatch('transportProtocols', form) as ApiServiceTransportProtocol[] | undefined;
+  const primaryOperation = Form.useWatch('primaryOperation', form);
 
   const [resolvedConnection, setResolvedConnection] = useState<API.ApiServiceResolvedConnection | null>(null);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [handlerDiagnosticsText, setHandlerDiagnosticsText] = useState<string | null>(null);
+  /** enumCode → options（interface 声明的 getADBEnumByCode） */
+  const [enumOptionsByCode, setEnumOptionsByCode] = useState<EnumOptionsByCode>({});
+  const monacoRef = React.useRef<any>(null);
+  const handlerEditorRef = React.useRef<any>(null);
+  const constrainedRef = React.useRef<ReturnType<typeof constrainedEditor> | null>(null);
+  const applyingExternalHandlerRef = React.useRef(false);
+
+  const handlerDisplayValue = useMemo(
+    () => wrapHandlerBodyForEditor(handlerScript),
+    [handlerScript],
+  );
+
+  const applyHandlerRestrictions = useCallback((editor: any, fullText: string) => {
+    const model = editor?.getModel?.();
+    const constrained = constrainedRef.current;
+    if (!model || !constrained) return;
+    try {
+      constrained.removeRestrictionsIn(model);
+    } catch {
+      // model may not yet have restrictions
+    }
+    constrained.addRestrictionsTo(model, [buildHandlerBodyRestriction(fullText)]);
+  }, []);
+
+  const applyMonacoLibs = useCallback(async (monaco: any, ifaceText: string) => {
+    const tsDefaults = monaco.languages.typescript.typescriptDefaults;
+    tsDefaults.setCompilerOptions({
+      target: monaco.languages.typescript.ScriptTarget.ES2020,
+      allowNonTsExtensions: true,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      module: monaco.languages.typescript.ModuleKind.ESNext,
+      noEmit: true,
+      strict: false,
+      noImplicitAny: false,
+    });
+    tsDefaults.setDiagnosticsOptions({
+      noSemanticValidation: false,
+      noSyntaxValidation: false,
+    });
+    const sdkDts = await loadHandlerSdkDts();
+    tsDefaults.addExtraLib(sdkDts || 'declare function db(entityCode?: string): any;\ndeclare const params: any;\ndeclare const ctx: any;\ndeclare interface HandlerContext { [key: string]: unknown }', 'file:///eadaf-handler-sdk.d.ts');
+    tsDefaults.addExtraLib(buildParamsAmbientDts(ifaceText), 'file:///eadaf-handler-params.d.ts');
+  }, []);
+
+  const handleIfaceEditorBeforeMount = useCallback((monaco: any) => {
+    const tsDefaults = monaco.languages.typescript.typescriptDefaults;
+    tsDefaults.setCompilerOptions({
+      target: monaco.languages.typescript.ScriptTarget.ES2020,
+      allowNonTsExtensions: true,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      module: monaco.languages.typescript.ModuleKind.ESNext,
+      noEmit: true,
+      strict: false,
+      noImplicitAny: false,
+    });
+    tsDefaults.addExtraLib(
+      'type getADBEnumByCode<_Code extends string = string> = string;\n',
+      'file:///eadaf-adb-enum.d.ts',
+    );
+  }, []);
+
+  const handleHandlerEditorBeforeMount = useCallback((monaco: any) => {
+    monacoRef.current = monaco;
+    void applyMonacoLibs(monaco, requestParameterInterface);
+  }, [applyMonacoLibs, requestParameterInterface]);
+
+  const handleHandlerEditorMount = useCallback((editor: any, monaco: any) => {
+    handlerEditorRef.current = editor;
+    monacoRef.current = monaco;
+    const constrained = constrainedEditor(monaco);
+    constrained.initializeIn(editor);
+    constrainedRef.current = constrained;
+    const fullText = editor.getModel()?.getValue() || wrapHandlerBodyForEditor(handlerScript);
+    applyHandlerRestrictions(editor, fullText);
+    const range = buildHandlerBodyRestriction(fullText).range;
+    editor.setPosition({ lineNumber: range[0], column: Math.min(3, range[3] || 1) });
+  }, [applyHandlerRestrictions, handlerScript]);
+
+  useEffect(() => {
+    if (!monacoRef.current || scriptMode !== 'typescript') return;
+    void applyMonacoLibs(monacoRef.current, requestParameterInterface);
+  }, [requestParameterInterface, scriptMode, applyMonacoLibs]);
+
+  // 外部（AI / 加载）更新 body 时，同步编辑器并重建锁定区间（按 body 比较，避免缩进往返抖动）
+  useEffect(() => {
+    if (scriptMode !== 'typescript') return;
+    const editor = handlerEditorRef.current;
+    const model = editor?.getModel?.();
+    if (!editor || !model) return;
+    const currentBody = normalizeHandlerBody(model.getValue());
+    const nextBody = normalizeHandlerBody(handlerScript);
+    if (currentBody === nextBody) return;
+    const next = wrapHandlerBodyForEditor(nextBody);
+    applyingExternalHandlerRef.current = true;
+    model.setValue(next);
+    applyingExternalHandlerRef.current = false;
+    applyHandlerRestrictions(editor, next);
+  }, [handlerScript, scriptMode, applyHandlerRestrictions]);
+
+  const handleHandlerEditorChange = useCallback((val?: string) => {
+    if (applyingExternalHandlerRef.current) return;
+    const body = normalizeHandlerBody(val ?? '');
+    onHandlerScriptChange(body);
+  }, [onHandlerScriptChange]);
+
+  useEffect(() => {
+    if (scriptMode !== 'typescript') {
+      setHandlerDiagnosticsText(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const { ensureHandlerScriptValid } = await import('../utils/handlerTypeCheckClient');
+      const body = normalizeHandlerBody(handlerScript);
+      const result = await ensureHandlerScriptValid(body, requestParameterInterface);
+      if (cancelled) return;
+      if (!result) {
+        setHandlerDiagnosticsText(null);
+        return;
+      }
+      setHandlerDiagnosticsText(formatHandlerDiagnostics(result.diagnostics));
+    }, 700);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [scriptMode, handlerScript, requestParameterInterface]);
 
   const operationSelectOptions = useMemo(() => {
     const groups = new Map<string, API.ApiServiceOperationMeta[]>();
@@ -213,230 +442,506 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
     return buildTransportEndpointPreview(routePath, protocols);
   }, [previewCode, transportProtocols]);
 
+  const operationMeta = useMemo(
+    () => operationCatalog.find((item) => item.operation === primaryOperation),
+    [operationCatalog, primaryOperation],
+  );
+  const httpMethod = operationMeta?.httpMethod;
+  const routePattern = operationMeta?.routePattern || '';
+  const isGetOperation = isQueryOnlyMethod(httpMethod);
+
+  const neededEnumCodes = useMemo(
+    () => collectEnumCodesFromInterface(requestParameterInterface),
+    [requestParameterInterface],
+  );
+
+  const neededEnumCodesKey = useMemo(
+    () => neededEnumCodes.slice().sort().join('|'),
+    [neededEnumCodes],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!neededEnumCodes.length) {
+      setEnumOptionsByCode({});
+      return undefined;
+    }
+    void (async () => {
+      try {
+        const next = await loadEnumOptionsByCodes(neededEnumCodes);
+        if (!cancelled) setEnumOptionsByCode(next);
+      } catch {
+        if (!cancelled) setEnumOptionsByCode({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [neededEnumCodesKey]);
+
+  const previewParameterRows = useMemo<ParameterRow[]>(
+    () =>
+      buildParameterRowsFromInterface({
+        interfaceText: requestParameterInterface,
+        httpMethod,
+        routePattern,
+        enumOptionsByCode,
+      }),
+    [requestParameterInterface, httpMethod, routePattern, enumOptionsByCode],
+  );
+
+  const handlerMissingInterfaceFields = useMemo(() => {
+    if (scriptMode !== 'typescript') return [];
+    const body = normalizeHandlerBody(handlerScript);
+    const declared = new Set(parseInterfaceFields(requestParameterInterface).map((f) => f.name));
+    return extractHandlerParams(body).filter((name) => !declared.has(name));
+  }, [scriptMode, handlerScript, requestParameterInterface]);
+
+  const handleAppendHandlerParamsToInterface = useCallback(() => {
+    if (!handlerMissingInterfaceFields.length) return;
+    const next = appendFieldsToInterface(
+      requestParameterInterface,
+      handlerMissingInterfaceFields.map((name) => ({
+        name,
+        type: guessHandlerParamTsType(name),
+      })),
+    );
+    onRequestParameterInterfaceChange(next);
+  }, [
+    handlerMissingInterfaceFields,
+    requestParameterInterface,
+    onRequestParameterInterfaceChange,
+  ]);
+
+  const responsePreview = useMemo(
+    () => buildOperationResponsePreview(primaryOperation, entityCode, requestParameterInterface),
+    [primaryOperation, entityCode, requestParameterInterface],
+  );
+
+  const requestExampleError = useMemo(() => {
+    if (isGetOperation) return null;
+    const parsed = tryParseJson(requestExampleText);
+    return parsed.ok ? null : parsed.error;
+  }, [requestExampleText, isGetOperation]);
+
+  const requestExampleValues = useMemo(() => {
+    const parsed = tryParseJson(requestExampleText);
+    const current =
+      parsed.ok && parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value)
+        ? (parsed.value as Record<string, unknown>)
+        : {};
+    // Example 基于 interface 结构补齐，避免空对象
+    return ensureExampleValues(previewParameterRows, current);
+  }, [requestExampleText, previewParameterRows]);
+
+  // interface / 枚举就绪后，若 Example 仍为空则写回默认 Example
+  useEffect(() => {
+    if (!isGetOperation || !previewParameterRows.length) return;
+    const parsed = tryParseJson(requestExampleText);
+    const current =
+      parsed.ok && parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value)
+        ? (parsed.value as Record<string, unknown>)
+        : {};
+    const ensured = ensureExampleValues(previewParameterRows, current);
+    if (JSON.stringify(ensured) === JSON.stringify(current)) return;
+    if (Object.keys(current).length === 0) {
+      onRequestExampleTextChange(JSON.stringify(ensured, null, 2));
+    }
+  }, [
+    isGetOperation,
+    previewParameterRows,
+    requestExampleText,
+    onRequestExampleTextChange,
+  ]);
+
+  const handleRequestExampleValuesChange = useCallback(
+    (values: Record<string, unknown>) => {
+      onRequestExampleTextChange(JSON.stringify(values, null, 2));
+    },
+    [onRequestExampleTextChange],
+  );
+
   return (
-    <>
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16}>
-          <Col span={24}>
-            <ProFormSelect
-              label="主操作类型"
-              name="primaryOperation"
-              rules={[{ required: true, message: '请选择主操作类型' }]}
-              options={operationSelectOptions}
-              fieldProps={{
-                showSearch: true,
-                placeholder: '选择 API 主操作（find / aggregate / create 等）',
-                optionFilterProp: 'label',
-              }}
-            />
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              label="数据模型 Scope"
-              name="scopeCode"
-              rules={[{ required: mode === 'create', message: '请选择 Scope' }]}
-            >
-              <ApiServiceScopeLookup />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <ProFormText
-              label="服务短名"
-              name="serviceSlug"
-              rules={[
-                { required: mode === 'create', message: '请输入服务短名' },
-                {
-                  pattern: CODE_SEGMENT_RE,
-                  message: '须为字母开头且仅含字母数字下划线',
-                },
-              ]}
-              fieldProps={{ placeholder: 'OrderSummary' }}
-              tooltip="与 Scope 组合生成 code，如 sales:OrderSummary"
-            />
-          </Col>
-          <Col span={24}>
-            {previewCode ? (
-              <Alert
-                type="info"
-                showIcon
-                message={
-                  <span>
-                    服务 code：<Text code>{previewCode}</Text>
-                    {' · '}
-                    路径：<Text code>/api/v1/data/{codeToRoutePath(previewCode)}</Text>
+    <div className="api-service-form">
+      {/* 信息 */}
+      <section id="api-service-section-info" className="api-service-form__section">
+        <h3 className="api-service-form__section-title">信息</h3>
+
+        <Card style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item label="主操作类型" required>
+                <div className="api-service-form__operation-row">
+                  <Form.Item
+                    name="primaryOperation"
+                    rules={[{ required: true, message: '请选择主操作类型' }]}
+                    noStyle
+                  >
+                    <Select
+                      showSearch
+                      allowClear
+                      placeholder="选择 API 主操作（find / aggregate / create 等）"
+                      optionFilterProp="label"
+                      options={operationSelectOptions}
+                      className="api-service-form__operation-select"
+                    />
+                  </Form.Item>
+                  {httpMethod ? (
+                    <>
+                      <Tag color={isGetOperation ? 'blue' : 'green'} className="api-service-form__operation-tag">
+                        {httpMethod}
+                      </Tag>
+                      <Tooltip
+                        title={
+                          isGetOperation
+                            ? 'GET 请求：参数通过 URL query string 传递，运行时不会读取 request body'
+                            : `${httpMethod} 请求：参数通过 request body（application/json）传递`
+                        }
+                      >
+                        <QuestionCircleOutlined className="api-service-form__operation-help-icon" />
+                      </Tooltip>
+                    </>
+                  ) : null}
+                </div>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="数据模型 Scope"
+                name="scopeCode"
+                rules={[{ required: mode === 'create', message: '请选择 Scope' }]}
+              >
+                <ApiServiceScopeLookup />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <ProFormText
+                label={
+                  <span className="api-service-form__service-slug-label">
+                    服务短名
+                    {previewCode ? (
+                      <Popover
+                        trigger={['hover', 'click']}
+                        content={
+                          <div className="api-service-form__code-popover">
+                            <div>
+                              服务 code：<Text code>{previewCode}</Text>
+                            </div>
+                            <div>
+                              路径：<Text code>/api/v1/data/{codeToRoutePath(previewCode)}</Text>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <Tag className="api-service-form__code-tag">Code</Tag>
+                      </Popover>
+                    ) : null}
                   </span>
                 }
+                name="serviceSlug"
+                rules={[
+                  { required: mode === 'create', message: '请输入服务短名' },
+                  {
+                    pattern: CODE_SEGMENT_RE,
+                    message: '须为字母开头且仅含字母数字下划线',
+                  },
+                ]}
+                fieldProps={{ placeholder: 'OrderSummary' }}
+                tooltip="与 Scope 组合生成 code，如 sales:OrderSummary"
               />
-            ) : (
-              <Text type="secondary">选择 Scope 并填写服务短名后将自动生成 code</Text>
-            )}
-          </Col>
-          <Col span={24} style={{ marginTop: 8 }}>
-            {resolveLoading && <Spin size="small" description="正在推断数据库连接…" />}
-            {!resolveLoading && scopeCode && resolvedConnection && (
-              <Text type="secondary">
-                将使用连接：{resolvedConnection.connectionName}（{resolvedConnection.dbType}，自动推断）
-              </Text>
-            )}
-            {!resolveLoading && resolveError && (
-              <Text type="danger">{resolveError}</Text>
-            )}
-          </Col>
-          <Col span={12}>
-            <ProFormText
-              label="显示名称"
-              name="name"
-              placeholder="订单汇总 API"
-              rules={[{ required: true, message: '请输入显示名称' }]}
-            />
-          </Col>
-          <Col span={12}>
-            <ProFormText label="标签" name="tags" placeholder="report, readonly（逗号分隔）" />
-          </Col>
-        </Row>
-      </Card>
-
-      <Card title="API 访问限制" style={{ marginBottom: 16 }}>
-        <ProFormRadio.Group
-          name="accessRestrictionMode"
-          label="访问策略"
-          options={[
-            { label: '无限制', value: 'none' },
-            { label: '限制用户角色', value: 'role' },
-            { label: '限制用户组织', value: 'department' },
-          ]}
-        />
-        {accessRestrictionMode === 'role' && (
-          <ProFormSelect
-            name="roleIds"
-            label="允许的角色"
-            mode="multiple"
-            rules={[{ required: true, message: '请选择至少一个角色' }]}
-            options={roleOptions}
-            fieldProps={{
-              loading: roleOptionsLoading,
-              placeholder: '选择可访问该 API 的角色',
-            }}
-          />
-        )}
-        {accessRestrictionMode === 'department' && (
-          <Form.Item
-            name="departmentIds"
-            label="允许的组织"
-            rules={[{ required: true, message: '请选择至少一个组织' }]}
-          >
-            <DepartmentLookup />
-          </Form.Item>
-        )}
-        <Text type="secondary">测试页发送测试请求时默认绕过访问限制</Text>
-      </Card>
-
-      <Card
-        title={<TitleWithHelp title="访问协议" help={TRANSPORT_HELP} />}
-        style={{ marginBottom: 16 }}
-      >
-        <ProFormCheckbox.Group
-          name="transportProtocols"
-          rules={[
-            {
-              validator: (_, value) => {
-                const list = normalizeTransportProtocols(value as string[] | undefined);
-                return list.length ? Promise.resolve() : Promise.reject(new Error('至少选择一种访问协议'));
-              },
-            },
-          ]}
-          options={API_SERVICE_TRANSPORT_OPTIONS.map((item) => ({
-            label: (
-              <span>
-                {item.label}
-                <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                  {item.description}
+            </Col>
+            <Col span={24} style={{ marginTop: 8 }}>
+              {resolveLoading && <Spin size="small" description="正在推断数据库连接…" />}
+              {!resolveLoading && scopeCode && resolvedConnection && (
+                <Text type="secondary">
+                  将使用连接：{resolvedConnection.connectionName}（{resolvedConnection.dbType}，自动推断）
                 </Text>
-              </span>
-            ),
-            value: item.value,
-          }))}
-        />
-        {endpointPreview.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            {endpointPreview.map((item) => (
-              <div key={item.protocol} style={{ marginBottom: 4 }}>
-                <Tag color="blue">{item.label}</Tag>
-                <Text code copyable>{item.url}</Text>
+              )}
+              {!resolveLoading && resolveError && (
+                <Text type="danger">{resolveError}</Text>
+              )}
+            </Col>
+            <Col span={12}>
+              <ProFormText
+                label="显示名称"
+                name="name"
+                placeholder="订单汇总 API"
+                rules={[{ required: true, message: '请输入显示名称' }]}
+              />
+            </Col>
+            <Col span={12}>
+              <Form.Item label="标签" name="tags">
+                <AntdTagInput placeholder="report, readonly" />
+              </Form.Item>
+            </Col>
+            {endpointPreview.length > 0 ? (
+              <Col span={24}>
+                <div className="api-service-form__endpoint-preview">
+                  {endpointPreview.map((item) => (
+                    <div key={item.protocol} className="api-service-form__endpoint-preview-item">
+                      <Tag color="blue">{item.label}</Tag>
+                      <Text code copyable>{item.url}</Text>
+                    </div>
+                  ))}
+                </div>
+              </Col>
+            ) : null}
+          </Row>
+        </Card>
+
+        <Card title="API 访问限制" style={{ marginBottom: 16 }}>
+          <ProFormRadio.Group
+            name="accessRestrictionMode"
+            label="访问策略"
+            options={[
+              { label: '无限制', value: 'none' },
+              { label: '限制用户角色', value: 'role' },
+              { label: '限制用户组织', value: 'department' },
+            ]}
+          />
+          {accessRestrictionMode === 'role' && (
+            <ProFormSelect
+              name="roleIds"
+              label="允许的角色"
+              mode="multiple"
+              rules={[{ required: true, message: '请选择至少一个角色' }]}
+              options={roleOptions}
+              fieldProps={{
+                loading: roleOptionsLoading,
+                placeholder: '选择可访问该 API 的角色',
+              }}
+            />
+          )}
+          {accessRestrictionMode === 'department' && (
+            <Form.Item
+              name="departmentIds"
+              label="允许的组织"
+              rules={[{ required: true, message: '请选择至少一个组织' }]}
+            >
+              <DepartmentLookup />
+            </Form.Item>
+          )}
+          <Text type="secondary">测试页发送测试请求时默认绕过访问限制</Text>
+        </Card>
+
+        <Card
+          title={<TitleWithHelp title="访问协议" help={TRANSPORT_HELP} />}
+          style={{ marginBottom: 16 }}
+        >
+          <ProFormCheckbox.Group
+            name="transportProtocols"
+            rules={[
+              {
+                validator: (_, value) => {
+                  const list = normalizeTransportProtocols(value as string[] | undefined);
+                  return list.length ? Promise.resolve() : Promise.reject(new Error('至少选择一种访问协议'));
+                },
+              },
+            ]}
+            options={API_SERVICE_TRANSPORT_OPTIONS.map((item) => ({
+              label: (
+                <span>
+                  {item.label}
+                  <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+                    {item.description}
+                  </Text>
+                </span>
+              ),
+              value: item.value,
+            }))}
+          />
+        </Card>
+      </section>
+
+      {/* 请求 */}
+      <section id="api-service-section-request" className="api-service-form__section">
+        <h3 className="api-service-form__section-title">请求</h3>
+
+        <Card style={{ marginBottom: 16 }}>
+          <Row gutter={16}>
+            <Col
+              span={12}
+              className={isGetOperation ? undefined : 'api-service-form__editor-split-left'}
+            >
+              <div className="api-service-form__request-col-title">
+                <TitleWithHelp title="请求参数结构（TypeScript interface）" help={PARAM_INTERFACE_HELP} />
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
+              <Editor
+                height="280px"
+                language="typescript"
+                value={requestParameterInterface}
+                onChange={(val) => onRequestParameterInterfaceChange(val || '')}
+                beforeMount={handleIfaceEditorBeforeMount}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  wordWrap: 'on',
+                  placeholder: PARAM_INTERFACE_PLACEHOLDER,
+                }}
+              />
+            </Col>
+            <Col span={12}>
+              {isGetOperation ? (
+                <>
+                  <div className="api-service-form__request-col-title">
+                    <TitleWithHelp title="请求参数 Example（Query）" help={GET_PARAM_EXAMPLE_HELP} />
+                  </div>
+                  <div className="operation-parameter-panel--bounded">
+                    <OperationParameterPanel
+                      httpMethod={httpMethod}
+                      parameters={previewParameterRows}
+                      values={requestExampleValues}
+                      onChange={handleRequestExampleValuesChange}
+                      emptyText="暂无可识别的参数字段"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="api-service-form__request-col-title">请求参数 Example（JSON）</div>
+                  {requestExampleError ? (
+                    <Alert type="error" showIcon message={requestExampleError} style={{ marginBottom: 8 }} />
+                  ) : null}
+                  <Editor
+                    height="280px"
+                    language="json"
+                    value={requestExampleText}
+                    onChange={(val) => onRequestExampleTextChange(val || '')}
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      wordWrap: 'on',
+                      placeholder: REQUEST_EXAMPLE_PLACEHOLDER,
+                    }}
+                  />
+                </>
+              )}
+            </Col>
+          </Row>
+        </Card>
+      </section>
 
-      <Card
-        title={<TitleWithHelp title="请求参数结构（TypeScript interface）" help={PARAM_INTERFACE_HELP} />}
-        style={{ marginBottom: 16 }}
-      >
-        <Editor
-          height="220px"
-          language="typescript"
-          value={requestParameterInterface}
-          onChange={(val) => onRequestParameterInterfaceChange(val || '')}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 13,
-            wordWrap: 'on',
-            placeholder: PARAM_INTERFACE_PLACEHOLDER,
-          }}
-        />
-      </Card>
+      {/* 处理 */}
+      <section id="api-service-section-process" className="api-service-form__section">
+        <h3 className="api-service-form__section-title">处理</h3>
 
+        <Card
+          title={
+            <TitleWithHelp
+              title="服务脚本"
+              help={scriptHelp}
+              helpMode={scriptMode === 'typescript' ? 'modal' : 'popover'}
+              modalTitle="TypeScript Handler SDK"
+              modalWidth={760}
+            />
+          }
+          style={{ marginBottom: 16 }}
+          extra={
+            <Form.Item name="scriptMode" noStyle>
+              <Segmented
+                options={[
+                  { label: 'SQL', value: 'sql' },
+                  { label: 'TypeScript Handler', value: 'typescript' },
+                ]}
+              />
+            </Form.Item>
+          }
+        >
+          {scriptMode === 'typescript' && handlerMissingInterfaceFields.length > 0 ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Handler 使用了未在「请求参数结构」中声明的参数"
+              description={
+                <span>
+                  缺失：{handlerMissingInterfaceFields.map((n) => (
+                    <Text code key={n} style={{ marginRight: 6 }}>{n}</Text>
+                  ))}
+                  。请补全 interface（推荐），否则参数面板 / OpenAPI / 测试 Example 不会展示这些字段。
+                </span>
+              }
+              action={
+                <Button size="small" type="primary" onClick={handleAppendHandlerParamsToInterface}>
+                  补全到请求参数结构
+                </Button>
+              }
+            />
+          ) : null}
+          {scriptMode === 'typescript' && handlerDiagnosticsText ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Handler 语法/类型检查未通过"
+              description={
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>
+                  {handlerDiagnosticsText}
+                </pre>
+              }
+            />
+          ) : null}
+          {scriptMode === 'typescript' ? (
+            <Editor
+              key={`handler-editor:${mode}:${readonlyCode || 'new'}`}
+              height="360px"
+              language="typescript"
+              path="file:///eadaf-api-handler.ts"
+              defaultValue={handlerDisplayValue}
+              onChange={handleHandlerEditorChange}
+              beforeMount={handleHandlerEditorBeforeMount}
+              onMount={handleHandlerEditorMount}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                wordWrap: 'on',
+              }}
+            />
+          ) : (
+            <Editor
+              height="320px"
+              language="sql"
+              value={definitionScript}
+              onChange={(val) => onDefinitionScriptChange(val || '')}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                wordWrap: 'on',
+                placeholder: SQL_PLACEHOLDER,
+              }}
+            />
+          )}
+        </Card>
+      </section>
+
+      {/* 响应 */}
+      <section id="api-service-section-response" className="api-service-form__section">
+        <h3 className="api-service-form__section-title">响应</h3>
+
+        {responsePreview ? (
+          <Card
+            title={<TitleWithHelp title="响应结构（Responses Schema & Example）" help={RESPONSE_SCHEMA_HELP} />}
+            style={{ marginBottom: 16 }}
+          >
+            <ResponseDocumentEditor
+              responsesSchemaText={responsesSchemaText}
+              responseExampleText={responseExampleText}
+              onResponsesSchemaChange={onResponsesSchemaTextChange}
+              onResponseExampleChange={onResponseExampleTextChange}
+            />
+          </Card>
+        ) : null}
+      </section>
+
+      {/* 暂时不用
       <Card title="数据模型" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>
           点击右侧按钮添加 AI 引用，辅助推断实体与物化
         </Text>
         <DataModelReferenceTree />
       </Card>
-
-      <Card
-        title={<TitleWithHelp title="服务脚本" help={scriptHelp} />}
-        style={{ marginBottom: 16 }}
-        extra={
-          <Form.Item name="scriptMode" noStyle>
-            <Segmented
-              options={[
-                { label: 'SQL', value: 'sql' },
-                { label: 'TypeScript Handler', value: 'typescript' },
-              ]}
-            />
-          </Form.Item>
-        }
-      >
-        {scriptMode === 'typescript' ? (
-          <Editor
-            height="320px"
-            language="typescript"
-            value={handlerScript}
-            onChange={(val) => onHandlerScriptChange(val || '')}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              wordWrap: 'on',
-              placeholder: HANDLER_PLACEHOLDER,
-            }}
-          />
-        ) : (
-          <Editor
-            height="320px"
-            language="sql"
-            value={definitionScript}
-            onChange={(val) => onDefinitionScriptChange(val || '')}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              wordWrap: 'on',
-              placeholder: SQL_PLACEHOLDER,
-            }}
-          />
-        )}
-      </Card>
-    </>
+      */}
+    </div>
   );
 };
 
@@ -451,13 +956,4 @@ export function buildAccessRestrictionPayload(values: ApiServiceFormValues): API
     return { mode: 'department', roleIds: [], departmentIds: values.departmentIds || [] };
   }
   return { mode: 'none', roleIds: [], departmentIds: [] };
-}
-
-export function parseTagsInput(tags?: string) {
-  return tags
-    ? String(tags)
-        .split(/[,，]/)
-        .map((t) => t.trim())
-        .filter(Boolean)
-    : [];
 }

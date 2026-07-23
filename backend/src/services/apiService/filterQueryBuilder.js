@@ -1,0 +1,110 @@
+const { quotePgIdentifier } = require('../businessData/materialization/connectionRunner');
+const { extractSqlNamedParams, resolveDefinitionScript } = require('./operationParameterSchemas');
+
+/** 不参与 filter 解析的结构化参数字段 */
+const STRUCTURAL_PARAM_KEYS = new Set([
+  'limit', 'skip', 'filter', 'body', 'set', 'id', 'field', 'pipeline', 'operation',
+]);
+
+const COLUMN_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function isFilterableValue(value) {
+  if (value === undefined) return false;
+  if (value !== null && typeof value === 'object') return false;
+  return true;
+}
+
+function getSqlParamNameSet(service) {
+  return new Set(
+    extractSqlNamedParams(resolveDefinitionScript(service)).map((name) => name.toLowerCase()),
+  );
+}
+
+/**
+ * 合并 filter 到 SQL 命名参数：顶层同名字段优先，filter 仅填补空缺。
+ * 用于自定义 definition SQL 的 :param 替换。
+ */
+function buildSqlExecutionParameters(parameters, service) {
+  const script = resolveDefinitionScript(service);
+  if (!script) return parameters || {};
+
+  const filter = parameters?.filter;
+  if (!filter || typeof filter !== 'object' || Array.isArray(filter)) {
+    return parameters || {};
+  }
+
+  const sqlNames = extractSqlNamedParams(script);
+  const merged = { ...(parameters || {}) };
+  sqlNames.forEach((name) => {
+    if (merged[name] != null) return;
+    const filterValue = filter[name];
+    if (isFilterableValue(filterValue)) {
+      merged[name] = filterValue;
+    }
+  });
+  return merged;
+}
+
+/**
+ * 从 parameters.filter 解析等值过滤条件（外层 WHERE）。
+ * 顶层同名字段优先；已在 definition SQL 中作为 :param 的字段不再重复过滤。
+ */
+function resolveFilterEntries(parameters, service) {
+  const filter = parameters?.filter;
+  if (!filter || typeof filter !== 'object' || Array.isArray(filter)) {
+    return [];
+  }
+
+  const sqlParamNames = getSqlParamNameSet(service);
+
+  const entries = [];
+  Object.entries(filter).forEach(([key, value]) => {
+    if (!COLUMN_NAME_RE.test(key)) return;
+    if (STRUCTURAL_PARAM_KEYS.has(key)) return;
+    if (!isFilterableValue(value)) return;
+    if (parameters[key] !== undefined && parameters[key] !== null) return;
+    if (sqlParamNames.has(key.toLowerCase())) return;
+    entries.push({ key, value });
+  });
+
+  return entries;
+}
+
+/**
+ * 将过滤条目转为参数化 WHERE 子句（等值 / IS NULL）。
+ * @returns {{ clause: string, bindings: unknown[], nextIndex: number }}
+ */
+function buildParameterizedWhere(entries, { startIndex = 1, qualifier = '' } = {}) {
+  if (!entries.length) {
+    return { clause: '', bindings: [], nextIndex: startIndex };
+  }
+
+  const prefix = qualifier ? `${qualifier}.` : '';
+  const conditions = [];
+  const bindings = [];
+  let idx = startIndex;
+
+  entries.forEach(({ key, value }) => {
+    const col = `${prefix}${quotePgIdentifier(key)}`;
+    if (value === null) {
+      conditions.push(`${col} IS NULL`);
+      return;
+    }
+    conditions.push(`${col} = $${idx}`);
+    bindings.push(value);
+    idx += 1;
+  });
+
+  return {
+    clause: ` WHERE ${conditions.join(' AND ')}`,
+    bindings,
+    nextIndex: idx,
+  };
+}
+
+module.exports = {
+  STRUCTURAL_PARAM_KEYS,
+  buildSqlExecutionParameters,
+  resolveFilterEntries,
+  buildParameterizedWhere,
+};

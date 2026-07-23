@@ -1,0 +1,3 @@
+-- 收紧「指标定义 vs 看板卡片」Skill/Tool 文案（幂等）
+-- psql ... -f backend/scripts/migrate-bizdata-metric-cards-skill-harden.sql
+-- 等价于重跑 bizdata-metrics-ai-seed.sql

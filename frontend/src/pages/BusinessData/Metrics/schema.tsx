@@ -31,18 +31,37 @@ function formatScheduleLabel(record: API.BizdataMetric): string {
 }
 
 export const metricTableColumns: ProColumns<API.BizdataMetric>[] = [
-  { title: '编码', dataIndex: 'code', copyable: true, width: 220, ellipsis: true },
-  { title: '名称', dataIndex: 'label', width: 140, ellipsis: true },
+  {
+    title: '编码',
+    dataIndex: 'code',
+    copyable: true,
+    width: 220,
+    ellipsis: true,
+    fieldProps: { placeholder: '编码 / 名称' },
+    formItemProps: { label: '关键字' },
+  },
+  { title: '名称', dataIndex: 'label', width: 140, ellipsis: true, hideInSearch: true },
   {
     title: '类型',
     dataIndex: 'metricType',
     width: 100,
+    valueType: 'select',
+    valueEnum: {
+      sql: { text: 'SQL 聚合' },
+      formula: { text: '复合公式' },
+    },
     render: (_, r) => METRIC_TYPE_MAP[r.metricType || ''] || r.metricType,
   },
   {
     title: '计算模式',
     dataIndex: 'computeMode',
     width: 110,
+    valueType: 'select',
+    valueEnum: {
+      scheduled: { text: '定时' },
+      on_demand: { text: '按需' },
+      both: { text: '定时+按需' },
+    },
     render: (_, r) => COMPUTE_MODE_MAP[r.computeMode || ''] || r.computeMode,
   },
   {
@@ -50,12 +69,14 @@ export const metricTableColumns: ProColumns<API.BizdataMetric>[] = [
     dataIndex: 'scheduleType',
     width: 140,
     ellipsis: true,
+    hideInSearch: true,
     render: (_, r) => formatScheduleLabel(r),
   },
   {
     title: '最新值',
     dataIndex: 'lastValue',
     width: 100,
+    hideInSearch: true,
     render: (_, r) => (r.lastValue != null ? `${r.lastValue}${r.unit ? ` ${r.unit}` : ''}` : '-'),
   },
   {
@@ -63,11 +84,13 @@ export const metricTableColumns: ProColumns<API.BizdataMetric>[] = [
     dataIndex: 'lastComputedAt',
     width: 170,
     valueType: 'dateTime',
+    hideInSearch: true,
   },
   {
     title: '状态',
     dataIndex: 'status',
     width: 80,
+    valueType: 'select',
     valueEnum: {
       enabled: { text: '启用', status: 'Success' },
       disabled: { text: '停用', status: 'Default' },

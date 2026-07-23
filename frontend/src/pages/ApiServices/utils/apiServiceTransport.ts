@@ -22,6 +22,15 @@ export const API_SERVICE_TRANSPORT_OPTIONS: Array<{
   },
 ];
 
+const PROTOCOL_LABEL_BY_VALUE = Object.fromEntries(
+  API_SERVICE_TRANSPORT_OPTIONS.map((option) => [option.value, option.label]),
+) as Record<ApiServiceTransportProtocol, string>;
+
+export function getTransportProtocolLabel(protocol: string): string {
+  const key = String(protocol).toLowerCase() as ApiServiceTransportProtocol;
+  return PROTOCOL_LABEL_BY_VALUE[key] || protocol;
+}
+
 export function normalizeTransportProtocols(
   value?: string[] | null,
 ): ApiServiceTransportProtocol[] {

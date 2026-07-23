@@ -20,6 +20,7 @@ const {
   codeToRoutePath,
   buildDomainTreeFromServices,
   matchesCodePrefix,
+  normalizeListStatus,
 } = require('./apiServiceDomainUtils');
 const {
   OPERATION_CATALOG,
@@ -27,13 +28,14 @@ const {
   getOperationMeta,
   normalizeEnabledOperations,
 } = require('./operationCatalog');
-const { getParameterSchema } = require('./operationParameterSchemas');
+const { getParameterSchema, loadEnumMapForEntity } = require('./operationParameterSchemas');
 const { resolveConnection } = require('./apiServiceConnectionResolveService');
 const {
   syncPermissions,
   permissionsToAccessRestriction,
   normalizeAccessRestriction,
 } = require('./apiServicePermissionService');
+const { assertHandlerScriptValid } = require('./handlerTypeCheck');
 
 const {
   normalizeTransportProtocols,
@@ -64,6 +66,33 @@ function resolveScopeCode(payload, code) {
     return parts.slice(0, -1).join(':');
   }
   return null;
+}
+
+function mergeSecurityConfigOverrides(securityConfig, payload) {
+  let next = { ...securityConfig };
+  const responseOverrides = payload.responseOverrides || payload.response_overrides;
+  if (responseOverrides && typeof responseOverrides === 'object' && !Array.isArray(responseOverrides)) {
+    next = {
+      ...next,
+      responseOverrides: {
+        ...(next.responseOverrides || {}),
+        ...responseOverrides,
+      },
+    };
+  }
+  const requestOverrides = payload.requestOverrides || payload.request_overrides;
+  if (requestOverrides && typeof requestOverrides === 'object' && !Array.isArray(requestOverrides)) {
+    next = {
+      ...next,
+      requestOverrides: {
+        ...(next.requestOverrides || {}),
+        ...requestOverrides,
+      },
+    };
+    const { syncTestMockParametersFromRequestOverrides } = require('./requestExampleStore');
+    next = syncTestMockParametersFromRequestOverrides(next);
+  }
+  return next;
 }
 
 function formatService(row, { includeOperations = false, includePermissions = false } = {}) {
@@ -183,18 +212,20 @@ async function syncOperations(apiServiceId, enabledOperations, transaction, serv
   if (!serviceRow) {
     serviceRow = await BizdataApiService.findByPk(apiServiceId, { transaction });
   }
+  const serviceForSchema = serviceRow ? formatService(serviceRow) : null;
   let entity = null;
+  let enumMap = null;
   if (serviceRow?.entity_id) {
     entity = await businessDataService.getEntityById(serviceRow.entity_id);
   }
-  const serviceForSchema = serviceRow ? formatService(serviceRow) : null;
+  enumMap = await loadEnumMapForEntity(entity, serviceForSchema);
 
   const rows = enabledOperations.map((operation, index) => {
     const meta = getOperationMeta(operation);
     if (!meta) return null;
     let parametersSchema = {};
     if (serviceForSchema) {
-      ({ jsonSchema: parametersSchema } = getParameterSchema(serviceForSchema, operation, entity));
+      ({ jsonSchema: parametersSchema } = getParameterSchema(serviceForSchema, operation, entity, enumMap));
     }
     return {
       api_service_id: apiServiceId,
@@ -222,14 +253,21 @@ async function listServices({
   size = 100,
 } = {}) {
   const where = {};
-  if (status) where.status = String(status).trim().toLowerCase();
+  const normalizedStatus = normalizeListStatus(status);
+  if (normalizedStatus) where.status = normalizedStatus;
   if (entityId) where.entity_id = entityId;
   if (connectionId) where.connection_id = connectionId;
   if (codePrefix) {
-    where[Op.or] = [
-      { code: codePrefix },
-      { code: { [Op.like]: `${codePrefix}:%` } },
-    ];
+    const prefix = String(codePrefix).trim();
+    if (prefix) {
+      // 精确 | 域段边界 prefix: | 末段软前缀 prefix%（BomInstance → BomInstanceCreate）
+      // Op.startsWith 由 Sequelize 转义 LIKE 通配符
+      where[Op.or] = [
+        { code: prefix },
+        { code: { [Op.startsWith]: `${prefix}:` } },
+        { code: { [Op.startsWith]: prefix } },
+      ];
+    }
   }
   if (tag) {
     where.tags = { [Op.contains]: [tag] };
@@ -351,6 +389,9 @@ async function createService(payload, createdBy) {
   if (scriptMode === 'typescript' && !handlerScript?.trim()) {
     throw Object.assign(new Error('TypeScript Handler 模式下 handlerScript 不能为空'), { status: 400 });
   }
+  if (scriptMode === 'typescript' && handlerScript?.trim()) {
+    assertHandlerScriptValid(handlerScript, { requestParameterInterface });
+  }
   if (scriptMode === 'sql' && !definitionScript?.trim() && !entityId) {
     throw Object.assign(new Error('SQL 模式下需提供 definitionScript 或绑定实体'), { status: 400 });
   }
@@ -415,11 +456,11 @@ async function createService(payload, createdBy) {
       base_path: `/api/v1/data/${routePath}`,
       enabled_operations: enabledOperations,
       transport_protocols: transportProtocols,
-      security_config: {
+      security_config: mergeSecurityConfigOverrides({
         ...DEFAULT_SECURITY_CONFIG,
         ...(payload.securityConfig || payload.security_config || {}),
         accessRestriction,
-      },
+      }, payload),
       script_overrides: scriptOverrides,
       version: 0,
       created_by: createdBy || null,
@@ -440,7 +481,14 @@ async function createService(payload, createdBy) {
   return created;
 }
 
-async function updateService(id, payload) {
+/**
+ * @param {string} id
+ * @param {Record<string, unknown>} payload
+ * @param {{ retainPublishedStatus?: boolean }} [options]
+ *   retainPublishedStatus: 仅写测试 mock / requestExample 等非契约字段时为 true，
+ *   避免把已 published 的服务静默降回 draft（并行 test+publish 的根因）。
+ */
+async function updateService(id, payload, options = {}) {
   const service = await BizdataApiService.findByPk(id);
   if (!service) {
     return null;
@@ -480,6 +528,17 @@ async function updateService(id, payload) {
       ...service.security_config,
       ...(payload.securityConfig || payload.security_config),
     };
+  }
+  if (
+    payload.responseOverrides != null
+    || payload.response_overrides != null
+    || payload.requestOverrides != null
+    || payload.request_overrides != null
+  ) {
+    updates.security_config = mergeSecurityConfigOverrides(
+      updates.security_config || service.security_config || {},
+      payload,
+    );
   }
   if (payload.scriptOverrides != null || payload.script_overrides != null) {
     updates.script_overrides = payload.scriptOverrides || payload.script_overrides;
@@ -534,10 +593,24 @@ async function updateService(id, payload) {
 
   const accessRestrictionInput = payload.accessRestriction || payload.access_restriction;
 
+  const nextScriptMode = updates.script_mode || service.script_mode;
+  const nextHandlerScript = updates.handler_script !== undefined
+    ? updates.handler_script
+    : service.handler_script;
+  const nextRequestParameterInterface = updates.request_parameter_interface !== undefined
+    ? updates.request_parameter_interface
+    : service.request_parameter_interface;
+  if (nextScriptMode === 'typescript' && nextHandlerScript?.trim()) {
+    assertHandlerScriptValid(nextHandlerScript, {
+      requestParameterInterface: nextRequestParameterInterface,
+    });
+  }
+
   const hasMutation = Object.keys(updates).length > 0
     || accessRestrictionInput != null
     || enabledOperations != null;
-  if (service.status === 'published' && hasMutation) {
+  const retainPublishedStatus = options.retainPublishedStatus === true;
+  if (service.status === 'published' && hasMutation && !retainPublishedStatus) {
     updates.status = 'draft';
   }
 
@@ -564,15 +637,50 @@ async function updateService(id, payload) {
 }
 
 async function setServiceStatus(id, status) {
-  const service = await BizdataApiService.findByPk(id);
-  if (!service) return null;
+  const existing = await BizdataApiService.findByPk(id, {
+    attributes: ['id', 'status', 'version'],
+  });
+  if (!existing) return null;
 
-  const patch = { status };
   if (status === 'published') {
-    patch.version = service.version + 1;
-    patch.published_at = new Date();
+    // 原子更新：避免读改写竞态；已是 published 则 no-op（仍返回当前行）
+    if (existing.status !== 'published') {
+      const [affected] = await BizdataApiService.update(
+        {
+          status: 'published',
+          version: sequelize.literal('version + 1'),
+          published_at: new Date(),
+        },
+        {
+          where: {
+            id,
+            status: { [Op.in]: ['draft', 'disabled'] },
+          },
+        },
+      );
+      if (!affected) {
+        const raced = await getServiceById(id, { includeOperations: true });
+        if (raced?.status === 'published') return raced;
+        throw Object.assign(
+          new Error('发布失败：状态未能更新为 published，请重试'),
+          { status: 409 },
+        );
+      }
+    }
+    const published = await getServiceById(id, { includeOperations: true });
+    if (!published) return null;
+    if (published.status !== 'published') {
+      throw Object.assign(
+        new Error(
+          '发布未持久化：服务在发布过程中被其他更新回退，请重试 apiservice_publish_service',
+        ),
+        { status: 409 },
+      );
+    }
+    return published;
   }
-  await service.update(patch);
+
+  await BizdataApiService.update({ status }, { where: { id } });
   return getServiceById(id, { includeOperations: true });
 }
 

@@ -13,7 +13,7 @@ const MODEL_DESIGN_NEXT_STEP_PROMPTS: Record<
   create_metrics:
     '请基于当前业务实体设计业务指标：列出实体后，为关键实体创建 SQL 聚合或 formula 复合指标，并执行验证。',
   refine_model:
-    '请继续完善当前业务实体的字段、索引与关系，并对每个实体调用 bizdata_validate_model 直至全部通过。',
+    '请继续完善当前业务实体：先处理枚举（status/state/*_type 须 bizdata_list_enums / bizdata_create_enum，字段 type=adb-enum + enumCode），再补字段、索引与关系，并对每个实体调用 bizdata_validate_model 直至全部通过。',
 };
 
 export default function BusinessDataDesignAI() {
@@ -26,7 +26,7 @@ export default function BusinessDataDesignAI() {
       scopeSlug="business-data"
       fallbackSkillSlugs={['bizdata-model-design']}
       headerCaption="模型设计助手"
-      systemPromptPrefix="你是 EADAF 业务数据建模助手，帮助用户设计 Scope:Entity 层级模型。调整 Scope 或重命名实体 code 时必须用 bizdata_rename_entity_code（仅 entityCode + code），禁止 delete + create。默认只完成逻辑建模（枚举/字段/索引/关系/校验），物化与 API 等下游步骤须用户明确请求或通过下一步按钮触发。"
+      systemPromptPrefix="你是 EADAF 业务数据建模助手，帮助用户设计 Scope:Entity 层级模型。调整 Scope 或重命名实体 code 时必须用 bizdata_rename_entity_code（仅 entityCode + code），禁止 delete + create。status/state/*_type 等有限取值字段必须先 bizdata_create_enum，再在字段上同时传 type=adb-enum 与 enumCode（禁止 varchar，禁止只改 type 不传 enumCode）。默认只完成逻辑建模（枚举/字段/索引/关系/校验），物化与 API 等下游步骤须用户明确请求或通过下一步按钮触发。"
       welcome={{
         title: '业务数据模型设计',
         description: '选中实体或点击 @ 添加引用后，快捷提示会随上下文更新。',

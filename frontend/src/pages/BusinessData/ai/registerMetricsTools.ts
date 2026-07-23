@@ -3,14 +3,20 @@ import { createMutatingHandler } from '@/ai/toolMutation';
 import { history } from '@/utils/navigation';
 import {
   deleteBizdataMetric,
+  deleteBizdataMetricCard,
   getBizdataMetric,
+  getBizdataMetricCard,
+  getBizdataMetricCardSuggest,
+  getBizdataMetricCards,
   getBizdataMetricRuns,
   getBizdataMetricValue,
   getBizdataMetricValues,
   getBizdataMetrics,
   getBizdataMetricsDashboard,
   patchBizdataMetric,
+  patchBizdataMetricCard,
   postBizdataMetric,
+  postBizdataMetricCard,
   postBizdataMetricExecute,
   postBizdataMetricExecuteBatch,
 } from '@/services/UAC/api/businessData';
@@ -40,7 +46,24 @@ const TOOL_NAMES = [
   'bizdata_metric_get_dashboard',
   'bizdata_metric_suggest_definition',
   'bizdata_metric_navigate',
+  'bizdata_metric_card_list',
+  'bizdata_metric_card_get',
+  'bizdata_metric_card_upsert',
+  'bizdata_metric_card_delete',
+  'bizdata_metric_card_suggest',
 ] as const;
+
+async function resolveCardId(args: Record<string, unknown>) {
+  if (args.cardId) return String(args.cardId);
+  const code = String(args.code || args.cardCode || '').trim();
+  if (code) {
+    const res = await getBizdataMetricCards({ size: 200 });
+    const data = getApiData<API.BizdataMetricCardList>(res);
+    const exact = data?.items?.find((item) => item.code === code);
+    if (exact?.id) return exact.id;
+  }
+  throw new Error('请提供 cardId 或 code');
+}
 
 async function resolveMetricId(args: Record<string, unknown>) {
   if (args.metricId) return String(args.metricId);
@@ -55,10 +78,81 @@ async function resolveMetricId(args: Record<string, unknown>) {
   throw new Error('请提供 metricId 或 code，或在 Surface 上下文中操作');
 }
 
+/** 写后回读：GET by id + list 命中同一 code */
+async function verifyMetricPersisted(metricId: string, expectedCode?: string) {
+  const getRes = await getBizdataMetric(metricId);
+  if (!isApiSuccess(getRes)) {
+    return {
+      verified: false,
+      rereadOk: false,
+      listedOk: false,
+      message: getApiErrorMessage(getRes, '创建后回读指标失败'),
+    };
+  }
+  const got = getApiData<API.BizdataMetric>(getRes);
+  const code = String(got?.code || expectedCode || '').trim();
+  const rereadOk = Boolean(got?.id);
+  let listedOk = false;
+  if (code) {
+    const listRes = await getBizdataMetrics({ codePrefix: code, size: 100 });
+    const items = getApiData<API.BizdataMetricList>(listRes)?.items || [];
+    listedOk = items.some((item) => item.id === metricId || item.code === code);
+  }
+  const codeMatch = !expectedCode || got?.code === expectedCode;
+  const verified = rereadOk && listedOk && codeMatch;
+  return {
+    verified,
+    rereadOk,
+    listedOk,
+    metricId: got?.id,
+    code: got?.code,
+    message: verified
+      ? `指标已落库并回读成功：${got?.code}`
+      : `指标写后校验失败（reread=${rereadOk}, listed=${listedOk}, codeMatch=${codeMatch}）`,
+  };
+}
+
+/** 写后回读：GET card + dashboard domains 中可见 */
+async function verifyCardPersisted(cardId: string, expectedCode?: string, domainCode?: string) {
+  const getRes = await getBizdataMetricCard(cardId);
+  if (!isApiSuccess(getRes)) {
+    return {
+      verified: false,
+      rereadOk: false,
+      onDashboard: false,
+      message: getApiErrorMessage(getRes, '创建后回读卡片失败'),
+    };
+  }
+  const got = getApiData<API.BizdataMetricCard>(getRes);
+  const rereadOk = Boolean(got?.id);
+  const code = String(got?.code || expectedCode || '').trim();
+  const dashRes = await getBizdataMetricsDashboard({
+    domainCode: domainCode || got?.domainCode,
+  });
+  const domains = getApiData<API.BizdataMetricDashboard>(dashRes)?.domains || [];
+  const onDashboard = domains.some((d) =>
+    (d.cards || []).some((c) => c.id === cardId || (!!code && c.code === code)),
+  );
+  const codeMatch = !expectedCode || got?.code === expectedCode;
+  const verified = rereadOk && onDashboard && codeMatch;
+  return {
+    verified,
+    rereadOk,
+    onDashboard,
+    cardId: got?.id,
+    code: got?.code,
+    domainCode: got?.domainCode,
+    message: verified
+      ? `看板卡片已落库且出现在 dashboard：${got?.code}`
+      : `卡片写后校验失败（reread=${rereadOk}, onDashboard=${onDashboard}, codeMatch=${codeMatch}）`,
+  };
+}
+
 export function registerMetricsTools() {
   registerFunctionCall({
     name: 'bizdata_metric_list',
-    description: '列出业务指标，可按 code 前缀、状态过滤',
+    description:
+      '列出【指标定义】metrics（怎么算）。不是看板卡片；看板卡片用 bizdata_metric_card_list / get_dashboard',
     parameters: {
       type: 'object',
       properties: {
@@ -119,7 +213,9 @@ export function registerMetricsTools() {
 
   registerFunctionCall({
     name: 'bizdata_metric_upsert',
-    description: '创建或更新业务指标（SQL 聚合或复合公式）',
+    description:
+      '创建或更新【指标定义】SQL/公式（metrics）。不会出现在看板。看板卡片请用 bizdata_metric_card_upsert。成功须 verified=true',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       // code 与 label 必填，与指标管理页表单一致：
@@ -148,7 +244,8 @@ export function registerMetricsTools() {
       domain: DOMAIN,
       type: 'metric.updated',
       scope: editOrCreateScope,
-      buildResourceId: (args) => String(args.metricId || ''),
+      buildResourceId: (args, data) =>
+        String((data as API.BizdataMetric | undefined)?.id || args.metricId || ''),
       buildPayload: (_args, data) => data,
       handler: async (args) => {
         const body: Partial<API.BizdataMetric> = {
@@ -165,14 +262,19 @@ export function registerMetricsTools() {
           unit: args.unit as string,
           status: args.status as API.BizdataMetric['status'],
         };
+        let saved: API.BizdataMetric | undefined;
         if (args.metricId) {
           const res = await patchBizdataMetric(String(args.metricId), body);
           if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '更新失败'));
-          return getApiData(res);
+          saved = getApiData<API.BizdataMetric>(res);
+        } else {
+          const res = await postBizdataMetric(body);
+          if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '创建失败'));
+          saved = getApiData<API.BizdataMetric>(res);
         }
-        const res = await postBizdataMetric(body);
-        if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '创建失败'));
-        return getApiData(res);
+        if (!saved?.id) throw new Error('指标保存成功但未返回 id');
+        const _verification = await verifyMetricPersisted(saved.id, body.code || saved.code);
+        return { ...saved, _verification };
       },
     }),
   });
@@ -321,12 +423,14 @@ export function registerMetricsTools() {
 
   registerFunctionCall({
     name: 'bizdata_metric_get_dashboard',
-    description: '获取指标看板（按 category 分组）',
+    description:
+      '读取看板：返回 domains[].cards。空 cards 表示尚未创建看板卡片（有指标定义也不显示）。创建卡片后必须用本 Tool 验收',
     parameters: {
       type: 'object',
       properties: {
         codePrefix: { type: 'string' },
-        refresh: { type: 'boolean', description: '为 true 时先刷新各指标再返回' },
+        domainCode: { type: 'string' },
+        refresh: { type: 'boolean', description: '为 true 时对 on_demand 指标即时重算' },
       },
     },
     handler: createMutatingHandler({
@@ -338,8 +442,165 @@ export function registerMetricsTools() {
       handler: async (args) => {
         const res = await getBizdataMetricsDashboard({
           codePrefix: args.codePrefix as string,
+          domainCode: args.domainCode as string,
           refresh: args.refresh === true,
         });
+        return getApiData(res);
+      },
+    }),
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_metric_card_list',
+    description: '列出【看板卡片】配置（metric_cards）。不是指标定义列表；查指标用 bizdata_metric_list',
+    parameters: {
+      type: 'object',
+      properties: {
+        domainCode: { type: 'string' },
+        status: { type: 'string', enum: ['enabled', 'disabled'] },
+        page: { type: 'integer' },
+        size: { type: 'integer' },
+      },
+    },
+    handler: async (args) => {
+      const res = await getBizdataMetricCards({
+        domainCode: args.domainCode as string,
+        status: args.status as string,
+        page: args.page as number,
+        size: args.size as number,
+      });
+      return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_metric_card_get',
+    description: '获取指标卡片详情',
+    parameters: {
+      type: 'object',
+      properties: { cardId: { type: 'string' }, code: { type: 'string' } },
+    },
+    handler: async (args) => {
+      const id = await resolveCardId(args as Record<string, unknown>);
+      const res = await getBizdataMetricCard(id);
+      if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '获取卡片失败'));
+      return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_metric_card_upsert',
+    description:
+      '创建或更新【看板卡片】metric_cards（绑定已有 metric + vizType）。禁止用 metric_upsert 代替。成功须 verified=true 且 onDashboard',
+    requiresVerification: true,
+    parameters: {
+      type: 'object',
+      required: ['code', 'title', 'domainCode', 'vizType'],
+      properties: {
+        cardId: { type: 'string' },
+        code: { type: 'string', description: '卡片 code，建议 {metricCode}:{viz}，如 fmms:production:workcard_count:trend' },
+        title: { type: 'string' },
+        description: { type: 'string' },
+        domainCode: { type: 'string', description: '看板分层域，如 fmms' },
+        metricId: { type: 'string' },
+        metricCode: { type: 'string', description: '绑定的指标定义 code（与卡片 code 不同）' },
+        vizType: { type: 'string', enum: ['statistic_trend', 'line', 'bar', 'ring'] },
+        config: { type: 'object' },
+        sortOrder: { type: 'integer' },
+        status: { type: 'string', enum: ['enabled', 'disabled'] },
+      },
+    },
+    handler: createMutatingHandler({
+      domain: DOMAIN,
+      type: 'metric.card_upserted',
+      scope: DASHBOARD_SURFACE,
+      buildResourceId: (args, data) =>
+        String((data as API.BizdataMetricCard | undefined)?.id || args.cardId || args.code || ''),
+      buildPayload: (_args, data) => data,
+      handler: async (args) => {
+        const body = {
+          code: args.code as string,
+          title: args.title as string,
+          description: args.description as string,
+          domainCode: args.domainCode as string,
+          metricId: args.metricId as string,
+          metricCode: args.metricCode as string,
+          vizType: args.vizType as API.BizdataMetricCardVizType,
+          config: args.config as API.BizdataMetricCardConfig,
+          sortOrder: args.sortOrder as number,
+          status: args.status as 'enabled' | 'disabled',
+        };
+        let saved: API.BizdataMetricCard | undefined;
+        if (args.cardId) {
+          const res = await patchBizdataMetricCard(String(args.cardId), body);
+          if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '更新卡片失败'));
+          saved = getApiData<API.BizdataMetricCard>(res);
+        } else {
+          const res = await postBizdataMetricCard(body);
+          if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '创建卡片失败'));
+          saved = getApiData<API.BizdataMetricCard>(res);
+        }
+        if (!saved?.id) throw new Error('卡片保存成功但未返回 id');
+        const _verification = await verifyCardPersisted(
+          saved.id,
+          body.code || saved.code,
+          body.domainCode || saved.domainCode,
+        );
+        return { ...saved, _verification };
+      },
+    }),
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_metric_card_delete',
+    description: '删除指标看板卡片（不删除底层指标）',
+    parameters: {
+      type: 'object',
+      properties: { cardId: { type: 'string' }, code: { type: 'string' } },
+    },
+    handler: createMutatingHandler({
+      domain: DOMAIN,
+      type: 'metric.card_deleted',
+      scope: DASHBOARD_SURFACE,
+      buildResourceId: (args) => String(args.cardId || args.code || ''),
+      buildPayload: (_args, data) => data,
+      handler: async (args) => {
+        const id = await resolveCardId(args as Record<string, unknown>);
+        const res = await deleteBizdataMetricCard(id);
+        if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '删除卡片失败'));
+        return { deleted: true, cardId: id };
+      },
+    }),
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_metric_card_suggest',
+    description: '根据指标历史值建议看板卡片配置，并打开看板新建表单草稿',
+    parameters: {
+      type: 'object',
+      properties: {
+        metricId: { type: 'string' },
+        code: { type: 'string', description: '指标 code' },
+        metricCode: { type: 'string' },
+      },
+    },
+    handler: createMutatingHandler({
+      domain: DOMAIN,
+      type: 'metric.card_suggested',
+      scope: DASHBOARD_SURFACE,
+      buildResourceId: (args) => String(args.metricId || args.code || args.metricCode || ''),
+      buildPayload: (_args, data) => data,
+      handler: async (args) => {
+        const metricCode = (args.metricCode || args.code) as string | undefined;
+        let metricId = args.metricId as string | undefined;
+        if (!metricId && metricCode) {
+          metricId = await resolveMetricId({ code: metricCode });
+        }
+        if (!metricId && !metricCode) {
+          throw new Error('请提供 metricId 或 code');
+        }
+        const res = await getBizdataMetricCardSuggest({ metricId, metricCode });
+        if (!isApiSuccess(res)) throw new Error(getApiErrorMessage(res, '建议卡片失败'));
         return getApiData(res);
       },
     }),
@@ -380,11 +641,11 @@ export function registerMetricsTools() {
 
   registerFunctionCall({
     name: 'bizdata_metric_navigate',
-    description: '在指标 list / dashboard 页面间跳转',
+    description: '在指标 list / dashboard / create / edit 页面间跳转',
     parameters: {
       type: 'object',
       properties: {
-        target: { type: 'string', enum: ['list', 'dashboard'] },
+        target: { type: 'string', enum: ['list', 'dashboard', 'create', 'edit'] },
         metricId: { type: 'string' },
       },
       required: ['target'],
@@ -392,12 +653,12 @@ export function registerMetricsTools() {
     handler: async (args) => {
       const target = args.target as string;
       const id = args.metricId as string | undefined;
-      const paths: Record<string, string> = {
-        list: '/business_data/metrics',
-        dashboard: '/business_data/metrics/dashboard',
-      };
-      history.push(paths[target] || paths.list);
-      return { navigated: true, path: paths[target] };
+      let path = '/business_data/metrics';
+      if (target === 'dashboard') path = '/business_data/metrics/dashboard';
+      else if (target === 'create') path = '/business_data/metrics/create';
+      else if (target === 'edit' && id) path = `/business_data/metrics/${id}/edit`;
+      history.push(path);
+      return { navigated: true, path };
     },
   });
 }

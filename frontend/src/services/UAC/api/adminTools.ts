@@ -3,9 +3,11 @@ import { request } from '@/utils/request';
 export async function getAdminTools(params?: {
   page?: number;
   size?: number;
+  name?: string;
+  functionName?: string;
   scopeId?: string;
   executionType?: string;
-  isActive?: boolean;
+  isActive?: boolean | string;
 }) {
   return request<any>('/api/v1/admin/tools', { method: 'GET', params });
 }

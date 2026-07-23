@@ -46,6 +46,7 @@
     "sequelize": "^6.37.7",
     "sharp": "^0.34.2",
     "swagger-jsdoc": "^6.2.8",
+    "typescript": "~5.8.0",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",

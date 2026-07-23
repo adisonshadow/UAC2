@@ -38,12 +38,14 @@ const BizdataSetting = require('./bizdata_setting');
 const BizdataApiService = require('./bizdata_api_service');
 const BizdataApiServiceOperation = require('./bizdata_api_service_operation');
 const BizdataApiServicePermission = require('./bizdata_api_service_permission');
+const BizdataApiExceptionResponse = require('./bizdata_api_exception_response');
 const BuiltinApiConfig = require('./builtin_api_config');
 const OutboundWebhook = require('./outbound_webhook');
 const OutboundWebhookRun = require('./outbound_webhook_run');
 const BizdataMetric = require('./bizdata_metric');
 const BizdataMetricRun = require('./bizdata_metric_run');
 const BizdataMetricValue = require('./bizdata_metric_value');
+const BizdataMetricCard = require('./bizdata_metric_card');
 const BizdataDataStandard = require('./bizdata_data_standard');
 const BizdataMetadataTable = require('./bizdata_metadata_table');
 const BizdataMetadataField = require('./bizdata_metadata_field');
@@ -152,6 +154,8 @@ BizdataMetric.hasMany(BizdataMetricValue, { foreignKey: 'metric_id', as: 'values
 BizdataMetricValue.belongsTo(BizdataMetric, { foreignKey: 'metric_id', as: 'metric' });
 BizdataMetricRun.hasMany(BizdataMetricValue, { foreignKey: 'run_id', as: 'values' });
 BizdataMetricValue.belongsTo(BizdataMetricRun, { foreignKey: 'run_id', as: 'run' });
+BizdataMetric.hasMany(BizdataMetricCard, { foreignKey: 'metric_id', as: 'cards' });
+BizdataMetricCard.belongsTo(BizdataMetric, { foreignKey: 'metric_id', as: 'metric' });
 
 BizdataMetadataTable.belongsTo(BizdataDataStandard, { foreignKey: 'standard_id', as: 'standard' });
 BizdataDataStandard.hasMany(BizdataMetadataTable, { foreignKey: 'standard_id', as: 'metadataTables' });
@@ -218,10 +222,12 @@ module.exports = {
   BizdataApiService,
   BizdataApiServiceOperation,
   BizdataApiServicePermission,
+  BizdataApiExceptionResponse,
   BuiltinApiConfig,
   BizdataMetric,
   BizdataMetricRun,
   BizdataMetricValue,
+  BizdataMetricCard,
   BizdataDataStandard,
   BizdataMetadataTable,
   BizdataMetadataField,

@@ -79,7 +79,15 @@ const ToolsPage: React.FC = () => {
           },
         ]}
         request={async (params) => {
-          const response = await getAdminTools({ page: params.current, size: params.pageSize });
+          const response = await getAdminTools({
+            page: params.current,
+            size: params.pageSize,
+            name: params.name || undefined,
+            functionName: params.functionName || undefined,
+            scopeId: params.scopeId || undefined,
+            executionType: params.executionType || undefined,
+            isActive: params.isActive === undefined || params.isActive === '' ? undefined : params.isActive,
+          });
           return parseApiListResponse(response);
         }}
         toolBarRender={() => [

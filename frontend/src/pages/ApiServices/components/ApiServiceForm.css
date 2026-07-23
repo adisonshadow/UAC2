@@ -1,0 +1,93 @@
+.api-service-form__section {
+  scroll-margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.api-service-form {
+  max-width: 888px;
+  margin: 0 auto;
+}
+
+.api-service-form__section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin: 0 0 6px;
+  padding-bottom: 0;
+  text-align: center;
+}
+
+.api-service-form__editor-split-left {
+  border-right: 1px solid var(--ant-color-border-secondary);
+}
+
+.api-service-form__request-col-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.api-service-form__operation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.api-service-form__operation-select {
+  flex: 0 0 220px;
+  width: 220px;
+}
+
+.api-service-form__operation-tag {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.api-service-form__operation-help-icon {
+  flex-shrink: 0;
+  color: var(--ant-color-text-description);
+  cursor: help;
+  font-size: 14px;
+}
+
+.api-service-form__service-slug-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-service-form__code-tag {
+  margin: 0;
+  cursor: pointer;
+}
+
+.api-service-form__code-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.api-service-form__endpoint-preview {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.api-service-form__endpoint-preview-item {
+  margin-bottom: 4px;
+}
+
+.api-service-form__endpoint-preview-item:last-child {
+  margin-bottom: 0;
+}
+
+/* constrained-editor：淡化默认可编辑区高亮 */
+.api-service-form .editableArea--multi-line {
+  background: rgba(22, 119, 255, 0.06);
+}
+
+.api-service-form .editableArea--single-line {
+  background: rgba(22, 119, 255, 0.08);
+}

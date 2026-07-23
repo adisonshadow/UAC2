@@ -254,6 +254,9 @@ router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataControll
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建枚举 [需要认证]
+ *     description: |
+ *       body 含 code、enumInfo、values、items。
+ *       values 与 items 会互相同步：仅传 values 时自动补齐 items（label/sort），仅传 items 时自动补齐 values。
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       201:
@@ -268,6 +271,9 @@ router.post('/enums', authWithBuiltinApiGuard, BusinessDataController.createEnum
  *   patch:
  *     tags: [BusinessData]
  *     summary: 更新枚举 [需要认证]
+ *     description: |
+ *       可更新 enumInfo、values、items。
+ *       更新 values/items 时两侧会互相同步（一侧为空则从另一侧补齐）。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -298,18 +304,44 @@ router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.dele
  * /api/v1/business-data/relations:
  *   get:
  *     tags: [BusinessData]
- *     summary: 获取关系列表 [需要认证]
+ *     summary: 获取关系列表（可选按实体过滤） [需要认证]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: entityCode
+ *         schema: { type: string }
+ *         description: 按实体 code 过滤（from 或 to 命中）
+ *       - in: query
+ *         name: entityId
+ *         schema: { type: string, format: uuid }
+ *         description: 按实体 UUID 过滤（from 或 to 命中）
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功；每条含 fromEntityCode、toEntityCode、directionSummary
  *   post:
  *     tags: [BusinessData]
- *     summary: 创建关系（关联实体 version+1） [需要认证]
+ *     summary: 创建关系（关联实体 version+1；同一 from 内 name 唯一） [需要认证]
  *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [type, name, fromEntityId, toEntityId]
+ *             properties:
+ *               type: { type: string, enum: [oneToMany, manyToOne, oneToOne, manyToMany] }
+ *               name: { type: string, description: 同一 from 实体内唯一 }
+ *               inverseName: { type: string }
+ *               fromEntityId: { type: string, format: uuid }
+ *               toEntityId: { type: string, format: uuid }
+ *               joinTable: { type: string }
+ *               config: { type: object }
  *     responses:
  *       201:
  *         description: 创建成功
+ *       400:
+ *         description: 重名或同边已存在（错误信息含 from/to entityCode）
  */
 router.get('/relations', authWithBuiltinApiGuard, BusinessDataController.listRelations);
 router.post('/relations', authWithBuiltinApiGuard, BusinessDataController.createRelation);
@@ -659,20 +691,141 @@ router.get('/scopes', authWithBuiltinApiGuard, BusinessDataController.listScopes
  * /api/v1/business-data/metrics/dashboard:
  *   get:
  *     tags: [BusinessData]
- *     summary: 指标看板聚合 [需要认证]
+ *     summary: 指标看板（按 domain 返回已配置卡片及水合数据） [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: query
- *         name: category
+ *         name: domainCode
+ *         schema: { type: string }
+ *         description: 按域过滤
+ *       - in: query
+ *         name: codePrefix
  *         schema: { type: string }
  *       - in: query
  *         name: refresh
  *         schema: { type: string, enum: ['0', '1', 'true', 'false'] }
+ *         description: 对 on_demand/both 指标即时重算
+ *     responses:
+ *       200:
+ *         description: 获取成功，data.domains[].cards 含水合 value/trend/series
+ */
+router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDashboard);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/cards:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标卡片列表 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: domainCode
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [enabled, disabled] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: 获取成功
+ *   post:
+ *     tags: [BusinessData]
+ *     summary: 创建指标卡片 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, title, domainCode, vizType]
+ *             properties:
+ *               code: { type: string }
+ *               title: { type: string }
+ *               description: { type: string }
+ *               domainCode: { type: string }
+ *               metricId: { type: string, format: uuid }
+ *               metricCode: { type: string }
+ *               vizType: { type: string, enum: [statistic_trend, line, bar, ring] }
+ *               config: { type: object }
+ *               sortOrder: { type: integer }
+ *               status: { type: string, enum: [enabled, disabled] }
+ *     responses:
+ *       201:
+ *         description: 创建成功
  */
-router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDashboard);
+router.get('/metrics/cards', authWithBuiltinApiGuard, MetricController.listCards);
+router.post('/metrics/cards', authWithBuiltinApiGuard, MetricController.createCard);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/cards/suggest:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 根据指标历史建议卡片配置 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: metricId
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: metricCode
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: 建议成功
+ */
+router.get('/metrics/cards/suggest', authWithBuiltinApiGuard, MetricController.suggestCard);
+
+/**
+ * @swagger
+ * /api/v1/business-data/metrics/cards/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 指标卡片详情 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *   patch:
+ *     tags: [BusinessData]
+ *     summary: 更新指标卡片 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 更新成功
+ *   delete:
+ *     tags: [BusinessData]
+ *     summary: 删除指标卡片 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ */
+router.get('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.getCard);
+router.patch('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.updateCard);
+router.delete('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.deleteCard);
 
 /**
  * @swagger

@@ -123,3 +123,32 @@ export async function putApiServiceTestMockParams(
     { method: 'PUT', data: body },
   );
 }
+
+export type ApiServiceHandlerDiagnostic = {
+  line: number;
+  column: number;
+  message: string;
+  code?: number;
+};
+
+export type ApiServiceHandlerCheckResult = {
+  ok: boolean;
+  diagnostics: ApiServiceHandlerDiagnostic[];
+};
+
+export async function postApiServiceCheckHandler(body: {
+  handlerScript: string;
+  requestParameterInterface?: string;
+}) {
+  return request<{ code: number; message: string; data: ApiServiceHandlerCheckResult }>(
+    `${BASE}/check-handler`,
+    { method: 'POST', data: body, skipErrorHandler: true },
+  );
+}
+
+export async function getApiServiceHandlerSdkDts() {
+  return request<{ code: number; message: string; data: { dts: string } }>(
+    `${BASE}/handler-sdk-dts`,
+    { method: 'GET' },
+  );
+}

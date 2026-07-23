@@ -9,23 +9,41 @@ import {
   getApiServiceTree,
   patchApiService,
   postApiService,
+  postApiServiceCheckHandler,
   postApiServicePublish,
   postApiServiceSuggestTestParams,
   postApiServiceTest,
   putApiServiceTestMockParams,
 } from '@/services/UAC/api/apiServices';
+import {
+  createExceptionResponse,
+  deleteExceptionResponse,
+  getExceptionResponses,
+  patchExceptionResponse,
+} from '@/services/UAC/api/exceptionResponses';
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 import { formatApiServiceTestError, extractApiServiceValidationErrors, isApiServiceTestFailure, describeApiServiceTestFailure } from './apiServiceTestError';
 import { normalizeApiServiceCode } from './apiServiceCodeUtils';
 import { executeBatchCreateServices, DEFAULT_CRUD_OPERATIONS, type BatchCreateArgs } from './apiServiceBatchCreate';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
 import { resolveApiServiceId } from './apiServiceResolve';
-import { verifyApiServiceById, verifyApiServiceListed, verifyApiServicePublished } from './apiServiceVerify';
+import { resolveApiServiceNavigateTarget } from './apiServiceWorkflowNavigation';
+import {
+  assessRequestParameterInterface,
+  verifyApiServiceById,
+  verifyApiServiceListed,
+  verifyApiServicePublished,
+} from './apiServiceVerify';
 import { queryApiServicesForTool } from './apiServiceListQuery';
+import {
+  ensureRequestParameterInterface,
+  shouldAutoSuggestRequestExample,
+} from './buildRequestParameterInterface';
 
 const API_SERVICE_DOMAIN = 'bizdata';
 const LIST_SURFACE = 'api-services.list';
 const TEST_SURFACE = 'api-services.test';
+const EXCEPTION_RESPONSES_SURFACE = 'api-services.exception-responses';
 
 const TOOL_NAMES = [
   'apiservice_list_services',
@@ -36,6 +54,7 @@ const TOOL_NAMES = [
   'apiservice_create_service',
   'apiservice_create_services_batch',
   'apiservice_update_service',
+  'apiservice_check_handler',
   'apiservice_publish_service',
   'apiservice_delete_service',
   'apiservice_list_operations',
@@ -45,22 +64,38 @@ const TOOL_NAMES = [
   'apiservice_set_test_params',
   'apiservice_run_test',
   'apiservice_navigate',
+  'apiservice_list_exception_responses',
+  'apiservice_create_exception_response',
+  'apiservice_update_exception_response',
+  'apiservice_delete_exception_response',
 ] as const;
 
 export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_list_services',
     description:
-      '列出 API 服务（默认 size=-1 拉全量）。找未发布 draft 时须传 status=draft，或直接用 apiservice_list_draft_services',
+      '列出 API 服务（默认 size=-1 拉全量）。找未发布 draft 时须传 status=draft，或直接用 apiservice_list_draft_services；status=ALL 表示不过滤',
+    resultBudget: { maxChars: 24_000 },
     parameters: {
       type: 'object',
       properties: {
-        codePrefix: { type: 'string', description: '域前缀，如 fmms（勿传单个服务全 code）' },
-        status: { type: 'string', enum: ['draft', 'published', 'disabled'] },
+        codePrefix: {
+          type: 'string',
+          description:
+            'code 前缀：如 IPS:production 或 IPS:production:BomInstance（软匹配 BomInstanceCreate）',
+        },
+        status: {
+          type: 'string',
+          enum: ['draft', 'published', 'disabled', 'ALL'],
+          description: 'ALL 或省略表示不过滤',
+        },
         connectionId: { type: 'string' },
         tag: { type: 'string' },
         page: { type: 'integer' },
-        size: { type: 'integer', description: '默认 -1 全量；分页时 total 为匹配总数，returnedCount 为本页条数' },
+        size: {
+          type: 'integer',
+          description: '默认 -1 全量；分页时 total 为匹配总数，returnedCount 为本页条数',
+        },
       },
     },
     handler: async (args) => queryApiServicesForTool(args as Record<string, unknown>),
@@ -70,10 +105,11 @@ export function registerApiServiceTools() {
     name: 'apiservice_list_draft_services',
     description:
       '列出未发布(draft)的 API 服务。批量「测试并发布」任务必须先用本 Tool 获取待处理列表，禁止对已是 published 的服务重复 publish',
+    resultBudget: { maxChars: 24_000 },
     parameters: {
       type: 'object',
       properties: {
-        codePrefix: { type: 'string', description: '域前缀，如 fmms' },
+        codePrefix: { type: 'string', description: '域/实体前缀，如 fmms 或 IPS:production:BomInstance' },
         tag: { type: 'string' },
         connectionId: { type: 'string' },
       },
@@ -88,10 +124,14 @@ export function registerApiServiceTools() {
       });
       return {
         ...result,
-        hint:
+        hint: [
+          result.hint,
           result.items.length === 0
             ? '当前过滤条件下无 draft 服务'
-            : `共 ${result.items.length} 个 draft 待发布；仅对这些 code 调用 publish/run_test`,
+            : `共 ${result.returnedCount} 个 draft 待发布；仅对这些 code 调用 publish/run_test`,
+        ]
+          .filter(Boolean)
+          .join('；'),
       };
     },
   });
@@ -99,14 +139,28 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_filter_services',
     description:
-      '按 status/codePrefix 过滤 API 服务（等同 list，默认 size=-1）。找 draft 须传 status=draft 或改用 apiservice_list_draft_services',
+      '按 status/codePrefix 过滤 API 服务（与 list_services 同源，默认 size=-1）。status=ALL 不过滤；找 draft 须传 status=draft 或改用 apiservice_list_draft_services',
+    resultBudget: { maxChars: 24_000 },
     parameters: {
       type: 'object',
       properties: {
-        codePrefix: { type: 'string', description: 'code 前缀，如 equipment' },
-        status: { type: 'string', enum: ['draft', 'published', 'disabled'] },
+        codePrefix: {
+          type: 'string',
+          description:
+            'code 前缀，如 equipment、IPS:production、IPS:production:BomInstance（软匹配）',
+        },
+        status: {
+          type: 'string',
+          enum: ['draft', 'published', 'disabled', 'ALL'],
+          description: 'ALL 或省略表示不过滤',
+        },
         tag: { type: 'string', description: '标签精确匹配' },
         connectionId: { type: 'string' },
+        page: { type: 'integer' },
+        size: {
+          type: 'integer',
+          description: '默认 -1 全量；与 list_services 相同',
+        },
       },
     },
     handler: async (args) => queryApiServicesForTool(args as Record<string, unknown>),
@@ -114,18 +168,51 @@ export function registerApiServiceTools() {
 
   registerFunctionCall({
     name: 'apiservice_get_service',
-    description: '获取 API 服务详情',
+    description:
+      '获取 API 服务详情；默认省略脚本正文。改 SQL/Handler 时传 includeScripts=true',
+    resultBudget: { maxChars: 24_000 },
     parameters: {
       type: 'object',
       properties: {
         serviceId: { type: 'string' },
-        code: { type: 'string' },
+        code: { type: 'string', description: '服务 code（非实体 code）' },
+        scopeCode: { type: 'string' },
+        serviceSlug: { type: 'string' },
+        includeScripts: {
+          type: 'boolean',
+          description: '为 true 时返回 definitionScript / handlerScript / scriptOverrides 全文',
+        },
       },
     },
     handler: async (args) => {
       const serviceId = await resolveApiServiceId(args as Record<string, unknown>);
       const res = await getApiService(serviceId);
-      return getApiData(res);
+      const data = getApiData<API.ApiService>(res);
+      if (!data) return data;
+      if (args.includeScripts === true) return data;
+      const {
+        definitionScript: _d,
+        handlerScript: _h,
+        scriptOverrides: _o,
+        securityConfig,
+        ...rest
+      } = data as API.ApiService & Record<string, unknown>;
+      const slimSecurity =
+        securityConfig && typeof securityConfig === 'object'
+          ? {
+              accessRestriction: (securityConfig as Record<string, unknown>).accessRestriction,
+              requestOverrides: (securityConfig as Record<string, unknown>).requestOverrides,
+              responseOverrides: (securityConfig as Record<string, unknown>).responseOverrides,
+            }
+          : securityConfig;
+      return {
+        ...rest,
+        securityConfig: slimSecurity,
+        hasDefinitionScript: Boolean(String(_d || '').trim()),
+        hasHandlerScript: Boolean(String(_h || '').trim()),
+        scriptsOmitted: true,
+        hint: '已省略脚本正文；需要全文时传 includeScripts=true',
+      };
     },
   });
 
@@ -171,7 +258,11 @@ export function registerApiServiceTools() {
         definitionScript: { type: 'string', description: 'scriptMode=sql' },
         handlerScript: { type: 'string', description: 'scriptMode=typescript' },
         scriptMode: { type: 'string', enum: ['sql', 'typescript'] },
-        requestParameterInterface: { type: 'string', description: '设计期 TS interface；文件字段须为 storage objectId' },
+        requestParameterInterface: {
+          type: 'string',
+          description:
+            '设计期 TS interface（编辑页「请求参数结构」唯一来源）；有实体时建议根据 bizdata_get_entity 字段编写；省略且能解析实体时 Tool 会自动生成',
+        },
         accessRestriction: {
           type: 'object',
           properties: {
@@ -189,6 +280,14 @@ export function registerApiServiceTools() {
           type: 'array',
           items: { type: 'string', enum: ['http', 'sse', 'websocket'] },
           description: '访问协议，至少一项，默认 ["http"]',
+        },
+        responseOverrides: {
+          type: 'object',
+          description: '按 operation 覆盖响应文档，如 { create: { responsesSchema, responseExample } }',
+        },
+        requestOverrides: {
+          type: 'object',
+          description: '按 operation 保存请求参数 Example（与测试 mock 同源）；未传时创建后自动生成带示例值的默认 Example',
         },
         publish: { type: 'boolean' },
       },
@@ -231,6 +330,21 @@ export function registerApiServiceTools() {
         const accessRestriction = args.accessRestriction as API.ApiServiceAccessRestriction | undefined;
         const scriptMode = args.scriptMode === 'typescript' ? 'typescript' : 'sql';
 
+        const entityIdForIface = args.entityId ? String(args.entityId) : undefined;
+        const entityCodesForIface = Array.isArray(args.entityCodes)
+          ? (args.entityCodes as string[])
+          : primaryEntityCode
+            ? [primaryEntityCode]
+            : undefined;
+        const { interfaceText, autoGenerated } = await ensureRequestParameterInterface({
+          requestParameterInterface: args.requestParameterInterface
+            ? String(args.requestParameterInterface)
+            : undefined,
+          operation: enabledOperations[0] || 'find',
+          entityId: entityIdForIface,
+          entityCodes: entityCodesForIface,
+        });
+
         const createRes = await postApiService({
           scopeCode: args.scopeCode ? String(args.scopeCode) : undefined,
           serviceSlug: args.serviceSlug ? String(args.serviceSlug) : undefined,
@@ -245,56 +359,116 @@ export function registerApiServiceTools() {
             scriptMode === 'sql' && args.definitionScript ? String(args.definitionScript) : undefined,
           handlerScript:
             scriptMode === 'typescript' && args.handlerScript ? String(args.handlerScript) : undefined,
-          requestParameterInterface: args.requestParameterInterface
-            ? String(args.requestParameterInterface)
-            : undefined,
+          requestParameterInterface: interfaceText || undefined,
           accessRestriction,
           enabledOperations,
           transportProtocols: Array.isArray(args.transportProtocols)
             ? (args.transportProtocols as string[])
             : undefined,
+          responseOverrides: args.responseOverrides as API.ApiServiceCreateInput['responseOverrides'],
+          requestOverrides: args.requestOverrides as API.ApiServiceCreateInput['requestOverrides'],
         });
         const created = getApiData<API.ApiService>(createRes);
         if (!created?.id) throw new Error('创建 API 服务失败');
 
+        const primaryOperation = enabledOperations[0];
+        if (primaryOperation && shouldAutoSuggestRequestExample(args.requestOverrides)) {
+          try {
+            const suggestRes = await postApiServiceSuggestTestParams(created.id, {
+              operation: primaryOperation,
+            });
+            const suggestData = getApiData<API.ApiServiceSuggestTestParamsResult>(suggestRes);
+            if (suggestData?.mockParameters) {
+              await putApiServiceTestMockParams(created.id, {
+                operation: primaryOperation,
+                mockParameters: suggestData.mockParameters,
+              });
+            }
+          } catch {
+            // 非致命：创建仍成功，可后续 suggest / 手动填写
+          }
+        }
+
         const result = {
           ...created,
+          requestParameterInterface:
+            created.requestParameterInterface || interfaceText || created.requestParameterInterface,
           _normalizedCode: serviceCode,
           _resolvedConnection: resolved,
           _enabledOperations: enabledOperations,
+          _requestInterfaceAutoGenerated: autoGenerated,
+        };
+
+        const hasEntityRef = Boolean(entityIdForIface || entityCodesForIface?.length);
+        const verifyOpts = {
+          expectedCode: undefined as string | undefined,
+          requireRequestParameterInterface: hasEntityRef,
         };
 
         if (args.publish === true) {
           const pubRes = await postApiServicePublish(created.id, { skipErrorHandler: true });
           const published = getApiData<API.ApiService>(pubRes);
           if (!published?.id) throw new Error('创建成功但发布失败');
-          const verified = await verifyApiServicePublished(published.id, serviceCode);
+          const verified = await verifyApiServiceById(published.id, {
+            expectedCode: serviceCode,
+            expectedStatus: 'published',
+            requireRequestParameterInterface: hasEntityRef,
+          });
           const listed = await verifyApiServiceListed(verified.code, { expectedStatus: 'published' });
-          const allVerified = verified.verified && listed.verified;
+          const docs = assessRequestParameterInterface(published);
+          const allVerified = verified.verified && listed.verified && docs.requestDocsComplete;
           return {
             ...published,
             _resolvedConnection: resolved,
+            _requestInterfaceAutoGenerated: autoGenerated,
             _verification: {
               ...verified,
               listedInApiList: listed.verified,
+              hasRequestParameterInterface: docs.hasRequestParameterInterface,
+              requestDocsComplete: docs.requestDocsComplete,
               verified: allVerified,
               message: allVerified
                 ? verified.message
-                : listed.message || verified.message,
+                : [listed.message, verified.message, docs.message].filter(Boolean).join('；'),
             },
           };
         }
 
-        const verified = await verifyApiServiceById(created.id, { expectedCode: serviceCode });
+        const verified = await verifyApiServiceById(created.id, {
+          ...verifyOpts,
+          // 后端可能改写 code（scope+slug）；以回读为准，不强制 expectedCode 与前端猜测一致
+        });
         const listed = await verifyApiServiceListed(verified.code);
-        const allVerified = verified.verified && listed.verified;
+        const docs = {
+          hasRequestParameterInterface: verified.hasRequestParameterInterface,
+          requestDocsComplete: verified.requestDocsComplete,
+          message: verified.requestDocsComplete
+            ? undefined
+            : 'requestParameterInterface 为空；编辑页「请求参数结构」将显示为空',
+        };
+        const allVerified =
+          verified.verified && listed.verified && (!hasEntityRef || Boolean(docs.requestDocsComplete));
         return {
           ...result,
+          code: verified.code,
+          requestParameterInterface: result.requestParameterInterface || interfaceText || '',
           _verification: {
             ...verified,
             listedInApiList: listed.verified,
+            hasRequestParameterInterface: docs.hasRequestParameterInterface,
+            requestDocsComplete: Boolean(docs.requestDocsComplete),
             verified: allVerified,
-            message: `已创建 draft 服务「${serviceCode}」（未发布；发布须 apiservice_publish_service）`,
+            message: allVerified
+              ? `已创建 draft 服务「${verified.code}」（未发布；发布须 apiservice_publish_service）${
+                  autoGenerated ? '；已自动生成 requestParameterInterface' : ''
+                }`
+              : [
+                  `已创建 draft「${verified.code}」但请求文档不完整`,
+                  docs.message,
+                  '请用 apiservice_update_service 补全 requestParameterInterface（优先传 serviceId 或返回的 code）',
+                ]
+                  .filter(Boolean)
+                  .join('；'),
           },
         };
       },
@@ -359,23 +533,57 @@ export function registerApiServiceTools() {
   });
 
   registerFunctionCall({
-    name: 'apiservice_update_service',
-    description: '更新 API 服务',
+    name: 'apiservice_check_handler',
+    description:
+      '检查 TypeScript Handler 语法/类型（行级诊断）。保存或测试前必须先调用且 ok=true；禁止 queryPg/手写 SQL',
     parameters: {
       type: 'object',
       properties: {
-        serviceId: { type: 'string' },
-        code: { type: 'string' },
+        handlerScript: { type: 'string', description: 'Handler 脚本（推荐只写函数体）' },
+        requestParameterInterface: {
+          type: 'string',
+          description: '请求参数 TS interface，用于 params 类型',
+        },
+      },
+      required: ['handlerScript'],
+    },
+    handler: async (args) => {
+      const res = await postApiServiceCheckHandler({
+        handlerScript: String(args.handlerScript || ''),
+        requestParameterInterface: args.requestParameterInterface
+          ? String(args.requestParameterInterface)
+          : undefined,
+      });
+      const data = getApiData<{
+        ok: boolean;
+        diagnostics: Array<{ line: number; column: number; message: string }>;
+      }>(res);
+      return data || { ok: false, diagnostics: [{ line: 1, column: 1, message: '检查失败' }] };
+    },
+  });
+
+  registerFunctionCall({
+    name: 'apiservice_update_service',
+    description:
+      '更新 API 服务。定位优先 serviceId，或 code，或 scopeCode+serviceSlug（勿用实体 code）。补请求结构须传非空 requestParameterInterface',
+    parameters: {
+      type: 'object',
+      properties: {
+        serviceId: { type: 'string', description: '优先：create 返回的 id' },
+        code: { type: 'string', description: '服务 code（非实体 code）' },
         name: { type: 'string' },
         description: { type: 'string' },
         tags: { type: 'array', items: { type: 'string' } },
         connectionId: { type: 'string' },
-        scopeCode: { type: 'string' },
-        serviceSlug: { type: 'string' },
+        scopeCode: { type: 'string', description: '可与 serviceSlug 一起定位服务' },
+        serviceSlug: { type: 'string', description: '可与 scopeCode 一起定位服务' },
         definitionScript: { type: 'string' },
         handlerScript: { type: 'string' },
         scriptMode: { type: 'string', enum: ['sql', 'typescript'] },
-        requestParameterInterface: { type: 'string' },
+        requestParameterInterface: {
+          type: 'string',
+          description: '设计期 TS interface；编辑页「请求参数结构」来源，须非空才算补全',
+        },
         accessRestriction: {
           type: 'object',
           properties: {
@@ -389,6 +597,14 @@ export function registerApiServiceTools() {
           type: 'array',
           items: { type: 'string', enum: ['http', 'sse', 'websocket'] },
         },
+        responseOverrides: {
+          type: 'object',
+          description: '按 operation 覆盖 { responsesSchema, responseExample }；Example 禁止 item:null 占位',
+        },
+        requestOverrides: {
+          type: 'object',
+          description: '按 operation 保存请求参数 Example（与测试 mock 同源），须含具体示例值而非空结构',
+        },
       },
     },
     handler: createMutatingHandler({
@@ -401,8 +617,15 @@ export function registerApiServiceTools() {
         if (args.name !== undefined) body.name = String(args.name);
         if (args.description !== undefined) body.description = String(args.description);
         if (args.tags !== undefined) body.tags = args.tags as string[];
-        if (args.scopeCode !== undefined) body.scopeCode = String(args.scopeCode);
-        if (args.serviceSlug !== undefined) body.serviceSlug = String(args.serviceSlug);
+        // scope/slug 仅用于定位时不要写入 body 改码；仅当显式要改且同时有 code 意图时才 patch
+        // 若 args 同时带 scopeCode+serviceSlug 且无 serviceId/code，resolve 已用它们定位；避免误改 code
+        const locatingOnly =
+          !args.serviceId &&
+          !args.code &&
+          args.scopeCode !== undefined &&
+          args.serviceSlug !== undefined;
+        if (args.scopeCode !== undefined && !locatingOnly) body.scopeCode = String(args.scopeCode);
+        if (args.serviceSlug !== undefined && !locatingOnly) body.serviceSlug = String(args.serviceSlug);
         if (args.connectionId !== undefined) body.connectionId = String(args.connectionId);
         if (args.scriptMode !== undefined) {
           body.scriptMode = args.scriptMode === 'typescript' ? 'typescript' : 'sql';
@@ -421,10 +644,33 @@ export function registerApiServiceTools() {
         if (args.transportProtocols !== undefined) {
           body.transportProtocols = args.transportProtocols as string[];
         }
+        if (args.responseOverrides !== undefined) {
+          body.responseOverrides = args.responseOverrides as API.ApiServiceCreateInput['responseOverrides'];
+        }
+        if (args.requestOverrides !== undefined) {
+          body.requestOverrides = args.requestOverrides as API.ApiServiceCreateInput['requestOverrides'];
+        }
         const res = await patchApiService(serviceId, body);
         const data = getApiData<API.ApiService>(res);
         if (!data) throw new Error('更新 API 服务失败');
-        return data;
+
+        const docs = assessRequestParameterInterface(data);
+        const touchedIface = args.requestParameterInterface !== undefined;
+        return {
+          ...data,
+          _verification: {
+            verified: !touchedIface || docs.requestDocsComplete,
+            id: data.id,
+            code: data.code,
+            hasRequestParameterInterface: docs.hasRequestParameterInterface,
+            requestDocsComplete: docs.requestDocsComplete,
+            message: touchedIface
+              ? docs.requestDocsComplete
+                ? `已更新并确认 requestParameterInterface 非空（${data.code}）`
+                : `更新成功但 requestParameterInterface 仍为空：${docs.message}`
+              : `已更新服务「${data.code}」`,
+          },
+        };
       },
     }),
   });
@@ -434,11 +680,13 @@ export function registerApiServiceTools() {
     description:
       '发布 API 服务（draft→published）。成功后信封须 verified=true 且 status=published；禁止用 run_test 代替本 Tool',
     requiresVerification: true,
-    parameters: {
+        parameters: {
       type: 'object',
       properties: {
         serviceId: { type: 'string' },
         code: { type: 'string' },
+        scopeCode: { type: 'string' },
+        serviceSlug: { type: 'string' },
       },
     },
     handler: createMutatingHandler({
@@ -579,7 +827,7 @@ export function registerApiServiceTools() {
 
   registerFunctionCall({
     name: 'apiservice_suggest_test_params',
-    description: '为指定 operation 生成 mock 测试参数，并同步到测试弹窗',
+    description: '生成并保存请求参数 Example（与编辑页/测试页 mock 同源），并同步到测试页表单',
     parameters: {
       type: 'object',
       properties: {
@@ -601,14 +849,27 @@ export function registerApiServiceTools() {
         });
         const data = getApiData<API.ApiServiceSuggestTestParamsResult>(res);
         if (!data) throw new Error('生成模拟参数失败');
-        return data;
+        const operation = data.operation || String(args.operation || '').trim();
+        if (operation && data.mockParameters) {
+          const saveRes = await putApiServiceTestMockParams(serviceId, {
+            operation,
+            mockParameters: data.mockParameters,
+          });
+          if (!isApiSuccess(saveRes)) {
+            throw new Error(formatApiServiceTestError(saveRes, '保存请求参数 Example 失败'));
+          }
+        }
+        return {
+          ...data,
+          saved: true,
+        };
       },
     }),
   });
 
   registerFunctionCall({
     name: 'apiservice_set_test_params',
-    description: '保存并同步 mock 测试参数到测试页（持久化到服务配置，按 operation 存储）',
+    description: '保存请求参数 Example（与编辑页一致，持久化到 requestOverrides），并同步测试页表单',
     parameters: {
       type: 'object',
       properties: {
@@ -744,11 +1005,15 @@ export function registerApiServiceTools() {
 
   registerFunctionCall({
     name: 'apiservice_navigate',
-    description: '在 API 服务相关页面间跳转：list / test；可携带 autoRunTest 返回测试页后自动重测',
+    description: '在 API 服务相关页面间跳转：create / edit / test / list；工作流页内禁止跳 list',
     parameters: {
       type: 'object',
       properties: {
-        target: { type: 'string', enum: ['list', 'test'], description: '目标页面' },
+        target: {
+          type: 'string',
+          enum: ['list', 'create', 'edit', 'test'],
+          description: '目标页面；在 create/edit/test 流程中请使用 create/edit/test 互跳',
+        },
         serviceId: { type: 'string' },
         code: { type: 'string' },
         autoRunTest: { type: 'boolean', description: '跳转到 test 页后是否自动执行测试' },
@@ -769,16 +1034,16 @@ export function registerApiServiceTools() {
         if (args.serviceId || args.code) {
           resolvedServiceId = await resolveApiServiceId(args as Record<string, unknown>);
         }
-        let path = '/api_services/list';
-        if (target === 'test' && resolvedServiceId) {
-          path = `/api_services/${resolvedServiceId}/test`;
-        } else if (target !== 'list' && !resolvedServiceId) {
-          throw new Error('跳转到 test 需要提供 serviceId 或 code');
-        }
+
+        const path = resolveApiServiceNavigateTarget(
+          target,
+          resolvedServiceId,
+          window.location.pathname,
+        );
 
         const payload = {
           target,
-          serviceId: resolvedServiceId,
+          serviceId: resolvedServiceId || undefined,
           path,
           autoRunTest: args.autoRunTest === true,
           fixContext: args.fixContext as Record<string, unknown> | undefined,
@@ -791,6 +1056,133 @@ export function registerApiServiceTools() {
         });
 
         return payload;
+      },
+    }),
+  });
+
+  // ========== 异常响应模板（全局共享）==========
+
+  registerFunctionCall({
+    name: 'apiservice_list_exception_responses',
+    description: '列出全部异常响应模板（全局共享），返回 items[].{id,code,title,description,schema,example,isEnabled}',
+    parameters: { type: 'object', properties: {} },
+    handler: async () => {
+      const res = await getExceptionResponses({ size: -1 });
+      if (!isApiSuccess(res)) throw new Error('获取异常响应列表失败');
+      return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'apiservice_create_exception_response',
+    description: '新建一条异常响应模板。code 必须唯一（401/403/404/500 等）。schema 为 JSON Schema，example 为示例响应体。',
+    parameters: {
+      type: 'object',
+      properties: {
+        code: { type: 'integer', description: 'HTTP 状态码（如 401）' },
+        title: { type: 'string', description: '简短标题（如「未授权」）' },
+        description: { type: 'string', description: '详细说明' },
+        schema: { type: 'object', description: '响应体 JSON Schema' },
+        example: { type: 'object', description: '响应示例' },
+        isEnabled: { type: 'boolean', description: '是否启用，默认 true' },
+        sortOrder: { type: 'integer', description: '排序值，默认 0' },
+      },
+      required: ['code', 'title'],
+    },
+    handler: createMutatingHandler({
+      domain: API_SERVICE_DOMAIN,
+      type: 'apiservice.exception_response.created',
+      scope: EXCEPTION_RESPONSES_SURFACE,
+      buildResourceId: (_args, data) => (data as API.ExceptionResponseItem)?.id,
+      handler: async (args) => {
+        const res = await createExceptionResponse({
+          code: Number(args.code),
+          title: String(args.title || '').trim(),
+          description: args.description ? String(args.description) : undefined,
+          schema: (args.schema as Record<string, unknown>) || {},
+          example: args.example,
+          isEnabled: args.isEnabled !== false,
+          sortOrder: Number(args.sortOrder) || 0,
+        });
+        if (!isApiSuccess(res)) throw new Error(res.message || '创建异常响应失败');
+        return getApiData(res);
+      },
+    }),
+  });
+
+  registerFunctionCall({
+    name: 'apiservice_update_exception_response',
+    description: '更新一条异常响应模板（按 id 或 code 匹配）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '异常响应 ID' },
+        code: { type: 'integer', description: '用于查找的 code（无 id 时）' },
+        title: { type: 'string' },
+        description: { type: 'string' },
+        schema: { type: 'object', description: '响应体 JSON Schema' },
+        example: { type: 'object', description: '响应示例' },
+        isEnabled: { type: 'boolean' },
+        sortOrder: { type: 'integer' },
+      },
+    },
+    handler: createMutatingHandler({
+      domain: API_SERVICE_DOMAIN,
+      type: 'apiservice.exception_response.updated',
+      scope: EXCEPTION_RESPONSES_SURFACE,
+      buildResourceId: (args, data) => (data as API.ExceptionResponseItem)?.id || (args.id as string),
+      handler: async (args) => {
+        let id = args.id as string | undefined;
+        if (!id && args.code != null) {
+          const listRes = await getExceptionResponses({ size: -1 });
+          if (isApiSuccess(listRes)) {
+            const found = getApiData(listRes)?.items.find((item) => item.code === Number(args.code));
+            if (found) id = found.id;
+          }
+        }
+        if (!id) throw new Error('未提供 id 且无法按 code 找到记录');
+        const patch: Record<string, unknown> = {};
+        if (args.title != null) patch.title = String(args.title);
+        if (args.description !== undefined) patch.description = args.description;
+        if (args.schema !== undefined) patch.schema = args.schema;
+        if (args.example !== undefined) patch.example = args.example;
+        if (args.isEnabled !== undefined) patch.isEnabled = args.isEnabled;
+        if (args.sortOrder !== undefined) patch.sortOrder = Number(args.sortOrder);
+        const res = await patchExceptionResponse(id, patch);
+        if (!isApiSuccess(res)) throw new Error(res.message || '更新异常响应失败');
+        return getApiData(res);
+      },
+    }),
+  });
+
+  registerFunctionCall({
+    name: 'apiservice_delete_exception_response',
+    description: '删除一条异常响应模板（按 id 或 code 匹配）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '异常响应 ID' },
+        code: { type: 'integer', description: '用于查找的 code（无 id 时）' },
+      },
+    },
+    handler: createMutatingHandler({
+      domain: API_SERVICE_DOMAIN,
+      type: 'apiservice.exception_response.deleted',
+      scope: EXCEPTION_RESPONSES_SURFACE,
+      buildResourceId: (args) => (args.id as string) || String(args.code),
+      handler: async (args) => {
+        let id = args.id as string | undefined;
+        if (!id && args.code != null) {
+          const listRes = await getExceptionResponses({ size: -1 });
+          if (isApiSuccess(listRes)) {
+            const found = getApiData(listRes)?.items.find((item) => item.code === Number(args.code));
+            if (found) id = found.id;
+          }
+        }
+        if (!id) throw new Error('未提供 id 且无法按 code 找到记录');
+        const res = await deleteExceptionResponse(id);
+        if (!isApiSuccess(res)) throw new Error(res.message || '删除异常响应失败');
+        return { id, deleted: true };
       },
     }),
   });

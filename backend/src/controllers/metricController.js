@@ -1,4 +1,5 @@
 const metricService = require('../services/metrics/metricService');
+const metricCardService = require('../services/metrics/metricCardService');
 const metricExecutor = require('../services/metrics/metricExecutor');
 const logger = require('../utils/logger');
 const { formatApiError } = require('../utils/formatApiError');
@@ -159,11 +160,89 @@ class MetricController {
       const refresh = ctx.query.refresh === '1' || ctx.query.refresh === 'true';
       const data = await metricService.getDashboard({
         codePrefix: ctx.query.codePrefix || ctx.query.code_prefix || ctx.query.scopeCode || ctx.query.scope_code,
+        domainCode: ctx.query.domainCode || ctx.query.domain_code,
         refresh,
       });
       ctx.body = { code: 200, message: '获取指标看板成功', data };
     } catch (error) {
       sendMetricError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async listCards(ctx) {
+    try {
+      const data = await metricCardService.listCards({
+        domainCode: ctx.query.domainCode || ctx.query.domain_code,
+        status: ctx.query.status,
+        page: parseInt(ctx.query.page, 10) || 1,
+        size: parseInt(ctx.query.size, 10) || 50,
+      });
+      ctx.body = { code: 200, message: '获取指标卡片列表成功', data };
+    } catch (error) {
+      sendMetricError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async getCard(ctx) {
+    try {
+      const data = await metricCardService.getCardById(ctx.params.id);
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '指标卡片不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '获取指标卡片成功', data };
+    } catch (error) {
+      sendMetricError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async createCard(ctx) {
+    try {
+      const data = await metricCardService.createCard(ctx.request.body || {});
+      ctx.status = 201;
+      ctx.body = { code: 201, message: '创建指标卡片成功', data };
+    } catch (error) {
+      sendMetricError(ctx, error, { fallbackStatus: 400 });
+    }
+  }
+
+  static async updateCard(ctx) {
+    try {
+      const data = await metricCardService.updateCard(ctx.params.id, ctx.request.body || {});
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '指标卡片不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '更新指标卡片成功', data };
+    } catch (error) {
+      sendMetricError(ctx, error, { fallbackStatus: 400 });
+    }
+  }
+
+  static async deleteCard(ctx) {
+    try {
+      const ok = await metricCardService.deleteCard(ctx.params.id);
+      if (!ok) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '指标卡片不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '删除指标卡片成功', data: null };
+    } catch (error) {
+      sendMetricError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async suggestCard(ctx) {
+    try {
+      const metricId = ctx.query.metricId || ctx.query.metric_id || ctx.request.body?.metricId;
+      const metricCode = ctx.query.metricCode || ctx.query.metric_code || ctx.request.body?.metricCode || ctx.request.body?.code;
+      const data = await metricCardService.suggestCardFromMetric(metricId || metricCode);
+      ctx.body = { code: 200, message: '建议指标卡片成功', data };
+    } catch (error) {
+      sendMetricError(ctx, error, { fallbackStatus: 400 });
     }
   }
 }

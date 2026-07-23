@@ -4,12 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildMaterializationExecutePrompts } from '@/ai/pageChatPrompts';
 import EntitySelector from '../components/EntitySelector';
 import SqlPreviewPanel from '../components/SqlPreviewPanel';
-import { useUrlPagination } from '@/hooks/useUrlQueryState';
 import {
   useDatabaseConnections,
   useMaterializationActions,
   useMaterializationEntities,
-  useMaterializationRuns,
 } from '../hooks/useMaterializationData';
 
 const MaterializationExecutePage: React.FC = () => {
@@ -17,6 +15,7 @@ const MaterializationExecutePage: React.FC = () => {
   const [connectionId, setConnectionId] = useState<string>();
   const [targetSchema, setTargetSchema] = useState('bizdata_mat');
   const [activeCodeTab, setActiveCodeTab] = useState('sql');
+  const [runsRefreshKey, setRunsRefreshKey] = useState(0);
 
   const selectedIdsRef = useRef(selectedIds);
   const connectionIdRef = useRef(connectionId);
@@ -28,12 +27,9 @@ const MaterializationExecutePage: React.FC = () => {
   const {
     erEntities,
     groupedOptions,
-    loading: entitiesLoading,
     loadAll: loadEntities,
   } = useMaterializationEntities(connectionId);
-  const { page, pageSize } = useUrlPagination(10);
   const { connections, defaultConnection, loading: connLoading, loadConnections } = useDatabaseConnections();
-  const { runs, total, loading: runsLoading, loadRuns } = useMaterializationRuns(connectionId, page, pageSize);
   const { executing, preview, handlePreview, handleExecute } = useMaterializationActions();
 
   const selectedConnection = connections.find((c) => c.id === connectionId) || defaultConnection;
@@ -59,7 +55,7 @@ const MaterializationExecutePage: React.FC = () => {
   const refreshAll = () => {
     void loadEntities();
     void loadConnections();
-    void loadRuns(page);
+    setRunsRefreshKey((k) => k + 1);
   };
 
   useAISurface({
@@ -165,9 +161,8 @@ const MaterializationExecutePage: React.FC = () => {
         activeTab={activeCodeTab}
         onTabChange={setActiveCodeTab}
         dbType={dbType}
-        runs={runs}
-        runsLoading={runsLoading || entitiesLoading}
-        runsTotal={total}
+        connectionId={connectionId}
+        runsRefreshKey={runsRefreshKey}
       />
     </div>
   );

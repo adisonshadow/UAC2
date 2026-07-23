@@ -15,10 +15,13 @@ const router = new Router({ prefix: '/api/v1/admin/api-services' });
  *       - in: query
  *         name: codePrefix
  *         schema: { type: string }
- *         description: 域前缀过滤，如 sales:order
+ *         description: |
+ *           code 前缀：精确匹配，或 startsWith（含域段 boundary 与末段软前缀）。
+ *           例 IPS:production、IPS:production:BomInstance（可匹配 BomInstanceCreate）
  *       - in: query
  *         name: status
- *         schema: { type: string, enum: [draft, published, disabled] }
+ *         schema: { type: string, enum: [draft, published, disabled, ALL] }
+ *         description: draft/published/disabled；ALL 或省略表示不过滤
  *       - in: query
  *         name: tag
  *         schema: { type: string }
@@ -57,10 +60,10 @@ const router = new Router({ prefix: '/api/v1/admin/api-services' });
  *               tags: { type: array, items: { type: string } }
  *               connectionId: { type: string, format: uuid, description: "可选，省略时按 Scope 物化记录自动推断" }
  *               entityId: { type: string, format: uuid, description: "可选，单实体模板时使用" }
- *               definitionScript: { type: string, description: "SQL 脚本（scriptMode=sql）" }
- *               handlerScript: { type: string, description: "TypeScript Handler（scriptMode=typescript）" }
+ *               definitionScript: { type: string, description: "SQL 脚本（scriptMode=sql）；命名参数 :param" }
+ *               handlerScript: { type: string, description: "TypeScript Handler（scriptMode=typescript）；推荐只写函数体，用 params + db(entityCode)，禁止 queryPg/SQL；保存前须语法检查通过" }
  *               scriptMode: { type: string, enum: [sql, typescript], default: sql }
- *               requestParameterInterface: { type: string, description: "设计期请求参数 TypeScript interface" }
+ *               requestParameterInterface: { type: string, description: "请求参数 TS interface（唯一真相源；Handler 中 params.xxx 须与此一致）" }
  *               accessRestriction:
  *                 type: object
  *                 properties:
@@ -73,9 +76,17 @@ const router = new Router({ prefix: '/api/v1/admin/api-services' });
  *                 items: { type: string, enum: [http, sse, websocket] }
  *                 description: 访问协议，至少一项，默认 http
  *               securityConfig: { type: object }
- *     responses:
- *       201:
- *         description: 创建成功
+ *               responseOverrides:
+ *                 type: object
+ *                 description: 按 operation 覆盖响应 Schema 与 Example
+ *                 additionalProperties:
+ *                   type: object
+ *                   properties:
+ *                     responsesSchema: { type: object }
+ *                     responseExample: {}
+ *               responseOverrides:
+ *                 type: object
+ *                 description: "按 operation 覆盖响应 Schema/Example，如 { find: { responsesSchema, responseExample } }"
  */
 router.get('/', auth, ApiServiceController.list);
 router.post('/', auth, ApiServiceController.create);
@@ -136,6 +147,41 @@ router.post('/resolve-connection', auth, ApiServiceController.resolveConnection)
 
 /**
  * @swagger
+ * /api/v1/admin/api-services/check-handler:
+ *   post:
+ *     tags: [Admin-ApiServices]
+ *     summary: 检查 TypeScript Handler 语法/类型（行级诊断） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               handlerScript: { type: string, description: "Handler 脚本（函数体或 export async function handler）" }
+ *               requestParameterInterface: { type: string, description: "请求参数 TS interface，用于 params 类型" }
+ *     responses:
+ *       200:
+ *         description: 返回 { ok, diagnostics: [{ line, column, message }] }
+ */
+router.post('/check-handler', auth, ApiServiceController.checkHandler);
+
+/**
+ * @swagger
+ * /api/v1/admin/api-services/handler-sdk-dts:
+ *   get:
+ *     tags: [Admin-ApiServices]
+ *     summary: 获取 TypeScript Handler SDK 环境声明（Monaco / 语法检查共用） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: 返回 { dts }
+ */
+router.get('/handler-sdk-dts', auth, ApiServiceController.handlerSdkDts);
+
+/**
+ * @swagger
  * /api/v1/admin/api-services/by-code/{code}:
  *   get:
  *     tags: [Admin-ApiServices]
@@ -185,10 +231,10 @@ router.get('/by-code/:code', auth, ApiServiceController.getByCode);
  *               name: { type: string }
  *               scopeCode: { type: string }
  *               serviceSlug: { type: string }
- *               definitionScript: { type: string }
- *               handlerScript: { type: string }
+ *               definitionScript: { type: string, description: "SQL 脚本（scriptMode=sql）" }
+ *               handlerScript: { type: string, description: "TypeScript Handler；推荐只写函数体 + params/db SDK，禁止 queryPg；保存前须语法检查通过" }
  *               scriptMode: { type: string, enum: [sql, typescript] }
- *               requestParameterInterface: { type: string }
+ *               requestParameterInterface: { type: string, description: "请求参数 TS interface（唯一真相源）" }
  *               accessRestriction:
  *                 type: object
  *                 properties:
@@ -200,6 +246,17 @@ router.get('/by-code/:code', auth, ApiServiceController.getByCode);
  *                 type: array
  *                 items: { type: string, enum: [http, sse, websocket] }
  *               connectionId: { type: string, format: uuid }
+ *               responseOverrides:
+ *                 type: object
+ *                 description: 按 operation 覆盖响应 Schema 与 Example
+ *                 additionalProperties:
+ *                   type: object
+ *                   properties:
+ *                     responsesSchema: { type: object }
+ *                     responseExample: {}
+ *               responseOverrides:
+ *                 type: object
+ *                 description: "按 operation 覆盖响应 Schema/Example"
  *     responses:
  *       200:
  *         description: 更新成功
@@ -225,7 +282,7 @@ router.delete('/:id', auth, ApiServiceController.remove);
  * /api/v1/admin/api-services/{id}/publish:
  *   post:
  *     tags: [Admin-ApiServices]
- *     summary: 发布 API 服务 [需要认证]
+ *     summary: 发布 API 服务（draft/disabled→published，原子更新 version） [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -234,7 +291,9 @@ router.delete('/:id', auth, ApiServiceController.remove);
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 发布成功
+ *         description: 发布成功（回读 status 必须为 published）
+ *       409:
+ *         description: 发布未持久化（并发更新冲突，可重试）
  */
 router.post('/:id/publish', auth, ApiServiceController.publish);
 
@@ -322,7 +381,11 @@ router.post('/:id/suggest-test-params', auth, ApiServiceController.suggestTestPa
  * /api/v1/admin/api-services/{id}/test-mock-parameters:
  *   put:
  *     tags: [Admin-ApiServices]
- *     summary: 保存 API 服务测试模拟参数（按 operation 持久化） [需要认证]
+ *     summary: 保存 API 服务请求参数 Example（与 requestOverrides 同源，按 operation 持久化；不改变 published 状态） [需要认证]
+ *     description: |
+ *       写入 security_config.requestOverrides[operation].requestExample。
+ *       与编辑页契约变更不同：本接口不会把已 published 的服务降回 draft，
+ *       避免与 publish 并行时出现「发布成功但最终仍是 draft」。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -338,11 +401,11 @@ router.post('/:id/suggest-test-params', auth, ApiServiceController.suggestTestPa
  *             required: [operation, mockParameters]
  *             properties:
  *               operation: { type: string }
- *               mockParameters: { type: object, description: '完整 mock 参数 JSON' }
+ *               mockParameters: { type: object, description: '请求参数 Example JSON（写入 security_config.requestOverrides[operation].requestExample）' }
  *               parameters: { type: object, description: '同 mockParameters，二选一' }
  *     responses:
  *       200:
- *         description: 保存成功
+ *         description: 保存成功（published 服务保持 published）
  */
 router.put('/:id/test-mock-parameters', auth, ApiServiceController.saveTestMockParams);
 

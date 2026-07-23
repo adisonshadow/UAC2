@@ -11,6 +11,7 @@ import {
 import { normalizeApiServiceCode, suggestApiServiceCodeFromEntity } from './apiServiceCodeUtils';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
 import { verifyApiServiceListed, verifyApiServicePublished } from './apiServiceVerify';
+import { buildRequestParameterInterface } from './buildRequestParameterInterface';
 
 export const DEFAULT_CRUD_OPERATIONS = ['find', 'create', 'updateOne', 'deleteOne'] as const;
 
@@ -278,6 +279,12 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
 
   for (const draft of drafts) {
     try {
+      const entityForIface =
+        entities.find((e) => e.id === draft.entityId || e.code === draft.entityCode) || entities[0];
+      const requestParameterInterface = buildRequestParameterInterface(
+        draft.enabledOperations[0],
+        entityForIface?.fields || [],
+      );
       const createRes = await postApiService({
         code: draft.code,
         name: draft.name,
@@ -286,6 +293,7 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
         entityId: draft.entityId,
         definitionScript: draft.definitionScript,
         enabledOperations: draft.enabledOperations,
+        requestParameterInterface: requestParameterInterface || undefined,
       });
 
       if (!isApiSuccess(createRes)) {

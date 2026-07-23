@@ -64,10 +64,34 @@ const app = new Koa();
 app.use(errorHandler);
 app.use(traceId);
 
-// HTTP 安全头
+// HTTP 安全头（Swagger UI 依赖 CDN 脚本 + 内联初始化，需放宽 CSP）
 app.use(async (ctx, next) => {
+  const isSwagger = ctx.path === '/swagger' || ctx.path.startsWith('/swagger/');
   await new Promise((resolve, reject) => {
-    helmet()(ctx.req, ctx.res, (err) => {
+    helmet({
+      contentSecurityPolicy: isSwagger
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://cdnjs.cloudflare.com',
+              ],
+              styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https:',
+                'https://cdnjs.cloudflare.com',
+                'https://fonts.googleapis.com',
+              ],
+              fontSrc: ["'self'", 'https:', 'data:', 'https://fonts.gstatic.com'],
+              imgSrc: ["'self'", 'data:', 'https:'],
+              connectSrc: ["'self'"],
+            },
+          }
+        : undefined,
+    })(ctx.req, ctx.res, (err) => {
       if (err) reject(err);
       else resolve();
     });

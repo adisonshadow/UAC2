@@ -1,5 +1,6 @@
 import type { AIMutation, ToolMutationResult } from '@EADAF/ai-base';
 import { emitAIMutation, getAllAISurfaces, subscribeAIMutation, subscribeToolInvoke } from '@EADAF/ai-base';
+import { resolveApiServiceWorkflowToolNavigation } from '@/pages/ApiServices/ai/apiServiceWorkflowNavigation';
 import { history } from '@/utils/navigation';
 
 export interface MutatingHandlerOptions<TArgs, TData> {
@@ -136,7 +137,7 @@ const DOMAIN_ROUTES: Array<{ test: RegExp; path: string }> = [
   { test: /^bizdata_(insert_mock|browse_materialized)/, path: '/business_data/database' },
   // 业务数据 - 指标（create/update/delete/upsert/execute 共用）
   { test: /^bizdata_metric_(create|update|delete|upsert|execute)/, path: '/business_data/metrics' },
-  // API 服务写
+  // API 服务写（工作流页 create/edit/test 由 resolveApiServiceWorkflowToolNavigation 接管，不跳列表）
   { test: /^apiservice_(create|update|delete|publish|disable)/, path: '/api_services/list' },
   // 采集管道写（含 upsert/publish/disable/delete）
   { test: /^collection_pipeline_(create|update|delete|upsert|publish|disable)/, path: '/api_services/collection-pipelines' },
@@ -184,6 +185,17 @@ function resolveToolNavigationPath(name: string): string | undefined {
 function installToolNavigationBridge(): void {
   subscribeToolInvoke((entry) => {
     if (!entry.success) return;
+
+    const workflowNav = resolveApiServiceWorkflowToolNavigation(
+      entry.name,
+      entry,
+      window.location.pathname,
+    );
+    if (workflowNav !== null) {
+      if (workflowNav) history.push(workflowNav);
+      return;
+    }
+
     const path = resolveToolNavigationPath(entry.name);
     if (path) history.push(path);
   });

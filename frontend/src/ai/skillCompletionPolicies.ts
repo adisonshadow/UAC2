@@ -98,9 +98,65 @@ export function registerEadafSkillCompletionPolicies(): void {
     ],
   });
 
-  // API 服务 - test-fix 循环：连续执行型，不受「一次一事」限制
-  registerSkillCompletionPolicy('bizdata-api-service-test-fix', {
+  // API 服务 - test-form 循环：连续执行型，不受「一次一事」限制
+  registerSkillCompletionPolicy('bizdata-api-service-test-form', {
     continuousExecution: true,
     blockKeywords: ['接下来您可以', '建议您', '可选操作', '如需继续'],
+  });
+
+  registerSkillCompletionPolicy('api-services-collection-pipeline', {
+    completionKeywords: ['创建完成', '已创建', '管道已创建', '发布成功', '测试通过'],
+    claimRules: [
+      {
+        keywords: ['创建完成', '已创建', '管道已创建', '新建成功'],
+        requiredTools: ['collection_pipeline_upsert'],
+      },
+      {
+        keywords: ['测试通过', '测试成功'],
+        requiredTools: ['collection_pipeline_run_test'],
+      },
+      {
+        keywords: ['发布成功', '已发布'],
+        requiredTools: ['collection_pipeline_publish'],
+      },
+    ],
+  });
+
+  // 业务指标：声称创建/看板就绪时必须真正调用过对应写 Tool
+  registerSkillCompletionPolicy('bizdata-metrics', {
+    completionKeywords: [
+      '创建成功',
+      '已创建',
+      '卡片已创建',
+      '看板已就绪',
+      '全部卡片',
+      '指标已保存',
+    ],
+    claimRules: [
+      {
+        keywords: ['指标已创建', '指标创建成功', '指标已保存', '新建指标成功'],
+        requiredTools: ['bizdata_metric_upsert'],
+      },
+      {
+        keywords: [
+          '卡片已创建',
+          '看板卡片',
+          '指标卡片已',
+          '看板已就绪',
+          '全部卡片',
+          '张卡片',
+          '张看板卡片',
+        ],
+        requiredTools: ['bizdata_metric_card_upsert'],
+      },
+      {
+        keywords: ['执行成功', '已执行指标', '计算完成'],
+        requiredTools: ['bizdata_metric_execute'],
+      },
+      {
+        keywords: ['批量执行成功', '批量已执行'],
+        requiredTools: ['bizdata_metric_execute_batch'],
+      },
+    ],
   });
 }

@@ -5,9 +5,10 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   SignatureFilled,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { useScopeFromUrl, useUrlPagination } from '@/hooks/useUrlQueryState';
+import { useScopeFromUrl, useTableUrlState } from '@/hooks/useUrlQueryState';
 import type { ProColumns } from '@ant-design/pro-components';
 
 import { Button, Popconfirm, Splitter, Tag, Tooltip, Typography } from 'antd';
@@ -40,16 +41,30 @@ import {
   filterServicesByDomainPrefix,
   type ApiServiceListItem,
 } from '../utils/buildApiServiceDomainTree';
+import {
+  getTransportProtocolLabel,
+  normalizeTransportProtocols,
+} from '../utils/apiServiceTransport';
 
 const { Text } = Typography;
 
 const VIEWPORT_HEIGHT = 'calc(100vh - 56px)';
+
+const LIST_FILTER_KEYS = ['status', 'tag', 'code'] as const;
 
 type ListFilters = {
   status?: string;
   tag?: string;
   keyword?: string;
 };
+
+function formValuesToListFilters(formValues: Record<string, unknown>): ListFilters {
+  return {
+    status: (formValues.status as string | undefined) || undefined,
+    tag: (formValues.tag as string | undefined) || undefined,
+    keyword: (formValues.code as string | undefined) || undefined,
+  };
+}
 
 function matchKeyword(item: ApiServiceListItem, keyword?: string) {
   const q = keyword?.trim().toLowerCase();
@@ -108,8 +123,8 @@ const columns = (
     width: 120,
     hideInSearch: true,
     render: (_, record) =>
-      (record.transportProtocols?.length ? record.transportProtocols : ['http']).map((p) => (
-        <Tag key={p}>{p.toUpperCase()}</Tag>
+      normalizeTransportProtocols(record.transportProtocols).map((p) => (
+        <Tag key={p}>{getTransportProtocolLabel(p)}</Tag>
       )),
   },
   {
@@ -205,11 +220,14 @@ function mapApiService(item: API.ApiService): ApiServiceListItem {
 const ApiServiceListPage: React.FC = () => {
   const navigate = useNavigate();
   const [domainPrefix, setDomainPrefix] = useScopeFromUrl();
-  const { resetPage } = useUrlPagination(10);
+  const { formValues } = useTableUrlState({
+    defaultPageSize: 10,
+    filterKeys: [...LIST_FILTER_KEYS],
+  });
+  const listFilters = useMemo(() => formValuesToListFilters(formValues), [formValues]);
   const [allServices, setAllServices] = useState<ApiServiceListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [domainTree, setDomainTree] = useState<ReturnType<typeof buildApiServiceDomainTree>>([]);
-  const [listFilters, setListFilters] = useState<ListFilters>({});
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildApiServiceListPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -341,19 +359,8 @@ const ApiServiceListPage: React.FC = () => {
                 )}
                 dataSource={filteredServices}
                 defaultPageSize={10}
+                urlFilterKeys={[...LIST_FILTER_KEYS]}
                 locale={{ emptyText: '暂无 API 服务，请先新建' }}
-                onSubmit={(values) => {
-                  resetPage();
-                  setListFilters({
-                    status: values.status as string | undefined,
-                    tag: values.tag as string | undefined,
-                    keyword: values.code as string | undefined,
-                  });
-                }}
-                onReset={() => {
-                  resetPage();
-                  setListFilters({});
-                }}
                 toolBarRender={() => [
                   <Button
                     key="create"
@@ -362,6 +369,13 @@ const ApiServiceListPage: React.FC = () => {
                     onClick={() => navigate('/api_services/create')}
                   >
                     新建
+                  </Button>,
+                  <Button
+                    key="exception-responses"
+                    icon={<WarningOutlined />}
+                    onClick={() => navigate('/api_services/exception-responses')}
+                  >
+                    异常响应
                   </Button>,
                 ]}
               />

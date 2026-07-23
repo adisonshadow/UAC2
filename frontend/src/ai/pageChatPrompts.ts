@@ -303,10 +303,10 @@ export function buildMetricFormPrompts(
 /** 指标看板 */
 export function buildMetricDashboardPrompts(): AIChatPromptItem[] {
   return [
-    { key: 'md1', description: '解释看板各分类指标的业务含义' },
-    { key: 'md2', description: '哪些指标数值异常需要排查？' },
-    { key: 'md3', description: '为销售域补充 3 个核心看板指标' },
-    { key: 'md4', description: '定时指标未刷新如何排查？' },
+    { key: 'md1', description: '帮我为现有指标创建合适的看板卡片' },
+    { key: 'md2', description: '解释当前看板各域卡片的业务含义' },
+    { key: 'md3', description: '哪些卡片缺历史数据或维度数据？' },
+    { key: 'md4', description: '为 content 域推荐折线 / 柱状 / 趋势卡片组合' },
   ];
 }
 

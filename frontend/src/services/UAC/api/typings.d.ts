@@ -676,7 +676,11 @@ declare namespace API {
     inverseName?: string;
     fromEntityId?: string;
     toEntityId?: string;
+    fromEntityCode?: string;
+    toEntityCode?: string;
+    directionSummary?: string;
     config?: Record<string, any>;
+    joinTable?: string;
     fromEntity?: { id?: string; code?: string; label?: string };
     toEntity?: { id?: string; code?: string; label?: string };
   };
@@ -965,7 +969,48 @@ declare namespace API {
     computedAt?: string;
   };
 
+  type BizdataMetricCardVizType = 'statistic_trend' | 'line' | 'bar' | 'ring';
+
+  type BizdataMetricCardConfig = {
+    timeRange?: '7d' | '30d' | '90d';
+    aggregate?: 'latest' | 'sum';
+    dimensionKey?: string;
+    chartPlacement?: 'bottom' | 'right';
+  };
+
+  type BizdataMetricCard = {
+    id?: string;
+    code?: string;
+    title?: string;
+    description?: string;
+    domainCode?: string;
+    metricId?: string;
+    vizType?: BizdataMetricCardVizType;
+    config?: BizdataMetricCardConfig;
+    sortOrder?: number;
+    status?: 'enabled' | 'disabled';
+    unit?: string;
+    metric?: { id?: string; code?: string; label?: string; unit?: string };
+    value?: number | null;
+    trend?: { direction?: 'up' | 'down' | 'flat'; percent?: number };
+    series?: Array<{ x?: string; category?: string; value?: number }>;
+    lastComputedAt?: string;
+    emptyReason?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+
+  type BizdataMetricCardList = {
+    total?: number;
+    items?: BizdataMetricCard[];
+  };
+
   type BizdataMetricDashboard = {
+    domains?: Array<{
+      name?: string;
+      cards?: BizdataMetricCard[];
+    }>;
+    /** @deprecated 旧结构，已由 domains 替代 */
     categories?: Array<{
       name?: string;
       metrics?: BizdataMetric[];
@@ -1293,6 +1338,13 @@ declare namespace API {
     enabledOperations?: string[];
     transportProtocols?: Array<'http' | 'sse' | 'websocket'>;
     securityConfig?: Record<string, unknown>;
+    responseOverrides?: Record<string, {
+      responsesSchema?: Record<string, unknown>;
+      responseExample?: unknown;
+    }>;
+    requestOverrides?: Record<string, {
+      requestExample?: unknown;
+    }>;
   };
 
   type ApiServiceDomainTreeItem = {
@@ -1302,6 +1354,36 @@ declare namespace API {
     serviceCount?: number;
     children?: ApiServiceDomainTreeItem[];
     service?: ApiService;
+  };
+
+  /** 异常响应模板（全局共享） */
+  type ExceptionResponseItem = {
+    id: string;
+    code: number;
+    title: string;
+    description?: string;
+    schema?: Record<string, unknown>;
+    example?: unknown;
+    isEnabled?: boolean;
+    sortOrder?: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+
+  type ExceptionResponseListResult = {
+    total: number;
+    items: ExceptionResponseItem[];
+    page: number;
+    size: number;
+  };
+
+  /** API 文档页用的精简异常响应（来自 catalog） */
+  type ExceptionResponseDocItem = {
+    code: number;
+    title: string;
+    description?: string;
+    schema?: Record<string, unknown>;
+    example?: unknown;
   };
 
   type ApiServiceTestResult = {
@@ -1348,6 +1430,10 @@ declare namespace API {
       query?: Record<string, unknown>;
       body?: Record<string, unknown>;
     };
+    responseInterface?: string;
+    responsesSchema?: Record<string, unknown>;
+    responseSchema?: Record<string, unknown>;
+    responseExample?: unknown;
     executable?: boolean;
     executableReason?: string;
   };

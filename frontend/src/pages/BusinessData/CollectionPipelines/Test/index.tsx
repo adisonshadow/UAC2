@@ -1,11 +1,11 @@
 import { PlayCircleOutlined, RobotOutlined } from '@ant-design/icons';
-import { PageContainer } from '@ant-design/pro-components';
 import { sendMockUserMessage, useAISurface } from '@EADAF/ai-base';
 import { Alert, Button, Collapse, Descriptions, Input, Space, Spin, Tag, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
+import FixHeaderPage from '@/components/FixHeaderPage';
 import { buildCollectionPipelineTestPrompt } from '@/pages/BusinessData/ai/buildCollectionPipelineTestPrompt';
 import {
   getCollectionPipelineTestProfile,
@@ -13,8 +13,10 @@ import {
 } from '@/services/UAC/api/businessData';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 
-const { Text, Paragraph } = Typography;
+const { Paragraph } = Typography;
 const { TextArea } = Input;
+
+const listPath = '/api_services/collection-pipelines';
 
 const CollectionPipelineTestPage: React.FC = () => {
   const navigate = useNavigate();
@@ -109,116 +111,115 @@ const CollectionPipelineTestPage: React.FC = () => {
     );
   };
 
-  if (profileLoading) {
-    return (
-      <PageContainer
-        title={
-          <PageContainerTitleWithBack title="采集管道测试" />
-        }
-      >
-        <div style={{ textAlign: 'center', padding: 48 }}>
-          <Spin description="加载中…" />
-        </div>
-      </PageContainer>
-    );
-  }
-
   return (
-    <PageContainer
-      title={
+    <FixHeaderPage
+      title={(
         <PageContainerTitleWithBack
-          title={`测试：${profile?.name || profile?.code || ''}`}
+          title={`测试请求${profile?.code ? ` · ${profile.code}` : ''}`}
         />
+      )}
+      extra={
+        pipelineId ? (
+          <Button onClick={() => navigate(`${listPath}/${pipelineId}/edit`)}>去编辑</Button>
+        ) : null
       }
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message={profile?.ingestUrl ? `采集 API: POST ${profile.ingestUrl}` : undefined}
-        description={
-          <>
-            <div>{profile?.authHint}</div>
-            <div>{profile?.bodyHint}</div>
-          </>
-        }
-      />
-
-      <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
-        <Descriptions.Item label="code">{profile?.code}</Descriptions.Item>
-        <Descriptions.Item label="协议">{profile?.protocolType}</Descriptions.Item>
-        <Descriptions.Item label="实体">{profile?.entityCode}</Descriptions.Item>
-        <Descriptions.Item label="状态">
-          <Tag>{profile?.status}</Tag>
-        </Descriptions.Item>
-      </Descriptions>
-
-      <Paragraph strong>原始样本数据</Paragraph>
-      <TextArea
-        rows={6}
-        value={rawInput}
-        onChange={(e) => setRawInput(e.target.value)}
-        placeholder="输入与业务系统 POST 相同的 plain text 样本"
-        style={{ marginBottom: 16 }}
-      />
-
-      <Space style={{ marginBottom: 16 }}>
-        <Button
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          loading={testLoading}
-          onClick={() => void runTest('test')}
-        >
-          运行测试
-        </Button>
-        <Button icon={<RobotOutlined />} onClick={runAiTest}>
-          AI 自动测试
-        </Button>
-      </Space>
-
-      {testError ? <Alert type="error" message={testError} style={{ marginBottom: 16 }} /> : null}
-
-      {result ? (
-        <Collapse
-          defaultActiveKey={['parse', 'store']}
-          items={[
-            {
-              key: 'parse',
-              label: '解析结果',
-              children: (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {JSON.stringify(result.parseOutput, null, 2)}
-                </pre>
-              ),
-            },
-            {
-              key: 'store',
-              label: '存储结果',
-              children: (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {JSON.stringify(result.storeOutput, null, 2)}
-                </pre>
-              ),
-            },
-            {
-              key: 'meta',
-              label: '执行信息',
-              children: (
-                <Descriptions size="small" column={1}>
-                  <Descriptions.Item label="耗时">{result.durationMs} ms</Descriptions.Item>
-                  <Descriptions.Item label="回滚">
-                    {result.rolledBack ? '是（测试模式）' : '否'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="runId">{result.runId}</Descriptions.Item>
-                </Descriptions>
-              ),
-            },
-          ]}
-        />
-      ) : (
-        <Text type="secondary">运行测试后将展示解析与存储结果。</Text>
+      {profileLoading && (
+        <div style={{ textAlign: 'center', padding: '48px 0' }}>
+          <Spin description="加载中…" />
+        </div>
       )}
-    </PageContainer>
+
+      {!profileLoading && (
+        <div style={{ maxWidth: 888, margin: '0 auto', padding: '0 24px 24px' }}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={profile?.ingestUrl ? `采集 API: POST ${profile.ingestUrl}` : undefined}
+            description={
+              <>
+                <div>{profile?.authHint}</div>
+                <div>{profile?.bodyHint}</div>
+              </>
+            }
+          />
+
+          <Descriptions bordered size="small" column={2} style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="code">{profile?.code}</Descriptions.Item>
+            <Descriptions.Item label="协议">{profile?.protocolType}</Descriptions.Item>
+            <Descriptions.Item label="实体">{profile?.entityCode}</Descriptions.Item>
+            <Descriptions.Item label="状态">
+              <Tag>{profile?.status}</Tag>
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Paragraph strong>原始样本数据</Paragraph>
+          <TextArea
+            rows={6}
+            value={rawInput}
+            onChange={(e) => setRawInput(e.target.value)}
+            placeholder="输入与业务系统 POST 相同的 plain text 样本"
+            style={{ marginBottom: 16 }}
+          />
+
+          <Space style={{ marginBottom: 16 }}>
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              loading={testLoading}
+              onClick={() => void runTest('test')}
+            >
+              运行测试
+            </Button>
+            <Button icon={<RobotOutlined />} onClick={runAiTest}>
+              AI 自动测试
+            </Button>
+          </Space>
+
+          {testError ? <Alert type="error" message={testError} style={{ marginBottom: 16 }} /> : null}
+
+          {result ? (
+            <Collapse
+              defaultActiveKey={['parse', 'store']}
+              items={[
+                {
+                  key: 'parse',
+                  label: '解析结果',
+                  children: (
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                      {JSON.stringify(result.parseOutput, null, 2)}
+                    </pre>
+                  ),
+                },
+                {
+                  key: 'store',
+                  label: '存储结果',
+                  children: (
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                      {JSON.stringify(result.storeOutput, null, 2)}
+                    </pre>
+                  ),
+                },
+                {
+                  key: 'meta',
+                  label: '执行信息',
+                  children: (
+                    <Descriptions size="small" column={1}>
+                      <Descriptions.Item label="耗时">{result.durationMs} ms</Descriptions.Item>
+                      <Descriptions.Item label="回滚">
+                        {result.rolledBack ? '是（测试模式）' : '否'}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="runId">{result.runId}</Descriptions.Item>
+                    </Descriptions>
+                  ),
+                },
+              ]}
+            />
+          ) : null}
+        </div>
+      )}
+    </FixHeaderPage>
   );
 };
 

@@ -17,33 +17,55 @@ export function buildApiServiceEditPolishPrompt(ctx: ApiServiceEditPolishContext
   return `请完善 API 服务「${label}」（code: ${ctx.code || '未知'}，主 operation: ${op}）的配置，使其可测试、可发布。${entityHint}
 
 ## 执行流程（必须调用 Tool，不要只给文字建议）
-1. \`aibase_read_surfaces\`（surfaceId=api-services.edit）读取当前表单与脚本
-2. \`apiservice_get_service\`（serviceId=${ctx.serviceId || '从 Surface 获取'}）核对已保存配置
-3. 若有 entityCode → \`bizdata_get_entity\` 获取表结构
-4. 改进 ${mode} 脚本、请求参数 interface、访问协议等
-5. \`apiservice_update_service\` **自动保存**（禁止让用户手动点保存）
+1. \`aibase_read_surfaces\`（surfaceId=api-services.edit）读取当前表单
+2. \`apiservice_get_service\`（serviceId=${ctx.serviceId || '从 Surface 获取'}）核对已保存配置（**仅测前**）
+3. 若有 entityCode → \`bizdata_get_entity\` 获取表结构与字段
+4. 改进 ${mode} 脚本、请求参数 interface、请求 Example、Responses Schema/Example 等
+5. \`apiservice_update_service\` **自动保存**
+6. typescript：\`apiservice_check_handler\` 通过后再测
+7. \`apiservice_run_test\`；**一旦 success=true（及 verified=true）立即向用户汇报并结束，禁止再 get_service「查看完整 handler」**
 
-## SQL / Handler 规范（重要）
-- **禁止**占位脚本：\`SELECT 1\`、\`SELECT 1 AS result\`、与业务无关的常量查询
-- **create** 类 + SQL：definitionScript 应为物化表结构参考，例如：
-  \`\`\`sql
-  SELECT *
-  FROM "bizdata_mat"."表名"
-  WHERE 1 = 0
+## 表单结构（v3）
+- **信息 / 请求 / 处理 / 响应** 四区块；处理区为 SQL 或 TypeScript Handler
+
+## SQL / Handler 规范
+- **禁止**占位 SQL：\`SELECT 1\` 等
+- **create** + SQL：物化表结构参考 \`WHERE 1=0\`
+- **find** + SQL：含 \`:limit\`/\`:skip\`
+
+## TypeScript Handler 契约（scriptMode=typescript 时必遵）
+- \`requestParameterInterface\` 为唯一真相源；\`params.xxx\` 须先声明
+- 编辑器有锁定壳；存库为函数体。用只读 \`params\` + \`db(实体code)\`
+- **params 安全**：网关已校验只读；经 \`db().where/paginate\` 参数化防注入；禁止拼字符串 / queryPg
+- **禁止双重过滤**：分页+计数用 \`.paginate({ limit: params.limit, skip: params.skip })\`（或 \`getManyAndCount\`），勿 where 写两遍再分别 getMany/getCount
+- 别名：\`count()\`=\`getCount()\`，\`find()\`=\`getMany()\`，\`findOne()\`=\`getOne()\`
+- JOIN：\`db('A','o').leftJoin('B','b','o.id','b.a_id')\`（仅等值 ON）
+- where 操作符：\`$gte/$lte/$in/$ilike/$isNull\` 等
+- 示例：
+  \`\`\`ts
+  const { items, total } = await db('fmms:production:WorkCard')
+    .where({ status: params.status })
+    .orderBy('created_at', 'DESC')
+    .paginate({ limit: params.limit, skip: params.skip });
+  return { items, total };
   \`\`\`
-  （运行时 Gateway 根据 body 执行 INSERT，不是靠 SELECT 写入）
-- **find** 类：完整 \`FROM\` 物化表查询，含 \`:limit\`、\`:skip\` 等命名参数
+- 修改 Handler 后：\`apiservice_check_handler\` → \`apiservice_update_service\` →（可选测前 \`get_service\`）→ \`apiservice_run_test\` → **STOP**
 
-## 完善后校验 Todo（逐项完成，禁止跳过）
-- [ ] \`apiservice_get_service\` 回读 definitionScript/handlerScript，确认**非占位 SQL**
-- [ ] \`apiservice_get_test_profile\`：operation=${op} 的 executable=true
-- [ ] \`apiservice_suggest_test_params\` 或 \`apiservice_set_test_params\`（create 须有合理 body）
-- [ ] \`apiservice_run_test\`：success=true；create 的 preview 含 item 或有效写入结果
-- [ ] 若执行了测试且成功：\`apiservice_set_test_params\` 保存 mock 参数
-- [ ] **仅当以上全部通过**才可向用户声称「完善成功」或「测试通过」
+## Response Example
+- **禁止** \`"item": null\`；create/findOne 须具体 item；find 须 items[] + total
+
+## 完善后校验 Todo（顺序固定，测过后禁止加戏）
+- [ ] typescript：\`apiservice_check_handler\` ok=true
+- [ ] \`apiservice_update_service\` 保存
+- [ ] （可选）测前 \`apiservice_get_service\` 确认非占位 —— **不得在测试成功后再做**
+- [ ] interface / Example / Response Example 完整
+- [ ] \`apiservice_run_test\` success=true
+- [ ] **STOP**：向用户汇报测试结果；**禁止**再 get_service / read_surfaces / check_handler「确认完整 handler」
+- [ ] **禁止**测试成功后再改 handler 除非用户明确要求继续改
 
 ## 约束
-- 禁止向用户索要 connectionId / serviceId
+- 禁止索要 connectionId / serviceId
 - **禁止**仅 update 成功就声称测试通过
-- 已发布服务修改后会回到未发布，可提示用户重新发布`;
+- **禁止**测试已通过后进入「再看一眼代码」循环`;
+
 }

@@ -1,0 +1,118 @@
+.operation-parameter-panel--bounded {
+  height: 280px;
+  overflow: auto;
+}
+
+.operation-parameter-panel--bounded > .operation-parameter-panel {
+  min-height: 100%;
+}
+
+/* OperationParameterPanel — Swagger 风格参数行面板 */
+.operation-parameter-panel {
+  border: 1px solid var(--ant-color-border, #d9d9d9);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ant-color-bg-container, #fff);
+}
+
+.operation-parameter-panel--empty {
+  padding: 12px 16px;
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.45));
+  font-size: 13px;
+}
+
+.operation-parameter-panel__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+}
+
+.operation-parameter-panel__row:last-child {
+  border-bottom: none;
+}
+
+.operation-parameter-panel__row:hover {
+  background: var(--ant-color-fill-quaternary, #fafafa);
+}
+
+/* 左列：参数定义（名称 + query/path/body 标签 + 类型） */
+.operation-parameter-panel__define {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.operation-parameter-panel__name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+  word-break: break-all;
+}
+
+.operation-parameter-panel__required {
+  color: var(--ant-color-error, #ff4d4f);
+  margin-left: 2px;
+}
+
+.operation-parameter-panel__ctx {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.operation-parameter-panel__ctx--query {
+  color: var(--ant-color-primary, #1677ff);
+}
+
+.operation-parameter-panel__ctx--path {
+  color: var(--ant-color-warning, #faad14);
+}
+
+.operation-parameter-panel__ctx--body {
+  color: var(--ant-color-success, #52c41a);
+}
+
+.operation-parameter-panel__type {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary, rgba(0, 0, 0, 0.45));
+}
+
+/* 右列：描述 / 输入控件 */
+.operation-parameter-panel__value {
+  flex: 1;
+  min-width: 0;
+}
+
+.operation-parameter-panel__desc {
+  font-size: 13px;
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.operation-parameter-panel__example-value {
+  display: block;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-all;
+  margin-bottom: 4px;
+}
+
+.operation-parameter-panel__default {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary, rgba(0, 0, 0, 0.45));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.operation-parameter-panel__hint {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary, rgba(0, 0, 0, 0.45));
+  background: var(--ant-color-fill-quaternary, #fafafa);
+  border-top: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+}

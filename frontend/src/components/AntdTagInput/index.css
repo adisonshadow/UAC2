@@ -1,0 +1,60 @@
+.antd-tag-input {
+  display: inline-flex;
+  align-items: flex-start;
+  width: 100%;
+  min-height: var(--ant-control-height);
+  padding-inline: 11px;
+  padding-block: 1px;
+  cursor: text;
+  transition: all var(--ant-motion-duration-mid) var(--ant-motion-ease-in-out);
+}
+
+.antd-tag-input:focus-within {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
+}
+
+.antd-tag-input.ant-input-disabled {
+  cursor: not-allowed;
+  background: var(--ant-color-bg-container-disabled);
+  color: var(--ant-color-text-disabled);
+}
+
+.antd-tag-input__content {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-block: 2px;
+}
+
+.antd-tag-input__tag {
+  margin: 0;
+}
+
+.antd-tag-input__input {
+  flex: 1 1 80px;
+  min-width: 80px;
+  padding: 0 !important;
+}
+
+.antd-tag-input__input.ant-input {
+  box-shadow: none;
+}
+
+.antd-tag-input .ant-input-suffix {
+  align-self: center;
+  margin-inline-start: 4px;
+}
+
+.antd-tag-input .ant-input-clear-icon {
+  color: var(--ant-color-text-quaternary);
+  cursor: pointer;
+  transition: color var(--ant-motion-duration-mid);
+}
+
+.antd-tag-input .ant-input-clear-icon:hover {
+  color: var(--ant-color-text-tertiary);
+}

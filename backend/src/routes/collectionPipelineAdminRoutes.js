@@ -93,9 +93,26 @@ router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
  *         application/json:
  *           schema:
  *             type: object
+ *             properties:
+ *               code: { type: string, description: 完整编码；与 scopeCode+pipelineSlug 二选一，修改后同步 routePath/basePath }
+ *               scopeCode: { type: string, description: 修改 Scope 时与 pipelineSlug 一并提交 }
+ *               pipelineSlug: { type: string, description: 修改管道短名时与 scopeCode 一并提交 }
+ *               name: { type: string }
+ *               description: { type: string }
+ *               protocolType: { type: string, enum: [serial, modbus_rtu, modbus_tcp] }
+ *               entityId: { type: string, format: uuid }
+ *               connectionId: { type: string, format: uuid }
+ *               sampleData: { type: string }
+ *               targetStructure: { type: string }
+ *               parseScript: { type: string }
+ *               storeScript: { type: string }
+ *               restrictSources: { type: boolean }
+ *               applicationIds: { type: array, items: { type: string, format: uuid } }
  *     responses:
  *       200:
  *         description: 更新成功
+ *       409:
+ *         description: code 或 routePath 冲突
  *   delete:
  *     tags: [BusinessData-CollectionPipeline]
  *     summary: 删除采集管道 [需要认证]

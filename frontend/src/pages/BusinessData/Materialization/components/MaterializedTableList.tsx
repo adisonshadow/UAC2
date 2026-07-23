@@ -143,6 +143,7 @@ const MaterializedTableList: React.FC<MaterializedTableListProps> = ({
       search={false}
       options={false}
       defaultPageSize={20}
+      urlFilterKeys={[]}
       rowSelection={
         onSelectionChange
           ? {

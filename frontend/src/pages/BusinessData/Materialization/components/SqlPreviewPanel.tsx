@@ -8,9 +8,9 @@ interface SqlPreviewPanelProps {
   activeTab: string;
   onTabChange: (key: string) => void;
   dbType?: string;
-  runs?: API.MaterializationRun[];
-  runsLoading?: boolean;
-  runsTotal?: number;
+  connectionId?: string;
+  /** 外部刷新物化历史时递增 */
+  runsRefreshKey?: number;
 }
 
 const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
@@ -18,9 +18,8 @@ const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
   activeTab,
   onTabChange,
   dbType,
-  runs = [],
-  runsLoading,
-  runsTotal = 0,
+  connectionId,
+  runsRefreshKey = 0,
 }) => {
   const tsCode = useMemo(() => {
     if (!preview?.generatedCode) return '';
@@ -74,7 +73,10 @@ const SqlPreviewPanel: React.FC<SqlPreviewPanelProps> = ({
           key: 'history',
           label: '物化历史',
           children: (
-            <MaterializationRunTable runs={runs} loading={runsLoading} total={runsTotal} />
+            <MaterializationRunTable
+              connectionId={connectionId}
+              refreshKey={runsRefreshKey}
+            />
           ),
         },
       ]}

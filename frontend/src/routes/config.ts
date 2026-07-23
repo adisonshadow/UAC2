@@ -1,4 +1,5 @@
 import type { MenuDataItem } from '@ant-design/pro-components';
+import { matchPath } from 'react-router-dom';
 
 export interface AppRouteMeta {
   path: string;
@@ -56,6 +57,7 @@ export const appRouteMeta: AppRouteMeta[] = [
   { path: '/file_storage/browser', name: '文件浏览器' },
   { path: '/business_data', name: '业务数据', icon: 'DatabaseOutlined' },
   { path: '/business_data/model-design', name: '数据模型', noContentPadding: true },
+  { path: '/business_data/model-design/relations-graph', name: '关系图谱', hideInMenu: true, noContentPadding: true },
   { path: '/business_data/materialization/execute', name: '执行物化', noContentPadding: true },
 
   { path: '/business_data/metrics', name: '指标管理', noContentPadding: true },
@@ -69,15 +71,15 @@ export const appRouteMeta: AppRouteMeta[] = [
 
 
   { path: '/api_services', name: 'API', icon: 'ApiOutlined' },
-  { path: '/api_services/create', name: '新建', hideInMenu: true },
+  { path: '/api_services/create', name: '新建', hideInMenu: true, noContentPadding: true },
   { path: '/api_services/list', name: 'API服务', noContentPadding: true },
   { path: '/api_services/collection-pipelines', name: '采集数据结构化', noContentPadding: true },
   { path: '/api_services/outbound-webhooks', name: '提交外部API' },
-  { path: '/api_services/collection-pipelines/create', name: '新建采集管道', hideInMenu: true },
-  { path: '/api_services/collection-pipelines/:id/edit', name: '编辑采集管道', hideInMenu: true },
-  { path: '/api_services/collection-pipelines/:id/test', name: '测试采集管道', hideInMenu: true },
-  { path: '/api_services/:id/edit', name: '编辑 API 服务', hideInMenu: true },
-  { path: '/api_services/:id/test', name: '测试 API', hideInMenu: true },
+  { path: '/api_services/collection-pipelines/create', name: '新建采集管道', hideInMenu: true, noContentPadding: true },
+  { path: '/api_services/collection-pipelines/:id/edit', name: '编辑采集管道', hideInMenu: true, noContentPadding: true },
+  { path: '/api_services/collection-pipelines/:id/test', name: '测试采集管道', hideInMenu: true, noContentPadding: true },
+  { path: '/api_services/:id/edit', name: '编辑 API 服务', hideInMenu: true, noContentPadding: true },
+  { path: '/api_services/:id/test', name: '测试 API', hideInMenu: true, noContentPadding: true },
   { path: '/ai_management', name: 'AI管理', icon: 'RobotOutlined' },
   { path: '/ai_management/providers', name: 'AI服务商' },
   { path: '/ai_management/models', name: 'AI模型' },
@@ -179,8 +181,16 @@ export function buildMenuData(
 export function findRouteMeta(pathname: string): AppRouteMeta | undefined {
   const exact = appRouteMeta.find((item) => item.path === pathname);
   if (exact) return exact;
-  // 最长前缀匹配（用于嵌套路由元数据）
+
+  const dynamicMatch = [...appRouteMeta]
+    .filter((item) => item.path.includes(':'))
+    .filter((item) => matchPath({ path: item.path, end: true }, pathname))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  if (dynamicMatch) return dynamicMatch;
+
+  // 最长前缀匹配（静态路径嵌套路由元数据）
   return [...appRouteMeta]
+    .filter((item) => !item.path.includes(':'))
     .filter((item) => pathname.startsWith(`${item.path}/`) || pathname === item.path)
     .sort((a, b) => b.path.length - a.path.length)[0];
 }

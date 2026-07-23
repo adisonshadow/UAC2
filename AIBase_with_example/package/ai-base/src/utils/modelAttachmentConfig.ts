@@ -7,7 +7,7 @@ const IMAGE_ACCEPT = 'image/*';
 const AUDIO_ACCEPT = 'audio/*';
 const VIDEO_ACCEPT = 'video/*';
 const DOCUMENT_ACCEPT =
-  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm';
+  '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm,.ts,.tsx,.js,.jsx,.py';
 
 const MODALITY_ACCEPT: Record<string, string> = {
   image: IMAGE_ACCEPT,
@@ -18,6 +18,7 @@ const MODALITY_ACCEPT: Record<string, string> = {
 
 const TEXT_LIKE_EXTENSIONS = new Set([
   'txt', 'md', 'csv', 'json', 'xml', 'html', 'htm', 'log', 'yaml', 'yml',
+  'ts', 'tsx', 'js', 'jsx', 'py',
 ]);
 
 export function supportsModelAttachments(inputTags?: string[]): boolean {

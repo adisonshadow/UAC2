@@ -24,9 +24,12 @@ const Applications = lazy(() => import('@/pages/ServiceProvider/Applications'));
 const ApplicationFormPage = lazy(() => import('@/pages/ServiceProvider/Applications/FormPage'));
 const ApplicationTopLevelSkillPage = lazy(() => import('@/pages/ServiceProvider/Applications/TopLevelSkillPage'));
 const ApplicationPublicApiCatalog = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog'));
+const ApplicationExceptionResponses = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog/ExceptionResponsesPage'));
+const ApplicationApiSkill = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog/ApiSkillPage'));
 const FileStorageBuckets = lazy(() => import('@/pages/FileStorage/Buckets'));
 const FileStorageBrowser = lazy(() => import('@/pages/FileStorage/Browser'));
 const ModelDesigner = lazy(() => import('@/pages/BusinessData/ModelDesigner'));
+const RelationsGraphPage = lazy(() => import('@/pages/BusinessData/ModelDesigner/RelationsGraph'));
 const MaterializationExecute = lazy(() => import('@/pages/BusinessData/Materialization/Execute'));
 const DatabaseConnections = lazy(() => import('@/pages/BusinessData/Materialization/Connections'));
 const MaterializedDatabase = lazy(() => import('@/pages/BusinessData/Materialization/Database'));
@@ -42,6 +45,7 @@ const ApiServiceCreate = lazy(() => import('@/pages/ApiServices/Create'));
 const ApiServiceList = lazy(() => import('@/pages/ApiServices/List'));
 const ApiServiceEdit = lazy(() => import('@/pages/ApiServices/Edit'));
 const ApiServiceTest = lazy(() => import('@/pages/ApiServices/Test'));
+const ExceptionResponses = lazy(() => import('@/pages/ApiServices/ExceptionResponses'));
 const OutboundWebhookList = lazy(() => import('@/pages/ApiServices/OutboundWebhooks'));
 const OutboundWebhookFormPage = lazy(() => import('@/pages/ApiServices/OutboundWebhooks/FormPage'));
 const OutboundWebhookTest = lazy(() => import('@/pages/ApiServices/OutboundWebhooks/Test'));
@@ -84,6 +88,9 @@ export default function AppRoutes() {
 
         {/* 公开 API 文档：独立路由，避免 AnimatedOutlet 切换动画 */}
         <Route path="/public/applications/:code/api-docs" element={<ApplicationPublicApiCatalog />} />
+        {/* 异常响应明细页（所有 API 共享，需在通配路由前匹配） */}
+        <Route path="/public/applications/:code/api-docs/exception-responses" element={<ApplicationExceptionResponses />} />
+        <Route path="/public/applications/:code/api-docs/api-skill" element={<ApplicationApiSkill />} />
         <Route path="/public/applications/:code/api-docs/*" element={<ApplicationPublicApiCatalog />} />
 
         <Route element={<AIChatHidden />}>
@@ -121,6 +128,7 @@ export default function AppRoutes() {
             <Route path="/business_data" element={<Navigate to="/business_data/model-design" replace />} />
             <Route element={<BusinessDataDesignAI />}>
               <Route path="/business_data/model-design" element={<ModelDesigner />} />
+              <Route path="/business_data/model-design/relations-graph" element={<RelationsGraphPage />} />
             </Route>
             <Route element={<BusinessDataMaterializeAI />}>
               <Route
@@ -170,6 +178,7 @@ export default function AppRoutes() {
               <Route path="/api_services/list" element={<ApiServiceList />} />
               <Route path="/api_services/:id/edit" element={<ApiServiceEdit />} />
               <Route path="/api_services/:id/test" element={<ApiServiceTest />} />
+              <Route path="/api_services/exception-responses" element={<ExceptionResponses />} />
               <Route path="/api_services/outbound-webhooks" element={<OutboundWebhookList />} />
               <Route path="/api_services/outbound-webhooks/create" element={<OutboundWebhookFormPage mode="create" />} />
               <Route path="/api_services/outbound-webhooks/:id/edit" element={<OutboundWebhookFormPage mode="edit" />} />

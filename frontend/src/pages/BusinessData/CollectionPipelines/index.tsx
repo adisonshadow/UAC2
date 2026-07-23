@@ -50,8 +50,21 @@ const CollectionPipelineListPage: React.FC = () => {
     id: 'bizdata.collection-pipelines.list',
     domain: 'bizdata',
     label: '采集管道列表',
-    read: () => ({ path: '/api_services/collection-pipelines' }),
-    refresh: () => actionRef.current?.reload(),
+    read: () => ({
+      path: '/api_services/collection-pipelines',
+      count: allPipelines.length,
+      domainPrefix: domainPrefix || null,
+    }),
+    refresh: () => loadAllPipelines(),
+    matchMutation: (mutation) =>
+      mutation.domain === 'bizdata'
+      && (mutation.type === 'collection_pipeline.updated'
+        || mutation.type === 'collection_pipeline.deleted'
+        || mutation.type === 'collection_pipeline.test_completed'),
+    applyMutation: async () => {
+      await loadAllPipelines();
+      actionRef.current?.reload();
+    },
   });
 
   // 一次性拉取全部管道，供左侧域树 + 右侧过滤
@@ -208,6 +221,7 @@ const CollectionPipelineListPage: React.FC = () => {
                 loading={loading}
                 search={false}
                 defaultPageSize={10}
+                urlFilterKeys={[]}
                 options={DEFAULT_PRO_TABLE_OPTIONS}
                 toolBarRender={() => [
                   <Button

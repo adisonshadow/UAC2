@@ -6,6 +6,7 @@ import {
   getBusinessDataRelations,
   getBusinessDataSchema,
   patchBusinessDataEntity,
+  patchBusinessDataEnum,
   postBusinessDataEntity,
   postBusinessDataEnum,
   postBusinessDataRelation,
@@ -16,6 +17,8 @@ import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { getApiData, getApiErrorMessage, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import {
+  buildEnumFieldFixHint,
+  ENUM_LIKE_FIELD_RE,
   loadEntity,
   loadEntityFields,
   mergeEntityFields,
@@ -30,6 +33,8 @@ import {
   assertEntityCodeNotExists,
   executeEntityCodeRename,
 } from './entityCodeRename';
+import { normalizeEnumValuesItems } from '../utils/enumUtils';
+import { buildRelationGraphQuery } from './relationGraphQuery';
 
 const BIZDATA_DOMAIN = 'bizdata';
 const BIZDATA_SURFACE = 'bizdata.model-designer';
@@ -61,8 +66,10 @@ const TOOL_NAMES = [
   'bizdata_rename_entity_code',
   'bizdata_delete_entity',
   'bizdata_create_enum',
+  'bizdata_update_enum',
   'bizdata_list_enums',
   'bizdata_list_relations',
+  'bizdata_query_relation_graph',
   'bizdata_add_relation',
   'bizdata_delete_relation',
   'bizdata_upsert_entity_indexes',
@@ -80,11 +87,15 @@ const BIZDATA_FIELD_ITEM_SCHEMA = {
     type: {
       type: 'string',
       description:
-        '字段类型：varchar/int/uuid/decimal 等；有限取值字段须用 adb-enum（配合 enumCode）',
+        'varchar/int/uuid/decimal 等；status/state/*_type 等有限取值须用 adb-enum（配合 enumCode，先 bizdata_create_enum）',
     },
     enumCode: {
       type: 'string',
-      description: '枚举 code（如 production:WorkOrderStatus）；type=adb-enum 时必填',
+      description: '枚举 code（如 production:WorkOrderStatus）；type=adb-enum 时必填，禁止省略',
+    },
+    extendType: {
+      type: 'string',
+      description: '扩展类型；枚举可写 adb-enum（与 type=adb-enum 等价）',
     },
     enumConfig: {
       type: 'object',
@@ -101,8 +112,6 @@ const BIZDATA_FIELD_ITEM_SCHEMA = {
     typeormConfig: { type: 'object' },
   },
 } as const;
-
-const ENUM_LIKE_FIELD_RE = /(^status$|_status$|^state$|_state$|_type$|^type$)/i;
 
 async function resetEntityModelValidated(entityId: string) {
   const entity = await loadEntity(entityId);
@@ -124,6 +133,43 @@ async function resolveRelationEntityIds(rel: RelationInput): Promise<{ fromEntit
   return { fromEntityId, toEntityId };
 }
 
+/** manyToOne/oneToOne：from 侧外键字段候选（name / nameId / name_id / config.foreignKey） */
+function findRelationFkFieldKey(
+  fields: API.BusinessDataField[] | undefined,
+  relationName: string,
+  config?: Record<string, unknown>,
+): string | null {
+  const fieldKeys = new Set((fields || []).map((f) => f.fieldKey).filter(Boolean) as string[]);
+  const configured =
+    (typeof config?.foreignKey === 'string' && config.foreignKey) ||
+    (typeof config?.joinColumn === 'string' && config.joinColumn) ||
+    null;
+  if (configured && fieldKeys.has(configured)) return configured;
+  const name = String(relationName || '').trim();
+  if (!name) return null;
+  const candidates = [name, `${name}Id`, `${name}_id`, `${name}ID`];
+  for (const key of candidates) {
+    if (fieldKeys.has(key)) return key;
+  }
+  return null;
+}
+
+function enrichRelationRow(rel: API.BusinessDataRelation): API.BusinessDataRelation {
+  const fromEntityCode = rel.fromEntityCode || rel.fromEntity?.code;
+  const toEntityCode = rel.toEntityCode || rel.toEntity?.code;
+  const directionSummary =
+    rel.directionSummary ||
+    (fromEntityCode && toEntityCode
+      ? `${fromEntityCode} --${rel.type}--> ${toEntityCode} (name=${rel.name})`
+      : undefined);
+  return {
+    ...rel,
+    fromEntityCode,
+    toEntityCode,
+    directionSummary,
+  };
+}
+
 async function createRelationFromInput(rel: RelationInput) {
   const { type, name, inverseName, joinTable, config } = rel;
   if (!type || !name) {
@@ -132,23 +178,95 @@ async function createRelationFromInput(rel: RelationInput) {
   const hasFrom = rel.fromEntityId || rel.fromEntityCode;
   const hasTo = rel.toEntityId || rel.toEntityCode;
   if (!hasFrom || !hasTo) {
-    throw new Error('关系须同时指定 fromEntityCode/toEntityCode（或对应 UUID）');
+    throw new Error('关系须同时指定 fromEntityCode/toEntityCode（禁止只编造 UUID；推荐只用 code）');
   }
   const { fromEntityId, toEntityId } = await resolveRelationEntityIds(rel);
+  const fromEntity = await loadEntity(fromEntityId);
+  const toEntity = await loadEntity(toEntityId);
+  const fromEntityCode = fromEntity.code;
+  const toEntityCode = toEntity.code;
+  const relType = String(type);
+  const relName = String(name);
+  const relConfig = (config as Record<string, unknown>) || undefined;
+
+  if (relType === 'manyToOne' || relType === 'oneToOne') {
+    const fkKey = findRelationFkFieldKey(fromEntity.fields, relName, relConfig);
+    if (!fkKey) {
+      throw new Error(
+        `添加 ${relType} 关系前，源实体 ${fromEntityCode} 须先有对应外键字段` +
+          `（候选：${relName} / ${relName}Id / ${relName}_id，或 config.foreignKey）。` +
+          `请先 bizdata_update_entity 添加字段，再 bizdata_add_relation`,
+      );
+    }
+  }
+
+  const existingListRes = await getBusinessDataRelations({ entityId: fromEntityId });
+  const existingList = (getApiData(existingListRes) ?? []).map(enrichRelationRow);
+  const sameName = existingList.find(
+    (r) => r.fromEntityId === fromEntityId && r.name === relName,
+  );
+  if (sameName) {
+    throw new Error(
+      `关系名 '${relName}' 已存在于实体 ${sameName.fromEntityCode || fromEntityCode}` +
+        `（→ ${sameName.toEntityCode || sameName.toEntityId}，type=${sameName.type}）。` +
+        `同一 from 实体内 name 须唯一；重名≠要加的边已存在，请核对 from/to 后换 name 或跳过`,
+    );
+  }
+  const sameEdge = existingList.find(
+    (r) =>
+      r.fromEntityId === fromEntityId &&
+      r.toEntityId === toEntityId &&
+      r.type === relType,
+  );
+  if (sameEdge) {
+    throw new Error(
+      `关系已存在：${sameEdge.directionSummary || `${fromEntityCode} --${relType}--> ${toEntityCode}`}。` +
+        `请勿用不同 name 重复添加同一条边`,
+    );
+  }
+
   const res = await postBusinessDataRelation({
-    type: String(type),
-    name: String(name),
+    type: relType,
+    name: relName,
     inverseName: inverseName ? String(inverseName) : undefined,
     fromEntityId,
     toEntityId,
     joinTable: joinTable ? String(joinTable) : undefined,
-    config: (config as Record<string, unknown>) || undefined,
+    config: relConfig,
   });
-  const data = getApiData(res);
+  const data = getApiData<API.BusinessDataRelation>(res);
   if (!data) throw new Error('创建关系失败');
   await resetEntityModelValidated(fromEntityId);
   await resetEntityModelValidated(toEntityId);
-  return data;
+
+  const verifyRes = await getBusinessDataRelations({ entityId: fromEntityId });
+  const verifiedList = (getApiData(verifyRes) ?? []).map(enrichRelationRow);
+  const found = verifiedList.find(
+    (r) =>
+      r.id === data.id ||
+      (r.fromEntityId === fromEntityId && r.toEntityId === toEntityId && r.name === relName),
+  );
+  const enriched = enrichRelationRow({
+    ...data,
+    fromEntityCode: data.fromEntityCode || fromEntityCode,
+    toEntityCode: data.toEntityCode || toEntityCode,
+    fromEntity: data.fromEntity || { id: fromEntityId, code: fromEntityCode, label: fromEntity.label },
+    toEntity: data.toEntity || { id: toEntityId, code: toEntityCode, label: toEntity.label },
+  });
+  return {
+    ...enriched,
+    _verification: {
+      verified: Boolean(found?.id),
+      fromEntityCode,
+      toEntityCode,
+      name: relName,
+      type: relType,
+      relationId: found?.id || data.id,
+      message: found?.id
+        ? `已验证关系 ${enriched.directionSummary}`
+        : `创建后回读失败：未在 ${fromEntityCode} 的关系列表中找到 name=${relName}`,
+    },
+  };
 }
 
 export function registerBizDataTools() {
@@ -216,7 +334,7 @@ export function registerBizDataTools() {
         fields: {
           type: 'array',
           description:
-            '字段列表；status/state/type 等有限取值字段须 type=adb-enum 并指定 enumCode（先 bizdata_create_enum）',
+            '字段列表；status/state/*_type 等有限取值字段须 type=adb-enum 并指定 enumCode（先 bizdata_create_enum）',
           items: BIZDATA_FIELD_ITEM_SCHEMA,
         },
         indexes: {
@@ -394,7 +512,8 @@ export function registerBizDataTools() {
         jsonSchema: { type: 'object', description: 'JSON Schema 结构（json_schema 实体）' },
         fields: {
           type: 'array',
-          description: '字段列表；有限取值字段须 type=adb-enum + enumCode',
+          description:
+            '字段列表；status/state/*_type 等有限取值字段须 type=adb-enum 并指定 enumCode（先 bizdata_create_enum）',
           items: BIZDATA_FIELD_ITEM_SCHEMA,
         },
       },
@@ -555,7 +674,8 @@ export function registerBizDataTools() {
 
   registerFunctionCall({
     name: 'bizdata_list_enums',
-    description: '列出已定义的 ADB 枚举（创建 status 等字段前应先查询是否已有可复用枚举）',
+    description:
+      '列出已定义的 ADB 枚举。检查选项是否完整时：优先看 items；若 items 为空而 values 有键，属数据不一致，须用 bizdata_update_enum 补齐 items（UI 以 items 计选项数）',
     parameters: {
       type: 'object',
       properties: {
@@ -566,14 +686,23 @@ export function registerBizDataTools() {
       const res = await getBusinessDataEnums({ size: 200 });
       const { items } = parseApiListResponse<API.BusinessDataEnum>(res);
       const prefix = args.codePrefix ? String(args.codePrefix) : '';
-      return prefix ? items.filter((item) => item.code?.startsWith(prefix)) : items;
+      const filtered = prefix ? items.filter((item) => item.code?.startsWith(prefix)) : items;
+      return filtered.map((item) => {
+        const itemCount = Object.keys(item.items || {}).length;
+        const valueCount = Object.keys(item.values || {}).length;
+        return {
+          ...item,
+          optionCount: itemCount || valueCount,
+          itemsEmpty: itemCount === 0 && valueCount > 0,
+        };
+      });
     },
   });
 
   registerFunctionCall({
     name: 'bizdata_create_enum',
     description:
-      '创建 ADB 枚举定义；有限取值字段（status/state/type 等）须先建枚举，再在实体字段中用 type=adb-enum + enumCode 引用',
+      '创建 ADB 枚举定义；有限取值字段（status/state/type 等）须先建枚举，再在实体字段中用 type=adb-enum + enumCode 引用。推荐同时传 values 与 items；仅传 values 时服务端会自动补齐 items（UI 以 items 展示选项）',
     parameters: {
       type: 'object',
       properties: {
@@ -585,7 +714,8 @@ export function registerBizDataTools() {
         },
         items: {
           type: 'object',
-          description: '展示项，如 { "PENDING": { "label": "待处理", "sort": 1 } }',
+          description:
+            '展示项（UI 选项列表来源），如 { "PENDING": { "label": "待处理", "sort": 1 } }；可与 values 同时传，缺省时由 values 自动生成',
         },
       },
       required: ['code', 'values'],
@@ -596,6 +726,10 @@ export function registerBizDataTools() {
       scope: BIZDATA_SURFACE,
       buildResourceId: (_args, data) => (data as { id?: string })?.id,
       handler: async (args) => {
+        const normalized = normalizeEnumValuesItems(
+          (args.values as Record<string, unknown>) || {},
+          (args.items as Record<string, unknown>) || {},
+        );
         const res = await postBusinessDataEnum({
           code: String(args.code),
           enumInfo: {
@@ -603,8 +737,8 @@ export function registerBizDataTools() {
             label: args.label || args.code,
             ...(args.description ? { description: String(args.description) } : {}),
           },
-          values: (args.values as Record<string, unknown>) || {},
-          items: (args.items as Record<string, unknown>) || {},
+          values: normalized.values as Record<string, string>,
+          items: normalized.items as API.BusinessDataEnum['items'],
         });
         const data = getApiData(res);
         if (!data) throw new Error('创建枚举失败');
@@ -614,19 +748,143 @@ export function registerBizDataTools() {
   });
 
   registerFunctionCall({
+    name: 'bizdata_update_enum',
+    description:
+      '更新已有 ADB 枚举（label/values/items）；当 list 发现 items 为空但 values 有值时，须用本 Tool 补齐 items，否则枚举管理 UI 选项数为 0',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: '枚举 UUID（与 code 二选一）' },
+        code: { type: 'string', description: '枚举 code（与 id 二选一）' },
+        label: { type: 'string' },
+        description: { type: 'string' },
+        values: {
+          type: 'object',
+          description: '键值映射；若 items 为空会自动按 values 补齐',
+        },
+        items: {
+          type: 'object',
+          description: '展示项；UI 以此为准。可只传 items 补齐空选项',
+        },
+      },
+    },
+    handler: createMutatingHandler({
+      domain: BIZDATA_DOMAIN,
+      type: 'enum.updated',
+      scope: BIZDATA_SURFACE,
+      buildResourceId: (_args, data) => (data as { id?: string })?.id,
+      handler: async (args) => {
+        const listRes = await getBusinessDataEnums({ size: 200 });
+        const { items: enums } = parseApiListResponse<API.BusinessDataEnum>(listRes);
+        const existing = args.id
+          ? enums.find((item) => item.id === String(args.id))
+          : args.code
+            ? enums.find((item) => item.code === String(args.code))
+            : undefined;
+        if (!existing?.id) throw new Error('请提供已存在的枚举 id 或 code');
+
+        const body: Partial<API.BusinessDataEnum> = {};
+        if (args.label !== undefined || args.description !== undefined) {
+          body.enumInfo = {
+            ...(existing.enumInfo || {}),
+            code: existing.code,
+            label: String(args.label ?? existing.enumInfo?.label ?? existing.code),
+            ...(args.description !== undefined
+              ? { description: String(args.description) }
+              : existing.enumInfo?.description
+                ? { description: String(existing.enumInfo.description) }
+                : {}),
+          };
+        }
+        if (args.values !== undefined || args.items !== undefined) {
+          const normalized = normalizeEnumValuesItems(
+            (args.values as Record<string, unknown>) ??
+              (existing.values as Record<string, unknown>) ??
+              {},
+            (args.items as Record<string, unknown>) ??
+              (existing.items as Record<string, unknown>) ??
+              {},
+          );
+          body.values = normalized.values as Record<string, string>;
+          body.items = normalized.items as API.BusinessDataEnum['items'];
+        }
+
+        const res = await patchBusinessDataEnum(existing.id, body);
+        const data = getApiData(res);
+        if (!data) throw new Error('更新枚举失败');
+        return data;
+      },
+    }),
+  });
+
+  registerFunctionCall({
     name: 'bizdata_list_relations',
-    description: '列出全部实体关系（含 fromEntity/toEntity 的 code）',
-    parameters: { type: 'object', properties: {} },
-    handler: async () => {
-      const res = await getBusinessDataRelations();
-      return getApiData(res) ?? [];
+    description:
+      '列出实体关系（含 fromEntityCode/toEntityCode/directionSummary）；可传 entityCode 只看某实体相关边',
+    parameters: {
+      type: 'object',
+      properties: {
+        entityCode: {
+          type: 'string',
+          description: '按实体 code 过滤（from 或 to 命中），如 IPS:bom:BomSchemeNode',
+        },
+        entityId: { type: 'string', description: '按实体 UUID 过滤（不推荐，优先 entityCode）' },
+      },
+    },
+    handler: async (args) => {
+      const res = await getBusinessDataRelations({
+        entityCode: args.entityCode ? String(args.entityCode) : undefined,
+        entityId: args.entityId ? String(args.entityId) : undefined,
+      });
+      return (getApiData(res) ?? []).map(enrichRelationRow);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_query_relation_graph',
+    description:
+      '查询实体关系图谱（节点+边）；可传 scope（一级 Scope，与关系图谱页一致）或 codePrefix；用于总览缺口与 orphan 实体',
+    parameters: {
+      type: 'object',
+      properties: {
+        scope: {
+          type: 'string',
+          description: '一级 Scope（code 第一段），如 IPS、fmms；不传则全库',
+        },
+        codePrefix: {
+          type: 'string',
+          description: '更细 code 前缀，如 IPS:bom；可与 scope 同时用（取交集）',
+        },
+      },
+    },
+    handler: async (args) => {
+      const schemaRes = await getBusinessDataSchema();
+      const schema = getApiData<API.BusinessDataSchema>(schemaRes);
+      if (!schema) throw new Error('获取业务数据模型失败');
+      const result = buildRelationGraphQuery(schema.entities || [], schema.relations || [], {
+        scope: args.scope ? String(args.scope) : undefined,
+        codePrefix: args.codePrefix ? String(args.codePrefix) : undefined,
+      });
+      if (
+        result.scope &&
+        result.availableScopes.length &&
+        !result.availableScopes.includes(result.scope) &&
+        result.nodeCount === 0
+      ) {
+        return {
+          ...result,
+          hint: `Scope「${result.scope}」下无实体；可用 availableScopes：${result.availableScopes.join(', ')}`,
+        };
+      }
+      return result;
     },
   });
 
   registerFunctionCall({
     name: 'bizdata_add_relation',
     description:
-      '添加实体关系；优先传 fromEntityCode/toEntityCode（如 sale:Order → sale:Customer），禁止编造 UUID',
+      '添加实体关系；必须传 fromEntityCode/toEntityCode；manyToOne/oneToOne 前源实体须有外键字段；成功以 _verification.verified 为准',
+    requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
@@ -635,16 +893,29 @@ export function registerBizDataTools() {
           enum: ['oneToMany', 'manyToOne', 'oneToOne', 'manyToMany'],
           description: 'oneToMany=一对多，manyToOne=多对一，oneToOne=一对一，manyToMany=多对多',
         },
-        name: { type: 'string', description: '关系名，如 orders、customer' },
+        name: {
+          type: 'string',
+          description:
+            '关系名（同一 from 实体内唯一）；推荐目标短名 camelCase（customer）或外键去 Id（materialId→material）',
+        },
         inverseName: { type: 'string', description: '反向关系名（可选）' },
-        fromEntityCode: { type: 'string', description: '源实体 code' },
-        toEntityCode: { type: 'string', description: '目标实体 code' },
-        fromEntityId: { type: 'string', description: '源实体 UUID（须来自 list）' },
-        toEntityId: { type: 'string', description: '目标实体 UUID（须来自 list）' },
+        fromEntityCode: {
+          type: 'string',
+          description: '源实体 code（必填推荐）；manyToOne 时为多方',
+        },
+        toEntityCode: {
+          type: 'string',
+          description: '目标实体 code（必填推荐）；manyToOne 时为一方',
+        },
+        fromEntityId: { type: 'string', description: '源实体 UUID（不推荐；须来自 list，禁止编造）' },
+        toEntityId: { type: 'string', description: '目标实体 UUID（不推荐；须来自 list，禁止编造）' },
         joinTable: { type: 'string', description: 'manyToMany 中间表名（可选）' },
-        config: { type: 'object' },
+        config: {
+          type: 'object',
+          description: '可选；foreignKey 指定源实体外键 fieldKey',
+        },
       },
-      required: ['type', 'name'],
+      required: ['type', 'name', 'fromEntityCode', 'toEntityCode'],
     },
     handler: createMutatingHandler({
       domain: BIZDATA_DOMAIN,
@@ -754,7 +1025,7 @@ export function registerBizDataTools() {
   registerFunctionCall({
     name: 'bizdata_validate_model',
     description:
-      '校验实体模型完整性；默认 markValidated=true，校验通过时写入 entityInfo.modelValidated=true',
+      '校验实体模型完整性；status/*_type 须为 adb-enum+enumCode；失败时按 errors 先 create_enum 再 update；默认 markValidated=true',
     requiresVerification: true,
     parameters: {
       type: 'object',
@@ -809,11 +1080,13 @@ export function registerBizDataTools() {
             const isEnumField = extendType === 'adb-enum';
             if (ENUM_LIKE_FIELD_RE.test(key) && !isEnumField) {
               errors.push(
-                `字段「${key}」疑似状态/类型字段，应使用 type=adb-enum 并关联 enumCode（先 bizdata_create_enum）`,
+                `字段「${key}」疑似状态/类型字段，应使用 type=adb-enum 并关联 enumCode。${buildEnumFieldFixHint(key)}`,
               );
             }
             if (isEnumField && !field.columnInfo?.enumConfig?.enumCode) {
-              errors.push(`枚举字段「${key}」缺少 enumConfig.enumCode`);
+              errors.push(
+                `枚举字段「${key}」缺少 enumConfig.enumCode。${buildEnumFieldFixHint(key)}`,
+              );
             }
             if (isEnumField && typeormType && typeormType !== 'varchar') {
               errors.push(`枚举字段「${key}」的 typeorm type 应为 varchar`);

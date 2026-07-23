@@ -162,6 +162,18 @@ function formatEnum(item) {
 
 function formatRelation(rel) {
   const d = rel.toJSON ? rel.toJSON() : rel;
+  const fromEntity = d.fromEntity
+    ? { id: d.fromEntity.id, code: d.fromEntity.code, label: d.fromEntity.label }
+    : undefined;
+  const toEntity = d.toEntity
+    ? { id: d.toEntity.id, code: d.toEntity.code, label: d.toEntity.label }
+    : undefined;
+  const fromEntityCode = fromEntity?.code;
+  const toEntityCode = toEntity?.code;
+  const directionSummary =
+    fromEntityCode && toEntityCode
+      ? `${fromEntityCode} --${d.type}--> ${toEntityCode} (name=${d.name})`
+      : undefined;
   return {
     id: d.id,
     type: d.type,
@@ -169,14 +181,27 @@ function formatRelation(rel) {
     inverseName: d.inverse_name,
     fromEntityId: d.from_entity_id,
     toEntityId: d.to_entity_id,
+    fromEntityCode,
+    toEntityCode,
+    directionSummary,
     config: d.config || {},
     joinTable: d.join_table,
     metadata: d.metadata || {},
     createdAt: d.created_at,
     updatedAt: d.updated_at,
-    fromEntity: d.fromEntity ? { id: d.fromEntity.id, code: d.fromEntity.code, label: d.fromEntity.label } : undefined,
-    toEntity: d.toEntity ? { id: d.toEntity.id, code: d.toEntity.code, label: d.toEntity.label } : undefined
+    fromEntity,
+    toEntity
   };
+}
+
+async function resolveRelationFilterEntityId({ entityId, entityCode } = {}) {
+  if (entityId) return entityId;
+  if (!entityCode) return null;
+  const entity = await BizdataEntity.findOne({ where: { code: String(entityCode).trim() } });
+  if (!entity) {
+    throw new Error(`找不到实体: ${entityCode}`);
+  }
+  return entity.id;
 }
 
 async function bumpEntityVersion(entityId, transaction) {
@@ -530,9 +555,40 @@ async function listEnums({ page = 1, size = 100 } = {}) {
   return { total: count, items: rows.map(formatEnum), page, size: limit };
 }
 
+/** values ↔ items 互相同步：一侧为空时从另一侧补齐，保证 UI（读 items）与 AI（常写 values）一致 */
+function normalizeEnumValuesAndItems(values = {}, items = {}) {
+  const safeValues = values && typeof values === 'object' && !Array.isArray(values) ? values : {};
+  const safeItems = items && typeof items === 'object' && !Array.isArray(items) ? items : {};
+  const valueKeys = Object.keys(safeValues);
+  const itemKeys = Object.keys(safeItems);
+
+  if (valueKeys.length && !itemKeys.length) {
+    const nextItems = {};
+    valueKeys.forEach((key, index) => {
+      const raw = safeValues[key];
+      nextItems[key] = {
+        label: typeof raw === 'string' && raw ? raw : key,
+        sort: index + 1,
+      };
+    });
+    return { values: { ...safeValues }, items: nextItems };
+  }
+
+  if (itemKeys.length && !valueKeys.length) {
+    const nextValues = {};
+    itemKeys.forEach((key) => {
+      nextValues[key] = key;
+    });
+    return { values: nextValues, items: { ...safeItems } };
+  }
+
+  return { values: { ...safeValues }, items: { ...safeItems } };
+}
+
 async function createEnum(payload) {
-  const { code, enumInfo = {}, values = {}, items = {} } = payload;
+  const { code, enumInfo = {} } = payload;
   if (!code) throw new Error('code 为必填项');
+  const { values, items } = normalizeEnumValuesAndItems(payload.values || {}, payload.items || {});
   const item = await BizdataEnum.create({
     code: code.trim(),
     enum_info: enumInfo,
@@ -545,10 +601,16 @@ async function createEnum(payload) {
 async function updateEnum(id, payload) {
   const item = await BizdataEnum.findByPk(id);
   if (!item) return null;
+  const current = item.toJSON ? item.toJSON() : item;
   const updates = {};
   if (payload.enumInfo !== undefined) updates.enum_info = payload.enumInfo;
-  if (payload.values !== undefined) updates.values = payload.values;
-  if (payload.items !== undefined) updates.items = payload.items;
+  if (payload.values !== undefined || payload.items !== undefined) {
+    const nextValues = payload.values !== undefined ? payload.values : (current.values || {});
+    const nextItems = payload.items !== undefined ? payload.items : (current.items || {});
+    const normalized = normalizeEnumValuesAndItems(nextValues || {}, nextItems || {});
+    updates.values = normalized.values;
+    updates.items = normalized.items;
+  }
   await item.update(updates);
   return formatEnum(item);
 }
@@ -560,8 +622,18 @@ async function deleteEnum(id) {
   return true;
 }
 
-async function listRelations() {
+async function listRelations({ entityId, entityCode } = {}) {
+  const filterEntityId = await resolveRelationFilterEntityId({ entityId, entityCode });
+  const where = filterEntityId
+    ? {
+        [Op.or]: [
+          { from_entity_id: filterEntityId },
+          { to_entity_id: filterEntityId },
+        ],
+      }
+    : undefined;
   const rows = await BizdataRelation.findAll({
+    where,
     include: [
       { model: BizdataEntity, as: 'fromEntity', attributes: ['id', 'code', 'label'] },
       { model: BizdataEntity, as: 'toEntity', attributes: ['id', 'code', 'label'] }
@@ -575,6 +647,42 @@ async function createRelation(payload) {
   const { type, name, inverseName, fromEntityId, toEntityId, config = {}, joinTable, metadata = {} } = payload;
   if (!type || !name || !fromEntityId || !toEntityId) {
     throw new Error('type, name, fromEntityId, toEntityId 为必填项');
+  }
+
+  const existingByName = await BizdataRelation.findOne({
+    where: { from_entity_id: fromEntityId, name: String(name) },
+    include: [
+      { model: BizdataEntity, as: 'fromEntity', attributes: ['id', 'code', 'label'] },
+      { model: BizdataEntity, as: 'toEntity', attributes: ['id', 'code', 'label'] }
+    ]
+  });
+  if (existingByName) {
+    const fromCode = existingByName.fromEntity?.code || fromEntityId;
+    const toCode = existingByName.toEntity?.code || existingByName.to_entity_id;
+    throw new Error(
+      `关系名 '${name}' 已存在于实体 ${fromCode}（→ ${toCode}，type=${existingByName.type}）。` +
+        `同一 from 实体内 name 须唯一；若要加的是另一条边请换 name，若边已存在请勿重复添加`
+    );
+  }
+
+  const existingEdge = await BizdataRelation.findOne({
+    where: {
+      from_entity_id: fromEntityId,
+      to_entity_id: toEntityId,
+      type: String(type),
+    },
+    include: [
+      { model: BizdataEntity, as: 'fromEntity', attributes: ['id', 'code', 'label'] },
+      { model: BizdataEntity, as: 'toEntity', attributes: ['id', 'code', 'label'] }
+    ]
+  });
+  if (existingEdge) {
+    const fromCode = existingEdge.fromEntity?.code || fromEntityId;
+    const toCode = existingEdge.toEntity?.code || toEntityId;
+    throw new Error(
+      `关系已存在：${fromCode} --${existingEdge.type}--> ${toCode}（name=${existingEdge.name}）。` +
+        `请勿用不同 name 重复添加同一条边`
+    );
   }
 
   const transaction = await sequelize.transaction();

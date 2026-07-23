@@ -5,7 +5,7 @@ import {
   PlusOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
-import { ActionType, ProTable } from '@ant-design/pro-components';
+import { ActionType } from '@ant-design/pro-components';
 import { Button, Drawer, Splitter } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import ScopeDomainTree from '@/components/ScopeDomainTree';
-import { useScopeFromUrl } from '@/hooks/useUrlQueryState';
+import { useScopeFromUrl, useTableUrlState } from '@/hooks/useUrlQueryState';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
 import {
@@ -27,6 +27,38 @@ import {
 import { isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import { metricRunColumns, metricTableColumns } from './schema';
 
+const METRIC_FILTER_KEYS = ['code', 'status', 'metricType', 'computeMode'] as const;
+
+type MetricListFilters = {
+  keyword?: string;
+  status?: string;
+  metricType?: string;
+  computeMode?: string;
+};
+
+function formValuesToMetricFilters(formValues: Record<string, unknown>): MetricListFilters {
+  return {
+    keyword: (formValues.code as string | undefined) || undefined,
+    status: (formValues.status as string | undefined) || undefined,
+    metricType: (formValues.metricType as string | undefined) || undefined,
+    computeMode: (formValues.computeMode as string | undefined) || undefined,
+  };
+}
+
+function matchMetricFilters(item: API.BizdataMetric, filters: MetricListFilters): boolean {
+  if (filters.status && item.status !== filters.status) return false;
+  if (filters.metricType && item.metricType !== filters.metricType) return false;
+  if (filters.computeMode && item.computeMode !== filters.computeMode) return false;
+  const q = filters.keyword?.trim().toLowerCase();
+  if (q) {
+    const hit =
+      item.code?.toLowerCase().includes(q)
+      || item.label?.toLowerCase().includes(q);
+    if (!hit) return false;
+  }
+  return true;
+}
+
 const MetricsListPage: React.FC = () => {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<API.BizdataMetric[]>([]);
@@ -34,6 +66,11 @@ const MetricsListPage: React.FC = () => {
   const [runsOpen, setRunsOpen] = useState(false);
   const [runsMetric, setRunsMetric] = useState<API.BizdataMetric | null>(null);
   const [selectedScope, setSelectedScope] = useScopeFromUrl();
+  const { formValues } = useTableUrlState({
+    defaultPageSize: 20,
+    filterKeys: [...METRIC_FILTER_KEYS],
+  });
+  const listFilters = useMemo(() => formValuesToMetricFilters(formValues), [formValues]);
   const runsActionRef = useRef<ActionType | undefined>(undefined);
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildMetricPrompts(references), [references]);
@@ -44,7 +81,12 @@ const MetricsListPage: React.FC = () => {
     id: 'bizdata.metrics.list',
     domain: 'bizdata',
     label: '指标列表',
-    read: () => ({ path: '/business_data/metrics', count: metrics.length }),
+    read: () => ({
+      path: '/business_data/metrics',
+      count: metrics.length,
+      filters: listFilters,
+      selectedScope,
+    }),
     refresh: () => loadMetrics(),
     matchMutation: (mutation) =>
       mutation.domain === 'bizdata'
@@ -72,11 +114,13 @@ const MetricsListPage: React.FC = () => {
   }, [loadMetrics]);
 
   const filteredMetrics = useMemo(() => {
-    if (!selectedScope) return metrics;
-    return metrics.filter(
-      (m) => m.code === selectedScope || m.code?.startsWith(`${selectedScope}:`),
-    );
-  }, [metrics, selectedScope]);
+    const byScope = !selectedScope
+      ? metrics
+      : metrics.filter(
+          (m) => m.code === selectedScope || m.code?.startsWith(`${selectedScope}:`),
+        );
+    return byScope.filter((m) => matchMetricFilters(m, listFilters));
+  }, [metrics, selectedScope, listFilters]);
 
   const handleExecute = async (record: API.BizdataMetric) => {
     if (!record.id) return;
@@ -160,7 +204,7 @@ const MetricsListPage: React.FC = () => {
           </Splitter.Panel>
           <Splitter.Panel>
             <div style={{ height: '100%', overflow: 'auto', paddingLeft: 4 }}>
-              <ProTable<API.BizdataMetric>
+              <UrlSyncedProTable<API.BizdataMetric>
                 headerTitle={selectedScope ? `指标（${selectedScope}）` : '全部指标'}
                 rowKey="id"
                 loading={loading}
@@ -168,7 +212,12 @@ const MetricsListPage: React.FC = () => {
                 columns={tableColumns}
                 search={search}
                 scroll={{ x: 'max-content' }}
-                pagination={false}
+                defaultPageSize={20}
+                urlFilterKeys={[...METRIC_FILTER_KEYS]}
+                pagination={{
+                  showQuickJumper: true,
+                  pageSizeOptions: [10, 20, 50, 100],
+                }}
                 options={DEFAULT_PRO_TABLE_OPTIONS}
                 toolBarRender={() => [
                   <Button

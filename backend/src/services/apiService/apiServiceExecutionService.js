@@ -18,25 +18,47 @@ const {
   resolveDefinitionScript,
   resolveHandlerScript,
   extractSqlNamedParams,
+  loadEnumMapForEntity,
+  resolveOptionalSqlParamNames,
+  parseRequestParameterInterface,
 } = require('./operationParameterSchemas');
 const { executeHandlerScript, buildHandlerContext } = require('./apiServiceHandlerRuntime');
 const { assertAccessAllowed } = require('./apiServicePermissionService');
+const {
+  buildSqlExecutionParameters,
+  resolveFilterEntries,
+  buildParameterizedWhere,
+} = require('./filterQueryBuilder');
+const { bindNamedSqlParams, sqlHasNamedParams } = require('./namedSqlBindings');
+const { createHandlerSdk } = require('./handlerSdk');
+const { assertHandlerScriptValid } = require('./handlerTypeCheck');
 
 function pickDefaultOperation(enabledOperations) {
   const enabled = Array.isArray(enabledOperations) ? enabledOperations : [];
   return enabled[0] || null;
 }
 
-function applyScriptParams(script, parameters, { limit, skip } = {}) {
+function applyScriptParams(script, parameters, { limit, skip, optionalSqlParams } = {}) {
+  const optional = optionalSqlParams instanceof Set
+    ? optionalSqlParams
+    : new Set(optionalSqlParams || []);
   let next = script.replace(/;\s*$/, '');
   next = next.replace(/:limit\b/gi, String(limit ?? 20));
   next = next.replace(/:skip\b/gi, String(skip ?? 0));
   extractSqlNamedParams(script).forEach((name) => {
-    if (parameters?.[name] != null) {
-      const pattern = new RegExp(`(?<!:):${name}\\b`, 'gi');
-      const value = parameters[name];
-      const replacement = typeof value === 'number' ? String(value) : `'${String(value).replace(/'/g, "''")}'`;
+    const pattern = new RegExp(`(?<!:):${name}\\b`, 'gi');
+    const raw = parameters?.[name];
+    const hasValue = raw != null && raw !== '';
+    if (hasValue) {
+      const replacement = typeof raw === 'number'
+        ? String(raw)
+        : `'${String(raw).replace(/'/g, "''")}'`;
       next = next.replace(pattern, replacement);
+      return;
+    }
+    if (optional.has(name)) {
+      // 可选参数未填：约定 SQL 写为 column = :column，替换为 column = column 跳过该条件
+      next = next.replace(pattern, quotePgIdentifier(name));
     }
   });
   const remaining = extractSqlNamedParams(next);
@@ -49,12 +71,22 @@ function applyScriptParams(script, parameters, { limit, skip } = {}) {
   return next;
 }
 
-function buildFromSource(service, parameters, { limit, skip } = {}) {
+function buildFromSource(service, parameters, {
+  limit,
+  skip,
+  operation,
+  entity,
+  enumMap,
+} = {}) {
   const schema = service.targetSchema || 'bizdata_mat';
   const definitionScript = resolveDefinitionScript(service);
   if (definitionScript) {
+    const sqlParameters = buildSqlExecutionParameters(parameters, service);
+    const optionalSqlParams = operation
+      ? resolveOptionalSqlParamNames(service, operation, entity, enumMap)
+      : new Set();
     return {
-      sourceSql: applyScriptParams(definitionScript, parameters, { limit, skip }),
+      sourceSql: applyScriptParams(definitionScript, sqlParameters, { limit, skip, optionalSqlParams }),
       fromDefinition: true,
     };
   }
@@ -104,23 +136,39 @@ async function runWriteTest(runtime, fn, { testAutoRollback = true } = {}) {
   return { preview: result, rolledBack: false };
 }
 
-async function executeFindPg(client, service, parameters) {
+async function executeFindPg(client, service, parameters, execContext = {}) {
   const limit = parameters.limit ?? 20;
   const skip = parameters.skip ?? 0;
-  const { sourceSql, fromDefinition } = buildFromSource(service, parameters, { limit, skip });
+  const { sourceSql, fromDefinition } = buildFromSource(service, parameters, {
+    limit,
+    skip,
+    operation: execContext.operation,
+    entity: execContext.entity,
+    enumMap: execContext.enumMap,
+  });
+  const filterEntries = resolveFilterEntries(parameters, service);
+  const { clause, bindings, nextIndex } = buildParameterizedWhere(filterEntries);
   const sql = fromDefinition
-    ? `SELECT * FROM (${sourceSql}) AS _svc LIMIT $1 OFFSET $2`
-    : `SELECT * FROM ${sourceSql} LIMIT $1 OFFSET $2`;
-  const res = await client.query(sql, [limit, skip]);
+    ? `SELECT * FROM (${sourceSql}) AS _svc${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`
+    : `SELECT * FROM ${sourceSql}${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`;
+  const res = await client.query(sql, [...bindings, limit, skip]);
   return { items: res.rows, count: res.rowCount };
 }
 
-async function executeCountPg(client, service, parameters) {
-  const { sourceSql, fromDefinition } = buildFromSource(service, parameters, { limit: 20, skip: 0 });
+async function executeCountPg(client, service, parameters, execContext = {}) {
+  const { sourceSql, fromDefinition } = buildFromSource(service, parameters, {
+    limit: 20,
+    skip: 0,
+    operation: execContext.operation,
+    entity: execContext.entity,
+    enumMap: execContext.enumMap,
+  });
+  const filterEntries = resolveFilterEntries(parameters, service);
+  const { clause, bindings } = buildParameterizedWhere(filterEntries);
   const sql = fromDefinition
-    ? `SELECT COUNT(*)::int AS count FROM (${sourceSql}) AS _svc`
-    : `SELECT COUNT(*)::int AS count FROM ${sourceSql}`;
-  const res = await client.query(sql);
+    ? `SELECT COUNT(*)::int AS count FROM (${sourceSql}) AS _svc${clause}`
+    : `SELECT COUNT(*)::int AS count FROM ${sourceSql}${clause}`;
+  const res = await client.query(sql, bindings);
   return { count: res.rows[0]?.count ?? 0 };
 }
 
@@ -130,9 +178,27 @@ async function executeFindByIdPg(client, service, parameters) {
   return { item: res.rows[0] || null };
 }
 
-async function executeFindOnePg(client, service, parameters) {
+async function executeFindOnePg(client, service, parameters, execContext = {}) {
+  const filterEntries = resolveFilterEntries(parameters, service);
+  const { clause, bindings } = buildParameterizedWhere(filterEntries);
+  const definitionScript = resolveDefinitionScript(service);
+
+  if (definitionScript) {
+    const { sourceSql } = buildFromSource(service, parameters, {
+      limit: 20,
+      skip: 0,
+      operation: execContext.operation,
+      entity: execContext.entity,
+      enumMap: execContext.enumMap,
+    });
+    const sql = `SELECT * FROM (${sourceSql}) AS _svc${clause} LIMIT 1`;
+    const res = await client.query(sql, bindings);
+    return { item: res.rows[0] || null };
+  }
+
   const table = qualifiedTable(service);
-  const res = await client.query(`SELECT * FROM ${table} LIMIT 1`);
+  const sql = `SELECT * FROM ${table}${clause} LIMIT 1`;
+  const res = await client.query(sql, bindings);
   return { item: res.rows[0] || null };
 }
 
@@ -150,12 +216,22 @@ function usesCustomWriteSql(service) {
   return Boolean(resolveDefinitionScript(service)) && !service?.tableName;
 }
 
-async function executeCustomWriteSqlPg(client, service, parameters, operation) {
+async function executeCustomWriteSqlPg(client, service, parameters, operation, execContext = {}) {
   const definitionScript = resolveDefinitionScript(service);
   if (!definitionScript) {
     throw Object.assign(new Error('自定义写操作 SQL 未定义'), { status: 400 });
   }
-  const sql = applyScriptParams(definitionScript, flattenSqlParameters(parameters));
+  const optionalSqlParams = resolveOptionalSqlParamNames(
+    service,
+    operation,
+    execContext.entity,
+    execContext.enumMap,
+  );
+  const sql = applyScriptParams(
+    definitionScript,
+    flattenSqlParameters(parameters),
+    { optionalSqlParams },
+  );
   const res = await client.query(sql);
 
   if (operation === 'create' || operation === 'insertOne') {
@@ -205,22 +281,23 @@ async function executeDeleteOnePg(client, service, parameters) {
   return { item: res.rows[0] || null, deleted: res.rowCount };
 }
 
-async function executeOperation(client, service, operation, parameters) {
+async function executeOperation(client, service, operation, parameters, execContext = {}) {
+  const ctx = { ...execContext, operation };
   if (usesCustomWriteSql(service) && isWriteOperation(operation)) {
-    return executeCustomWriteSqlPg(client, service, parameters, operation);
+    return executeCustomWriteSqlPg(client, service, parameters, operation, ctx);
   }
 
   if (operation === 'find') {
-    return executeFindPg(client, service, parameters);
+    return executeFindPg(client, service, parameters, ctx);
   }
   if (operation === 'count' || operation === 'countDocuments') {
-    return executeCountPg(client, service, parameters);
+    return executeCountPg(client, service, parameters, ctx);
   }
   if (operation === 'findById') {
     return executeFindByIdPg(client, service, parameters);
   }
   if (operation === 'findOne' || operation === 'exists') {
-    return executeFindOnePg(client, service, parameters);
+    return executeFindOnePg(client, service, parameters, ctx);
   }
   if (operation === 'create' || operation === 'insertOne') {
     return executeCreatePg(client, service, parameters);
@@ -247,29 +324,86 @@ function buildRequestMeta(service, operation, parameters) {
   };
 }
 
+function resolveHandlerOptionalParamNames(service) {
+  const interfaceText = service?.requestParameterInterface
+    || service?.request_parameter_interface
+    || '';
+  const { fields } = parseRequestParameterInterface(interfaceText);
+  const optional = new Set();
+  Object.entries(fields).forEach(([name, meta]) => {
+    if (meta?.required === false) optional.add(name);
+  });
+  // 未在 interface 声明的命名参数一律按可选（缺省绑 NULL）
+  return optional;
+}
+
+/**
+ * queryPg 语义：
+ * 1) queryPg(sql, [v1, v2]) — 位置参数；sql 勿混用 :name
+ * 2) queryPg(sql, { nearest_only: true }) — 命名绑定
+ * 3) queryPg(sql) 或 queryPg(sql, []) 且含 :name — 自动用 parameters
+ */
+function resolveQueryPgBindings(sql, bindings, parameters, optionalNames) {
+  const hasNamed = sqlHasNamedParams(sql);
+  const isArray = Array.isArray(bindings);
+  const isObject = bindings != null
+    && typeof bindings === 'object'
+    && !Array.isArray(bindings);
+
+  if (isArray && bindings.length > 0) {
+    if (hasNamed) {
+      throw Object.assign(
+        new Error('queryPg 使用位置参数数组时，SQL 不应再含 :name 命名参数；请改用 $1 或传入对象绑定'),
+        { status: 400 },
+      );
+    }
+    return { sql, bindings };
+  }
+
+  if (isObject || hasNamed) {
+    const values = isObject ? { ...(parameters || {}), ...bindings } : (parameters || {});
+    return bindNamedSqlParams(sql, values, {
+      optionalNames,
+      allowMissingAsNull: true,
+    });
+  }
+
+  return { sql, bindings: isArray ? bindings : [] };
+}
+
 async function executeTypeScriptHandler(runtime, service, operation, parameters, client = null) {
   const handlerScript = resolveHandlerScript(service);
+  const optionalNames = resolveHandlerOptionalParamNames(service);
+
+  // 内部弃用兜底：旧 Handler 仍可用 queryPg；新代码应使用 db SDK
   const queryPg = async (sql, bindings = []) => {
+    const resolved = resolveQueryPgBindings(sql, bindings, parameters, optionalNames);
     if (client) {
-      const res = await client.query(sql, bindings);
+      const res = await client.query(resolved.sql, resolved.bindings);
       return res.rows;
     }
     return withPgClient(runtime, async (pgClient) => {
-      const res = await pgClient.query(sql, bindings);
+      const res = await pgClient.query(resolved.sql, resolved.bindings);
       return res.rows;
     });
   };
+
+  const { db } = createHandlerSdk({ service, client, runtime });
 
   const ctx = buildHandlerContext({
     service,
     operation,
     parameters,
     queryPg,
+    db,
     user: { bypassAccessControl: true },
     bypassAccessControl: true,
   });
 
-  return executeHandlerScript(handlerScript, ctx);
+  return executeHandlerScript(handlerScript, ctx, {
+    params: ctx.params,
+    db,
+  });
 }
 
 async function testService(serviceId, {
@@ -277,6 +411,7 @@ async function testService(serviceId, {
   parameters,
   bypassAccessControl = true,
   authContext = null,
+  enforceHandlerTypeCheck = false,
 } = {}) {
   const service = await apiServiceService.getServiceById(serviceId, {
     includeOperations: true,
@@ -299,8 +434,15 @@ async function testService(serviceId, {
     throw Object.assign(new Error(`operation "${op}" 未在该服务中启用`), { status: 400 });
   }
 
+  if (enforceHandlerTypeCheck && serviceForTest.scriptMode === 'typescript') {
+    assertHandlerScriptValid(resolveHandlerScript(serviceForTest), {
+      requestParameterInterface: serviceForTest.requestParameterInterface,
+    });
+  }
+
   const entity = await loadEntity(serviceForTest);
-  const validated = validateParameters(serviceForTest, op, parameters || {}, entity);
+  const enumMap = await loadEnumMapForEntity(entity, serviceForTest);
+  const validated = validateParameters(serviceForTest, op, parameters || {}, entity, enumMap);
   const requestPreview = buildRequestPreview(serviceForTest, op, validated, entity);
   const execCheck = isOperationExecutable(serviceForTest, op, executionOptions);
 
@@ -346,7 +488,10 @@ async function testService(serviceId, {
       preview = await executeTypeScriptHandler(runtime, serviceForTest, op, validated);
     }
   } else {
-    const run = async (client) => executeOperation(client, serviceForTest, op, validated);
+    const run = async (client) => executeOperation(client, serviceForTest, op, validated, {
+      entity,
+      enumMap,
+    });
 
     if (isWriteOperation(op)) {
       const { preview: writePreview, rolledBack: writeRolledBack } = await runWriteTest(
