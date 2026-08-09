@@ -1,6 +1,6 @@
 import { RobotOutlined } from '@ant-design/icons';
 import { ProForm } from '@ant-design/pro-components';
-import { sendMockUserMessage, useAISurface } from '@EADAF/ai-base';
+import { sendMockUserMessage, useAISurface } from '@eadaf/ai-base';
 import { Button, Popconfirm, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';

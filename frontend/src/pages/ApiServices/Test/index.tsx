@@ -1,5 +1,5 @@
 import { PlayCircleOutlined, RobotOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
-import { sendMockUserMessage, useAISurface, useChatReference } from '@EADAF/ai-base';
+import { sendMockUserMessage, useAISurface, useChatReference } from '@eadaf/ai-base';
 import { Alert, Button, Collapse, Descriptions, Input, Space, Spin, Tag, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -690,6 +690,14 @@ const ApiServiceTestPage: React.FC = () => {
             </Button>
             <Button icon={<ReloadOutlined />} onClick={() => void handleResetMock()}>
               重置 Example
+            </Button>
+            <Button
+              className="ai-btn"
+              icon={<RobotOutlined />}
+              disabled={!profile || !selectedOperation}
+              onClick={handleAiGenerate}
+            >
+              AI Mock数据
             </Button>
             <Button
               icon={<ToolOutlined />}

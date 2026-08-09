@@ -3,7 +3,7 @@ import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Alert, Button, Spin, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
-import { useAISurface, sendMockUserMessage } from '@EADAF/ai-base';
+import { useAISurface, sendMockUserMessage } from '@eadaf/ai-base';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';

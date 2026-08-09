@@ -50,7 +50,7 @@ return () => {
   在 react-router 根（`<BrowserRouter>` 或 router 实例）的 `subscribe` 回调里调
   `notifyPathnameChange()`。示例：
   ```tsx
-  import { notifyPathnameChange } from '@EADAF/ai-base';
+  import { notifyPathnameChange } from '@eadaf/ai-base';
   // react-router v7 data router
   const router = createBrowserRouter(routes);
   router.subscribe(() => notifyPathnameChange());

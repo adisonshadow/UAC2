@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import type { AddReferenceParams } from '@EADAF/ai-base';
-import { useChatReference } from '@EADAF/ai-base';
+import type { AddReferenceParams } from '@eadaf/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 import ChatReferenceTarget from '@/components/ChatReferenceTarget';
 
 export interface ChatReferenceCellProps {

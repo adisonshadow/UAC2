@@ -78,15 +78,13 @@ const router = new Router({ prefix: '/api/v1/admin/api-services' });
  *               securityConfig: { type: object }
  *               responseOverrides:
  *                 type: object
- *                 description: 按 operation 覆盖响应 Schema 与 Example
+ *                 description: |
+ *                   按 operation 覆盖响应 Schema/Example，如 find.responsesSchema / find.responseExample
  *                 additionalProperties:
  *                   type: object
  *                   properties:
  *                     responsesSchema: { type: object }
  *                     responseExample: {}
- *               responseOverrides:
- *                 type: object
- *                 description: "按 operation 覆盖响应 Schema/Example，如 { find: { responsesSchema, responseExample } }"
  */
 router.get('/', auth, ApiServiceController.list);
 router.post('/', auth, ApiServiceController.create);
@@ -126,7 +124,7 @@ router.get('/operations/catalog', auth, ApiServiceController.operationCatalog);
  * /api/v1/admin/api-services/resolve-connection:
  *   post:
  *     tags: [Admin-ApiServices]
- *     summary: 按 Scope/物化记录推断数据库连接 [需要认证]
+ *     summary: 按主实体/Scope 物化记录推断数据库连接与 targetSchema（不以连接默认 schema 为准） [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -163,7 +161,8 @@ router.post('/resolve-connection', auth, ApiServiceController.resolveConnection)
  *               requestParameterInterface: { type: string, description: "请求参数 TS interface，用于 params 类型" }
  *     responses:
  *       200:
- *         description: 返回 { ok, diagnostics: [{ line, column, message }] }
+ *         description: |
+ *           返回 ok 与 diagnostics 数组（元素含 line、column、message）
  */
 router.post('/check-handler', auth, ApiServiceController.checkHandler);
 
@@ -176,7 +175,7 @@ router.post('/check-handler', auth, ApiServiceController.checkHandler);
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: 返回 { dts }
+ *         description: 返回 dts 字符串
  */
 router.get('/handler-sdk-dts', auth, ApiServiceController.handlerSdkDts);
 
@@ -222,7 +221,7 @@ router.get('/by-code/:code', auth, ApiServiceController.getByCode);
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
-     *     requestBody:
+ *     requestBody:
  *       content:
  *         application/json:
  *           schema:
@@ -254,9 +253,6 @@ router.get('/by-code/:code', auth, ApiServiceController.getByCode);
  *                   properties:
  *                     responsesSchema: { type: object }
  *                     responseExample: {}
- *               responseOverrides:
- *                 type: object
- *                 description: "按 operation 覆盖响应 Schema/Example"
  *     responses:
  *       200:
  *         description: 更新成功

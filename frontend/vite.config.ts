@@ -56,12 +56,20 @@ export default defineConfig({
         replacement: path.resolve(__dirname, 'node_modules/react/jsx-dev-runtime'),
       },
       {
-        find: '@EADAF/ai-base/style.css',
+        find: '@eadaf/ai-base/style.css',
         replacement: path.resolve(__dirname, '../AIBase_with_example/package/ai-base/src/ui/AIChatPanel.css'),
       },
       {
-        find: '@EADAF/ai-base',
+        find: '@eadaf/ai-base',
         replacement: path.resolve(__dirname, '../AIBase_with_example/package/ai-base/src/index.ts'),
+      },
+      // 该包 ESM 导出在 Vite optimizeDeps 下偶发写不出 .vite/deps 文件（浏览器 504），直链 dist
+      {
+        find: 'constrained-editor-plugin',
+        replacement: path.resolve(
+          __dirname,
+          'node_modules/constrained-editor-plugin/dist/esm/constrainedEditor.js',
+        ),
       },
       {
         find: '@',
@@ -70,7 +78,7 @@ export default defineConfig({
     ],
   },
   optimizeDeps: {
-    exclude: ['@EADAF/ai-base'],
+    exclude: ['@eadaf/ai-base', 'constrained-editor-plugin'],
     include: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-is'],
   },
   server: {

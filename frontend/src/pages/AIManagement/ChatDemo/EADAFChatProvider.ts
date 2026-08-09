@@ -5,7 +5,7 @@ import {
   type XRequestOptions,
 } from '@ant-design/x-sdk';
 import { resolveStreamApiUrl } from '@/constants/env';
-import { extractAiChatErrorMessage } from '@EADAF/ai-base';
+import { extractAiChatErrorMessage } from '@eadaf/ai-base';
 
 /** XRequest SSE 流式单元：每个 data 行被包裹为 { data: string } */
 type SseChunk = { data?: string };

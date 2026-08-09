@@ -1,4 +1,4 @@
-import type { AIChatPromptItem } from '@EADAF/ai-base';
+import type { AIChatPromptItem } from '@eadaf/ai-base';
 
 /**
  * 表单页的欢迎 prompts（展示在 AI 对话区）

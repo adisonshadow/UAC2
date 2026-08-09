@@ -8,6 +8,13 @@
 const NAMED_PARAM_RE = /(?<![A-Za-z0-9_:]):(\w+)/g;
 const PARAM_ACCESS_RE = /\b(?:ctx\.)?(?:params|parameters)\.([A-Za-z_$][A-Za-z0-9_$]*)/g;
 
+/** 与后端 sqlTextUtils.stripSqlComments 对齐 */
+function stripSqlComments(sql: string): string {
+  return String(sql || '')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n\r]*/g, ' ');
+}
+
 function extractStringLiterals(script: string): string[] {
   const text = String(script || '');
   const literals: string[] = [];
@@ -29,7 +36,7 @@ function extractStringLiterals(script: string): string[] {
 export function extractHandlerSqlNamedParams(handlerScript?: string | null): string[] {
   const names = new Set<string>();
   extractStringLiterals(String(handlerScript || '')).forEach((literal) => {
-    const matches = literal.match(NAMED_PARAM_RE) || [];
+    const matches = stripSqlComments(literal).match(NAMED_PARAM_RE) || [];
     matches.forEach((m) => names.add(m.slice(1)));
   });
   return [...names];

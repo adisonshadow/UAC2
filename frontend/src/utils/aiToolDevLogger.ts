@@ -1,4 +1,4 @@
-import type { ToolInvokeLogEntry } from '@EADAF/ai-base';
+import type { ToolInvokeLogEntry } from '@eadaf/ai-base';
 import { postToolInvokeLog } from './toolInvokeFileLogger';
 
 const PREVIEW_MAX = 800;
@@ -40,7 +40,7 @@ export function formatToolInvokeLog(entry: ToolInvokeLogEntry): string {
 export function setupAiToolDevLogger() {
   if (process.env.NODE_ENV !== 'development') return;
 
-  import('@EADAF/ai-base').then(({ setToolInvokeLogger }) => {
+  import('@eadaf/ai-base').then(({ setToolInvokeLogger }) => {
     if (typeof setToolInvokeLogger !== 'function') {
       // eslint-disable-next-line no-console
       console.warn(

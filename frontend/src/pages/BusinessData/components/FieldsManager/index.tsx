@@ -1,9 +1,10 @@
 import { Button, Segmented, Space, Alert } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { sendMockUserMessage } from '@EADAF/ai-base';
+import { sendMockUserMessage } from '@eadaf/ai-base';
 import FieldList from '../FieldList';
 import FieldEditModal from './FieldEditModal';
+import EntityCodeChip from './EntityCodeChip';
 import IndexManager, { type IndexManagerRef } from '../IndexManager';
 import RelationManager, { type RelationManagerRef } from '../RelationManager';
 import { buildEntityValidatePrompt } from '../../utils/entityValidation';
@@ -119,6 +120,7 @@ const FieldsManager = forwardRef<FieldsManagerRef, FieldsManagerProps>(
             <Button
               size="small"
               disabled={disabled}
+              className='ai-btn'
               onClick={() => sendAIChat(buildEntityValidatePrompt(entity))}
             >
               AI校验
@@ -130,10 +132,10 @@ const FieldsManager = forwardRef<FieldsManagerRef, FieldsManagerProps>(
         )}
         {segment === 'indexes' && (
           <>
-            <Button size="small" disabled={disabled} onClick={() => indexRef.current?.autoCreate()}>
+            <Button size="small" className='ai-btn' disabled={disabled} onClick={() => indexRef.current?.autoCreate()}>
               自动创建
             </Button>
-            <Button size="small" type="primary" disabled={disabled} onClick={() => indexRef.current?.openCreate()}>
+            <Button size="small"  color="primary" variant="outlined" disabled={disabled} onClick={() => indexRef.current?.openCreate()}>
               添加索引
             </Button>
           </>
@@ -143,11 +145,12 @@ const FieldsManager = forwardRef<FieldsManagerRef, FieldsManagerProps>(
             <Button
               size="small"
               disabled={disabled}
+              className='ai-btn'
               onClick={() => sendAIChat(RELATION_AUTO_PROMPT(entity))}
             >
               自动生成
             </Button>
-            <Button size="small" type="primary" disabled={disabled} onClick={() => relationRef.current?.openCreate()}>
+            <Button size="small"  color="primary" variant="outlined" disabled={disabled} onClick={() => relationRef.current?.openCreate()}>
               添加关系
             </Button>
           </>
@@ -166,15 +169,18 @@ const FieldsManager = forwardRef<FieldsManagerRef, FieldsManagerProps>(
           />
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px' }}>
-          <Segmented
-            value={segment}
-            onChange={(v) => setSegment(v as SegmentKey)}
-            options={[
-              { label: '字段', value: 'fields' },
-              { label: '索引', value: 'indexes' },
-              { label: '关系', value: 'relations' },
-            ]}
-          />
+          <Space size={8} align="center">
+            <EntityCodeChip code={entity.code} />
+            <Segmented
+              value={segment}
+              onChange={(v) => setSegment(v as SegmentKey)}
+              options={[
+                { label: '字段', value: 'fields' },
+                { label: '索引', value: 'indexes' },
+                { label: '关系', value: 'relations' },
+              ]}
+            />
+          </Space>
           {toolbar}
         </div>
 

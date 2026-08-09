@@ -6,6 +6,8 @@
   padding-inline: 11px;
   padding-block: 1px;
   cursor: text;
+  border-radius: var(--ant-border-radius);
+  border: 1px solid var(--ant-color-border);
   transition: all var(--ant-motion-duration-mid) var(--ant-motion-ease-in-out);
 }
 

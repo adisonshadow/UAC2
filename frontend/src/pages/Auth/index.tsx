@@ -23,7 +23,7 @@ import {
   resolveLoginPageDescription,
   resolveSsoBrandingDisplay,
 } from '@/utils/appBranding';
-// import { useAIChatDisplayMode } from '@EADAF/ai-base';
+// import { useAIChatDisplayMode } from '@eadaf/ai-base';
 
 interface LoginParams {
   username: string;
@@ -506,7 +506,14 @@ const LoginPage: React.FC = () => {
   const handleLogin = async (loginData: LoginParams) => {
     try {
       setLoading(true);
-      const msg = await postAuthLogin(loginData) as LoginResponse;
+      // SSO：URL 带 app 时必须把 application_id 传给登录接口，
+      // 否则 JWT 用平台密钥签发，而业务侧 /auth/check?app= 用应用密钥验签会 401。
+      const urlParams = new URL(window.location.href).searchParams;
+      const appId = urlParams.get('app');
+      const loginPayload = appId
+        ? { ...loginData, application_id: appId }
+        : loginData;
+      const msg = await postAuthLogin(loginPayload) as LoginResponse;
 
       if (msg.data?.token) {
         message.success('登录成功！');
@@ -516,9 +523,6 @@ const LoginPage: React.FC = () => {
         saveAuth(msg.data.token, msg.data.refresh_token);
 
         // 检查是否有SSO信息需要处理 - 只有在URL中有app参数时才处理SSO
-        const urlParams = new URL(window.location.href).searchParams;
-        const appId = urlParams.get('app');
-        
         if (msg.data?.sso && appId) {
           const ssoInfo = msg.data.sso;
           console.log('登录响应中包含SSO信息:', ssoInfo);
@@ -546,8 +550,10 @@ const LoginPage: React.FC = () => {
             }
           });
           
-          // 获取用户信息
-          const userData = parseAuthUser(await getAuthCheck({}, { skipErrorHandler: true }));
+          // SSO JWT 按应用密钥签发，check 必须带 app
+          const userData = parseAuthUser(
+            await getAuthCheck({ app: appId }, { skipErrorHandler: true }),
+          );
           if (userData) {
             const userInfo: UserInfo = {
               user_id: userData.user_id,

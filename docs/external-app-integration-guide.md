@@ -18,7 +18,8 @@
 8. [第六步：文件存储](#第六步文件存储)
 9. [API 发现：公开目录](#api-发现公开目录)
 10. [完整代码示例](#完整代码示例)
-11. [常见问题与注意事项](#常见问题与注意事项)
+11. [用户 SSO 单点登录](#用户-sso-单点登录)
+12. [常见问题与注意事项](#常见问题与注意事项)
 
 ---
 
@@ -54,6 +55,9 @@
 | **内置 API** | EADAF 平台自带的用户/组织/角色/权限等管理 API |
 | **业务数据 API** | EADAF 管理员为 FMMS 数据模型创建并发布的 REST API |
 | **采集管道** | FMMS 向 EADAF 提交原始数据（如设备传感器读数）的入口 |
+| **用户 SSO JWT** | 终端用户经 EADAF 登录后回调下发的用户令牌（与下方应用 Token **不是同一种**） |
+
+> 若 FMMS 需要「用户登录 EADAF 后进入业务前端」，见 [用户 SSO 接入指南](./sso-integration-guide.md)。本章后续步骤讲的是 **服务端应用 Token** 调 API。
 
 ---
 
@@ -248,14 +252,28 @@ Authorization: Bearer {token}
 
 `routePath` 是 API 服务的路由路径（由 EADAF 管理员在创建 API 服务时定义，如 `fmms/faultOrderFind`）。
 
+写操作（删除 / 更新）按 OpenAPI 使用 REST 方法与 path id，例如：
+
+```http
+DELETE {base_url}/api/v1/data/IPS/master/WorkstationDelete/{id}
+PATCH  {base_url}/api/v1/data/IPS/master/WorkstationUpdate/{id}
+Content-Type: application/json
+
+{ "body": { "name": "新名称" } }
+```
+
+亦兼容 `POST` 到无后缀的 `routePath`，在 JSON body 中传 `id`。错误响应（含 405）均为 `{ "code", "message", "data" }` JSON 信封。
+
 ### 示例：查询故障工单列表
 
 ```http
-GET {base_url}/api/v1/data/fmms/faultOrderFind?page=1&size=10&status=open
+GET {base_url}/api/v1/data/fmms/faultOrderFind?operation=find&limit=10&skip=0&filter={"status":"open"}
 Authorization: Bearer {token}
 ```
 
-**响应：**
+> 业务数据 API 的分页请求参数为 **`limit` + `skip`**（不要用平台内置用户列表的 `page`/`size` 混用）。
+
+**响应（分页列表必须遵守）：**
 
 ```json
 {
@@ -271,10 +289,27 @@ Authorization: Bearer {token}
         "created_at": "2026-07-10T08:30:00Z"
       }
     ],
-    "total": 42
+    "pagination": {
+      "total": 42,
+      "page": 1,
+      "pageSize": 10,
+      "totalPages": 5,
+      "hasNext": true
+    }
   }
 }
 ```
+
+| 字段 | 说明 |
+|------|------|
+| `items` | 当前页记录 |
+| `pagination.total` | 总记录数（必须） |
+| `pagination.page` | 当前页，从 1 开始 |
+| `pagination.pageSize` | 每页条数 |
+| `pagination.totalPages` | 总页数 |
+| `pagination.hasNext` | 是否有下一页 |
+
+**所有带分页的业务数据列表 API** 均须返回上述 `items` + `pagination` 结构；禁止仅平铺 `total`/`count`。
 
 ### 参数传递
 
@@ -282,7 +317,7 @@ Authorization: Bearer {token}
 
 | 方式 | 示例 | 适用场景 |
 |------|------|---------|
-| Query 参数 | `?page=1&status=open` | GET 请求，简单过滤 |
+| Query 参数 | `?limit=10&skip=0&operation=find` | GET 请求，简单过滤与分页 |
 | JSON Body | `{"status": "open", "level": "urgent"}` | POST 请求 |
 | parameters 嵌套 | `{"parameters": {"status": "open"}}` | POST 请求（推荐） |
 
@@ -444,7 +479,7 @@ GET {base_url}/api/v1/applications-public/{key}/api-catalog
             "routePattern": "",
             "parametersSchema": { "type": "object", "properties": {...} },
             "mockParameters": { "status": "open" },
-            "responseInterface": "interface Result { items: FaultOrder[]; total: number }"
+            "responseInterface": "interface Result { items: FaultOrder[]; pagination: { total: number; page: number; pageSize: number; totalPages: number; hasNext: boolean } }"
           }
         ]
       }
@@ -474,6 +509,7 @@ GET {base_url}/api/v1/applications-public/{key}/api-catalog
 ### Python 示例
 
 ```python
+import json
 import requests
 import os
 
@@ -530,11 +566,11 @@ class EADAFClient:
 
     # ===== 业务数据 API =====
 
-    def query_fault_orders(self, status=None, page=1, size=10):
-        """查询故障工单"""
-        params = {"page": page, "size": size}
+    def query_fault_orders(self, status=None, limit=10, skip=0):
+        """查询故障工单（业务数据 find：limit/skip）"""
+        params = {"operation": "find", "limit": limit, "skip": skip}
         if status:
-            params["status"] = status
+            params["filter"] = json.dumps({"status": status})
         return self._request("GET", "/api/v1/data/fmms/faultOrderFind", params=params)
 
     # ===== 采集管道 =====
@@ -573,7 +609,7 @@ if __name__ == "__main__":
 
     # 3. 查询业务数据
     orders = client.query_fault_orders(status="open")
-    print(f"未处理工单: {orders['data']['total']} 条")
+    print(f"未处理工单: {orders['data']['pagination']['total']} 条")
 
     # 4. 提交采集数据
     sensor_data = b"\x01\x02\x03\x04"  # 实际的传感器原始字节
@@ -629,6 +665,21 @@ public class EadafClient {
 
 ---
 
+## 用户 SSO 单点登录
+
+当需要**终端用户**登录 EADAF 并进入业务前端（而非仅服务端调 API）时，使用用户 SSO，而不是 `applications/token`。
+
+要点（详情见权威文档）：
+
+- EADAF 应用配置的 `redirect_uri` 填 **BFF** 回调，不要填前端页面
+- 对接推荐 `HEADER_REDIRECT`；平台默认仍为 `POST_REDIRECT`
+- 用户 JWT 与应用 API Token 使用同一应用密钥体系签发/验签，但**令牌用途不同**，不可混用
+- HashRouter（Electron）二次跳转必须带 `/#/auth/callback?...`
+
+完整流程、BFF 接口清单、联调与排障：**[用户 SSO 接入指南](./sso-integration-guide.md)**。
+
+---
+
 ## 常见问题与注意事项
 
 ### Token 相关
@@ -638,6 +689,9 @@ public class EadafClient {
 | Token 过期（401） | 重新调用 `/api/v1/applications/token` 换取新 Token |
 | `app_secret` 泄露 | 立即通知 EADAF 管理员重新生成密钥，旧 Token 失效 |
 | 频繁换 Token | Token 默认 24h 有效，建议缓存并在到期前 5 分钟刷新 |
+| 用户 SSO 登录后又回登录页 | 见 [SSO 故障速查](./sso-integration-guide.md#10-常见故障速查)：Hash 回调格式、StrictMode、check 误清 token |
+| SSO `check` 总是 401 | 验签密钥须与「密钥管理」一致，且请求带 `?app={application_id}` |
+| DataAPI 403 但用户已登录 | 缺的是**应用 Token / 域授权**，与用户 SSO JWT 无关 |
 
 ### 权限相关
 
@@ -660,7 +714,7 @@ public class EadafClient {
 
 1. **Token 管理**：在 FMMS 服务端缓存 Token，设置定时刷新（提前于过期时间），避免每次请求都换 Token
 2. **错误重试**：对 401 错误实现自动刷新 Token 后重试的机制
-3. **分页查询**：大数据量查询使用分页（`page` + `size`），或使用 SSE 流式接口
+3. **分页查询**：业务数据列表使用 `limit` + `skip`，响应读取 `data.items` 与 `data.pagination`；平台内置列表仍可用 `page` + `size`。大数据量也可使用 SSE 流式接口
 4. **环境隔离**：开发/测试/生产环境使用不同的 EADAF 应用和密钥
 5. **日志脱敏**：日志中不要记录完整的 `app_secret` 和 `token`
 6. **超时设置**：HTTP 客户端设置合理的连接超时（建议 10s）和读取超时（建议 30s）
@@ -691,6 +745,7 @@ public class EadafClient {
 
 ---
 
-> **文档版本**：2026-07-10
-> **适用 EADAF 版本**：当前开发版
+> **文档版本**：2026-08-09  
+> **适用 EADAF 版本**：当前开发版  
+> **SSO 权威文档**：[sso-integration-guide.md](./sso-integration-guide.md)  
 > **如有疑问**：联系 EADAF 平台管理员

@@ -1,6 +1,15 @@
 import { request } from '@/utils/request';
 
-export async function getAdminSkills(params?: { page?: number; size?: number; isActive?: boolean }) {
+export async function getAdminSkills(params?: {
+  page?: number;
+  size?: number;
+  name?: string;
+  slug?: string;
+  description?: string;
+  isActive?: boolean | string;
+  isGlobal?: boolean | string;
+  isDedicated?: boolean | string;
+}) {
   return request<any>('/api/v1/admin/skills', { method: 'GET', params });
 }
 
@@ -14,6 +23,8 @@ export async function postAdminSkills(body: {
   isGlobal?: boolean;
   isDedicated?: boolean;
   applicationIds?: string[];
+  isActive?: boolean;
+  completionStrategy?: Record<string, unknown> | null;
 }) {
   return request<any>('/api/v1/admin/skills', {
     method: 'POST',
@@ -40,6 +51,7 @@ export async function patchAdminSkillsId(
     isDedicated?: boolean;
     applicationIds?: string[];
     isActive?: boolean;
+    completionStrategy?: Record<string, unknown> | null;
   },
 ) {
   const { id, ...queryParams } = params;

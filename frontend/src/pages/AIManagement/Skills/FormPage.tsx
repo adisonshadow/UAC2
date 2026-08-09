@@ -1,5 +1,5 @@
 import { EditOutlined } from '@ant-design/icons';
-import { sendMockUserMessage, useChatReference } from '@EADAF/ai-base';
+import { invalidateSkillCache, sendMockUserMessage, useChatReference } from '@eadaf/ai-base';
 import { PageContainer, ProForm, ProFormDependency, ProFormSelect, ProFormSwitch, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { Button, Form, Radio, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
@@ -23,6 +23,22 @@ import {
   buildSkillContentReference,
   buildSkillFormReference,
 } from '../ai/chatReferenceUtils';
+
+function parseCompletionStrategyText(text: string | undefined): Record<string, unknown> | null | undefined {
+  const raw = text?.trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed === null) return null;
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('completionStrategy 须为 JSON 对象');
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('completionStrategy')) throw error;
+    throw new Error('completionStrategy 不是合法 JSON');
+  }
+}
 
 export type SkillPageMode = 'create' | 'view' | 'edit';
 
@@ -148,6 +164,9 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
         applicationScope: toApplicationScope(data.isGlobal, data.isDedicated),
         toolIds: (data.tools || []).map((t: any) => t.id),
         applicationIds: data.applicationIds || [],
+        completionStrategyText: data.completionStrategy
+          ? JSON.stringify(data.completionStrategy, null, 2)
+          : '',
       });
       setToolOptions((prev) => mergeToolOptions(prev, data.tools || []));
       setEditorKey(Date.now());
@@ -199,6 +218,7 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      const completionStrategy = parseCompletionStrategyText(values.completionStrategyText);
       setSaving(true);
       const applicationScope = values.applicationScope as SkillApplicationScope;
       const payload = {
@@ -211,6 +231,7 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
         isGlobal: applicationScope === 'global',
         isDedicated: applicationScope === 'dedicated',
         applicationIds: applicationScope === 'dedicated' ? values.applicationIds || [] : [],
+        completionStrategy,
       };
 
       if (mode === 'create') {
@@ -228,9 +249,12 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
         }
         message.success('更新成功');
       }
+      invalidateSkillCache();
       navigate(listPath);
-    } catch {
-      // validation
+    } catch (error) {
+      if (error instanceof Error && /completionStrategy|JSON/.test(error.message)) {
+        message.error(error.message);
+      }
     } finally {
       setSaving(false);
     }
@@ -307,6 +331,16 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
           </ProFormDependency>
           <ProFormSelect name="toolIds" label="关联 Tool" mode="multiple" options={toolOptions} />
           {mode !== 'create' && <ProFormSwitch name="isActive" label="启用" />}
+          <ProFormTextArea
+            name="completionStrategyText"
+            label="完成策略 (JSON)"
+            tooltip="对应 aibase.skills.completion_strategy；空表示清除。字段如 requiredTools / claimRules / terminationStrictness / allowDirectAnswerTermination 等。"
+            fieldProps={{
+              rows: 10,
+              style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' },
+            }}
+            placeholder={'{\n  "terminationStrictness": "strict",\n  "requiredTools": []\n}'}
+          />
           <Form.Item
             name="contentMarkdown"
             label={

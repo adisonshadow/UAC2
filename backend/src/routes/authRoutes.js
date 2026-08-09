@@ -52,7 +52,7 @@ const router = new Router({ prefix: '/api/v1/auth' });
  *                 description: |
  *                   应用ID，用于SSO登录模式
  *                   - 如果提供且应用启用了SSO，将返回该应用的SSO配置信息
- *                   - 系统将使用应用的SSO salt作为JWT签名密钥
+ *                   - 系统将使用应用统一密钥（client_secret / app_secret，兼容旧 salt）作为JWT签名密钥
  *                 example: "550e8400-e29b-41d4-a716-446655440000"
  *               captcha_data:
  *                 type: object
@@ -121,16 +121,20 @@ const router = new Router({ prefix: '/api/v1/auth' });
  *                           example: "hrms"
  *                         sso_config:
  *                           type: object
- *                           description: 应用的SSO配置信息
+ *                           description: 应用的SSO配置信息（回调用字段；签名密钥不下发完整 app_secret）
  *                           properties:
- *                             salt:
- *                               type: string
- *                               description: SSO签名密钥
- *                               example: "sso_salt_key"
  *                             redirect_uri:
  *                               type: string
- *                               description: SSO回调地址
- *                               example: "https://app.example.com/sso/callback"
+ *                               description: SSO回调地址（应为业务 BFF）
+ *                               example: "https://app.example.com/auth/callback"
+ *                             client_secret:
+ *                               type: string
+ *                               description: 历史字段；验签请使用应用统一密钥（密钥管理生成的 app_secret / client_secret）
+ *                               example: "app-unified-secret"
+ *                             salt:
+ *                               type: string
+ *                               description: 旧版签名盐（仅兼容历史数据，新接入勿依赖）
+ *                               example: "legacy-sso-salt"
        *                             redirect_mode:
        *                               type: string
        *                               enum: [POST_REDIRECT, HEADER_REDIRECT]
@@ -505,7 +509,7 @@ router.get('/captcha', authController.getCaptcha);
  *       检查当前用户的登录状态，支持两种使用方式：
  *       
  *       1. **标准模式**：不传任何参数，使用默认JWT密钥验证token
- *       2. **SSO模式**：通过query参数app传递应用ID，使用对应应用的salt验证token
+ *       2. **SSO模式**：通过query参数app传递应用ID，使用应用统一密钥（client_secret / app_secret，兼容旧 salt）验证token
  *       
  *       **使用场景**：
  *       - 前端应用验证用户登录状态
@@ -530,12 +534,12 @@ router.get('/captcha', authController.getCaptcha);
  *           应用ID，用于SSO模式下的token验证
  *           
  *           **使用场景**：
- *           - 第三方系统需要验证特定应用的token
- *           - 使用应用特定的salt进行JWT验证
+ *           - 第三方系统需要验证特定应用的用户 SSO JWT
+ *           - 使用应用统一密钥进行JWT验证
  *           
  *           **注意事项**：
  *           - 应用必须已启用SSO功能
- *           - 应用必须配置有效的salt
+ *           - 应用必须已生成统一密钥（密钥管理 / app_secret）
  *           - 不传此参数时使用默认JWT密钥验证
  *         example: "550e8400-e29b-41d4-a716-446655440000"
  *     security:

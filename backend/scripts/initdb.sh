@@ -77,6 +77,7 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-services-for
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metrics.sql" || { echo "业务指标表迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metrics-cron.sql" || { echo "业务指标 cron 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metric-cards.sql" || { echo "指标看板卡片迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-scope-docs.sql" || { echo "Scope 业务说明表迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-transport-protocols.sql" || { echo "API 服务传输协议迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-skill-completion-strategy.sql" || { echo "Skill 完成策略迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/20260710_add_model_rate_limit.sql" || { echo "模型 rate_limit 迁移失败"; exit 1; }
@@ -92,51 +93,14 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/uac-permissions-catalog-seed.sql
 echo "UAC 权限目录导入完成"
 
 if [[ "$*" == *"--with-aibase-seed"* ]]; then
-    echo "开始导入 AIBase 种子数据..."
+    # AI 元数据权威源：aibase-ai-seed.sql（由 export-aibase-ai-seed.js 从现库导出）。
+    # 历史分散 *-ai-seed / migrate-*-skill 已归档至 archive/ai-content-seeds/，勿再加回本段。
+    echo "开始导入 AIBase providers/models 示例种子..."
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-seed.sql" || { echo "导入 AIBase 种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-skill-tool-seed.sql" || { echo "导入 AIBase Skill/Tool 种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-ai-seed.sql" || { echo "导入业务数据 AI 种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-metrics-ai-seed.sql" || { echo "导入业务指标 AI 种子数据失败"; exit 1; }
-    # 指标卡片 Skill 收紧文案与 tools 均在 bizdata-metrics-ai-seed.sql（ON CONFLICT 更新）
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-entity-code-ai-tool.sql" || { echo "实体 Code 编辑 AI Tool/Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-rename-entity-code-tool.sql" || { echo "实体 Code 重命名 Tool/Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-list-entity-summaries-tool.sql" || { echo "精简列出实体 Tool/Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-prefer-entity-summaries.sql" || { echo "停用 list_entities / 优先 summaries 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-entity-deletion-cascade-tool.sql" || { echo "实体级联删除 Tool 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-enum-items-values-sync.sql" || { echo "枚举 values/items 同步迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-enum-field-schema.sql" || { echo "枚举字段 schema/Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-relation-ai-harden.sql" || { echo "关系添加 Skill/Tool 加固迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-query-relation-graph-tool.sql" || { echo "关系图谱查询 Tool 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-api-service-ai-seed.sql" || { echo "导入 API 服务 AI 种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-service-entity-coverage-skill.sql" || { echo "API 服务实体覆盖率 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-form-v3-skill.sql" || { echo "API 服务表单 v3 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-request-example-unify-skill.sql" || { echo "API 请求参数 Example 统一 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-request-interface-skill.sql" || { echo "API 请求参数 interface Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-adb-enum-interface-skill.sql" || { echo "API 请求参数 @adb-enum Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-getadb-enum-interface-skill.sql" || { echo "API getADBEnumByCode Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-getadb-enum-generic-skill.sql" || { echo "API getADBEnumByCode 泛型 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-handler-params-skill.sql" || { echo "API Handler 参数契约 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-handler-sdk-skill.sql" || { echo "API Handler SDK/语法检查 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-handler-sdk-v2-skill.sql" || { echo "API Handler SDK v2 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-collection-pipeline-ai-seed.sql" || { echo "导入采集管道 AI 种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-outbound-webhook-ai-seed.sql" || { echo "导入提交外部API AI 种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-admin-ai-seed.sql" || { echo "导入 AI 管理种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-provider-model-ai-seed.sql" || { echo "导入 AI 服务商/模型种子数据失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/uac-ai-seed.sql" || { echo "导入 UAC AI 种子数据失败"; exit 1; }
+
+    echo "开始导入 AIBase Skill/Tool 权威种子（aibase-ai-seed.sql）..."
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-ai-seed.sql" || { echo "导入 AIBase AI 权威种子失败"; exit 1; }
     echo "AIBase 种子数据导入完成"
-
-    echo "开始执行 AIBase 增量迁移（skills.scope_id）..."
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-skills-scope.sql" || { echo "AIBase 增量迁移失败"; exit 1; }
-
-    echo "开始执行 AI Chat 框架 Skill 迁移..."
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-chat-framework-skill.sql" || { echo "AI Chat 框架 Skill 迁移失败"; exit 1; }
-
-    echo "开始执行 EADAF Skill 可见性与顶层 Skill 迁移..."
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-eadaf-skill-visibility-and-top-level.sql" || { echo "EADAF Skill 迁移失败"; exit 1; }
-
-    echo "开始执行 ToolResponse 框架 Skill 迁移..."
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-tool-response-framework-skill.sql" || { echo "ToolResponse 框架 Skill 迁移失败"; exit 1; }
-    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-publish-verification-skill.sql" || { echo "API 发布防幻觉 Skill 迁移失败"; exit 1; }
 
     echo "开始初始化销售 Demo SQLite..."
     (cd "$PROJECT_ROOT" && node scripts/init-sales-demo-db.js) || { echo "初始化销售 Demo SQLite 失败"; exit 1; }

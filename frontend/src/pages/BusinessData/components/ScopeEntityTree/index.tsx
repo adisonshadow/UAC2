@@ -7,6 +7,8 @@ import {
   DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
+  FileTextOutlined,
+  InfoCircleOutlined,
   LockOutlined,
   MessageOutlined,
   MoreOutlined,
@@ -17,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Dropdown, Empty, Table, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useChatReference } from '@EADAF/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 import React, { useCallback, useMemo, useState } from 'react';
 import ChatReferenceTarget from '@/components/ChatReferenceTarget';
 import { message } from '@/utils/antdAppApis';
@@ -37,7 +39,10 @@ interface ScopeEntityTreeProps {
   showHeader?: boolean;
   /** 已成功物化过的实体 ID 集合 */
   materializedEntityIds?: ReadonlySet<string>;
+  /** 有业务说明内容的 Scope code */
+  scopeCodesWithDocs?: ReadonlySet<string>;
   onSelectEntity: (entity: API.BusinessDataEntity) => void;
+  onOpenScopeDoc?: (scopeCode: string) => void;
   onToggleLock?: (entity: API.BusinessDataEntity) => void;
   onEditEntity?: (entity: API.BusinessDataEntity) => void;
   onDeleteEntity?: (entity: API.BusinessDataEntity) => void;
@@ -109,7 +114,9 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
   selectedEntityId,
   showHeader = true,
   materializedEntityIds,
+  scopeCodesWithDocs,
   onSelectEntity,
+  onOpenScopeDoc,
   onToggleLock,
   onEditEntity,
   onDeleteEntity,
@@ -183,8 +190,27 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
             <Text strong={!record.isScopeNode}>{record.name}</Text>
             {record.isScopeNode && (
               <ChatReferenceTarget
-                onClick={() => addReference(buildScopeReference({ code: record.code, name: record.name }))}
+                onClick={() =>
+                  addReference(
+                    buildScopeReference({
+                      code: record.code,
+                      name: record.name,
+                      hasDescription: scopeCodesWithDocs?.has(record.code),
+                    }),
+                  )
+                }
               />
+            )}
+            {record.isScopeNode && scopeCodesWithDocs?.has(record.code) && (
+              <Tooltip title="查看业务说明">
+                <InfoCircleOutlined
+                  style={{ color: '#1677ff', cursor: 'pointer', fontSize: 14 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenScopeDoc?.(record.code);
+                  }}
+                />
+              </Tooltip>
             )}
             {!record.isScopeNode && record.entity && (
               <ChatReferenceTarget
@@ -234,6 +260,12 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
                     icon: <CopyOutlined />,
                     label: '复制所有下级实体',
                     onClick: () => void copyChildEntities(record.code),
+                  },
+                  {
+                    key: 'scope-doc',
+                    icon: <FileTextOutlined />,
+                    label: '业务说明',
+                    onClick: () => onOpenScopeDoc?.(record.code),
                   },
                 ],
               }}

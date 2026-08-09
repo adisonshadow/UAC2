@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons';
 import { DragSortTable } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { useChatReference } from '@EADAF/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 import { Button, Dropdown, Empty, Popconfirm, Space, Tag } from 'antd';
 import React, { useEffect, useState } from 'react';
 import ChatReferenceTarget from '@/components/ChatReferenceTarget';

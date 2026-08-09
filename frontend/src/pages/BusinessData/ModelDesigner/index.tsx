@@ -7,29 +7,27 @@ import {
   Select,
   Space,
   Splitter,
-  Tag,
-  Typography,
   message,
 } from 'antd';
 
 import { RedoOutlined } from '@ant-design/icons';
-import type { AIMutation } from '@EADAF/ai-base';
-import { useAISurface, useChatReference, useAIChatPrompts, sendMockUserMessage } from '@EADAF/ai-base';
+import type { AIMutation } from '@eadaf/ai-base';
+import { useAISurface, useChatReference, useAIChatPrompts, sendMockUserMessage } from '@eadaf/ai-base';
 import { buildEntityContextPrompts } from '@/ai/pageChatPrompts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AISurfaceMarker from '@/components/AISurfaceMarker';
-import ChatReferenceTarget from '@/components/ChatReferenceTarget';
-import { buildEntityReference } from '../ai/chatReferenceUtils';
 import { applyBizdataModelMutation } from '../ai/bizdataMutation';
 import ScopeEntityTree from '../components/ScopeEntityTree';
 import FieldsManager from '../components/FieldsManager';
+import ScopeDocPanel from '../components/ScopeDocPanel';
 import JsonSchemaEditor from '../components/JsonSchemaEditor';
 import EnumManager from '../components/EnumManager';
 import EntityDeletionModal from '../components/EntityDeletionModal';
 import { buildEntityValidatePrompt, buildBatchValidatePrompt } from '../utils/entityValidation';
 import {
   getBusinessDataSchema,
+  getBusinessDataScopeDocs,
   getMaterializationStatus,
   patchBusinessDataEntity,
   postBusinessDataEntity,
@@ -40,7 +38,6 @@ import {
   createEntityCodeUniqueRule,
   createTableNameUniqueRule,
   defaultTableNameFromCode,
-  resolveEntityTableName,
 } from '../utils/entityTableName';
 
 const ModelDesigner: React.FC = () => {
@@ -48,6 +45,8 @@ const ModelDesigner: React.FC = () => {
   const [schema, setSchema] = useState<API.BusinessDataSchema>({ entities: [], enums: [], relations: [] });
   const [materializedEntityIds, setMaterializedEntityIds] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<API.BusinessDataEntity | null>(null);
+  const [selectedScopeDocCode, setSelectedScopeDocCode] = useState<string | null>(null);
+  const [scopeCodesWithDocs, setScopeCodesWithDocs] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(false);
   const [enumModalOpen, setEnumModalOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -57,11 +56,15 @@ const ModelDesigner: React.FC = () => {
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
-  const { addReference, references } = useChatReference();
+  const { references } = useChatReference();
   const schemaRef = useRef(schema);
   const selectedRef = useRef(selected);
+  const selectedScopeDocCodeRef = useRef(selectedScopeDocCode);
+  const scopeCodesWithDocsRef = useRef(scopeCodesWithDocs);
   schemaRef.current = schema;
   selectedRef.current = selected;
+  selectedScopeDocCodeRef.current = selectedScopeDocCode;
+  scopeCodesWithDocsRef.current = scopeCodesWithDocs;
 
   const chatPrompts = useMemo(
     () => buildEntityContextPrompts(references, selected),
@@ -70,12 +73,26 @@ const ModelDesigner: React.FC = () => {
 
   useAIChatPrompts(chatPrompts);
 
+  const loadScopeDocs = useCallback(async () => {
+    try {
+      const res = await getBusinessDataScopeDocs();
+      const data = getApiData<API.BusinessDataScopeDocSummary[]>(res);
+      if (!isApiSuccess(res) || !Array.isArray(data)) {
+        return;
+      }
+      setScopeCodesWithDocs(new Set(data.map((item) => item.code).filter(Boolean)));
+    } catch {
+      // 树 icon 非关键路径，静默失败
+    }
+  }, []);
+
   const loadSchema = useCallback(async () => {
     setLoading(true);
     try {
       const [res, statusRes] = await Promise.all([
         getBusinessDataSchema(),
         getMaterializationStatus(),
+        loadScopeDocs(),
       ]);
       const data = getApiData<API.BusinessDataSchema>(res);
       if (!isApiSuccess(res) || !data) {
@@ -106,7 +123,7 @@ const ModelDesigner: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selected?.id]);
+  }, [loadScopeDocs, selected?.id]);
 
   const patchEntityInSchema = useCallback((entity: API.BusinessDataEntity) => {
     setSchema((prev) => ({
@@ -157,6 +174,8 @@ const ModelDesigner: React.FC = () => {
     label: '业务数据模型设计',
     read: () => ({
       selectedEntity: selectedRef.current,
+      selectedScopeDocCode: selectedScopeDocCodeRef.current,
+      scopeDocsSummary: [...scopeCodesWithDocsRef.current],
       entityCount: schemaRef.current.entities?.length ?? 0,
       enumCount: schemaRef.current.enums?.length ?? 0,
       relationCount: schemaRef.current.relations?.length ?? 0,
@@ -165,7 +184,7 @@ const ModelDesigner: React.FC = () => {
     applyMutation,
     matchMutation: (mutation) =>
       mutation.domain === 'bizdata'
-      && /^(entity|enum|relation|schema)\./.test(mutation.type),
+      && /^(entity|enum|relation|schema|scopeDoc)\./.test(mutation.type),
   });
 
   useEffect(() => {
@@ -174,7 +193,21 @@ const ModelDesigner: React.FC = () => {
   }, []);
 
   const handleSelectEntity = (entity: API.BusinessDataEntity) => {
+    setSelectedScopeDocCode(null);
     setSelected(entity);
+  };
+
+  const handleOpenScopeDoc = (scopeCode: string) => {
+    setSelectedScopeDocCode(scopeCode);
+  };
+
+  const handleScopeDocSaved = (doc: API.BusinessDataScopeDoc) => {
+    setScopeCodesWithDocs((prev) => {
+      const next = new Set(prev);
+      if (doc.hasContent) next.add(doc.code);
+      else next.delete(doc.code);
+      return next;
+    });
   };
 
   const handleCreateEntity = async () => {
@@ -276,6 +309,22 @@ const ModelDesigner: React.FC = () => {
   };
 
   const renderDetail = () => {
+    if (selectedScopeDocCode) {
+      return (
+        <AISurfaceMarker
+          surfaceId="bizdata.model-designer.scope-doc"
+          resourceId={selectedScopeDocCode}
+          style={{ height: '100%', display: 'block' }}
+        >
+          <ScopeDocPanel
+            scopeCode={selectedScopeDocCode}
+            onClose={() => setSelectedScopeDocCode(null)}
+            onSaved={handleScopeDocSaved}
+          />
+        </AISurfaceMarker>
+      );
+    }
+
     if (!selected) {
       return (
         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -288,22 +337,6 @@ const ModelDesigner: React.FC = () => {
       <AISurfaceMarker surfaceId="bizdata.model-designer.entity-detail" resourceId={selected.id}>
         <div style={{ padding: '0 4px' }}>
           <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-            {/* <div>
-              <Space wrap align="center">
-                <Typography.Text strong>{selected.label}</Typography.Text>
-                <ChatReferenceTarget
-                  onClick={() => addReference(buildEntityReference(selected))}
-                />
-                <Typography.Text type="secondary">{selected.code}</Typography.Text>
-                {selected.isLocked && <Tag color="gold">已锁定</Tag>}
-                <Tag color="blue">v{selected.version}</Tag>
-                <Tag>{selected.entityKind === 'json_schema' ? 'JSON 结构' : 'ER 表'}</Tag>
-                {selected.entityKind === 'er_table' && (
-                  <Tag>{resolveEntityTableName(selected.code || '', selected.tableName)}</Tag>
-                )}
-              </Space>
-            </div> */}
-
             {selected.entityKind === 'json_schema' ? (
               <JsonSchemaEditor entity={selected} onSaved={loadSchema} />
             ) : (
@@ -337,13 +370,13 @@ const ModelDesigner: React.FC = () => {
             }}
           >
             <Space wrap size="small" style={{ margin: 8, flexShrink: 0 }}>
-              <Button type="primary" size="small" onClick={() => setCreateOpen(true)}>
+              <Button type="primary" size="small" className="btn-gradient-primary" onClick={() => setCreateOpen(true)}>
                 新建实体
               </Button>
-              <Button size="small" onClick={() => setEnumModalOpen(true)}>
+              <Button className="btn-function" size="small" onClick={() => setEnumModalOpen(true)}>
                 枚举管理
               </Button>
-              <Button size="small" onClick={() => navigate('/business_data/model-design/relations-graph')}>
+              <Button className="btn-function" size="small" onClick={() => navigate('/business_data/model-design/relations-graph')}>
                 关系图谱
               </Button>
               <Button size="small" variant='filled' color="default" icon={<RedoOutlined />} loading={loading} onClick={() => loadSchema()} />
@@ -354,7 +387,9 @@ const ModelDesigner: React.FC = () => {
                 selectedEntityId={selected?.id}
                 showHeader={false}
                 materializedEntityIds={materializedEntityIds}
+                scopeCodesWithDocs={scopeCodesWithDocs}
                 onSelectEntity={handleSelectEntity}
+                onOpenScopeDoc={handleOpenScopeDoc}
                 onToggleLock={handleToggleLock}
                 onEditEntity={openEditModal}
                 onDeleteEntity={handleDeleteEntity}

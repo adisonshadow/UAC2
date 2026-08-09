@@ -1,5 +1,5 @@
 import { Button, Input, Select, Space, Splitter } from 'antd';
-import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAISurface, useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildMaterializationExecutePrompts } from '@/ai/pageChatPrompts';
 import EntitySelector from '../components/EntitySelector';

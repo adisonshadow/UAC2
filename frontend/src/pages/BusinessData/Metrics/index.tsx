@@ -9,7 +9,7 @@ import { ActionType } from '@ant-design/pro-components';
 import { Button, Drawer, Splitter } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAIChatPrompts, useAISurface, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useAISurface, useChatReference } from '@eadaf/ai-base';
 import { buildMetricPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
@@ -229,7 +229,7 @@ const MetricsListPage: React.FC = () => {
                   >
                     新建指标
                   </Button>,
-                  <Button key="dashboard" onClick={() => navigate('/business_data/metrics/dashboard')}>
+                  <Button key="dashboard" className="btn-function" onClick={() => navigate('/business_data/metrics/dashboard')}>
                     指标看板
                   </Button>,
                 ]}

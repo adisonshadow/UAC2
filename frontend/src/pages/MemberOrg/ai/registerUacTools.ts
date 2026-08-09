@@ -25,9 +25,16 @@ import {
   putUsersUserIdRoles,
 } from '@/services/UAC/api/users';
 import { getApiData, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 
 const UAC_DOMAIN = 'uac';
+
+/** /api/v1/users 不支持 size=-1；无效/负数按「大页」处理，上限 500 */
+function normalizeUserPageSize(size: unknown, fallback = 500): number {
+  const n = typeof size === 'number' ? size : Number(size);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.max(Math.trunc(n), 1), 500);
+}
 
 const TOOL_NAMES = [
   'uac_list_users',
@@ -65,12 +72,18 @@ function generatePassword(): string {
 export function registerUacTools() {
   registerFunctionCall({
     name: 'uac_list_users',
-    description: '分页列出用户',
+    description:
+      '分页列出用户。禁止传 size=-1（用户接口不支持，会 500）；拉较多数据用 page=1&size=500，或改用 uac_filter_users',
     parameters: {
       type: 'object',
       properties: {
-        page: { type: 'integer' },
-        size: { type: 'integer' },
+        page: { type: 'integer', description: '页码，从 1 起' },
+        size: {
+          type: 'integer',
+          description: '每页条数，1–500；禁止 -1',
+          minimum: 1,
+          maximum: 500,
+        },
         username: { type: 'string' },
         name: { type: 'string' },
         status: { type: 'string' },
@@ -79,7 +92,8 @@ export function registerUacTools() {
     handler: async (args) => {
       const res = await getUsers({
         page: (args.page as number) || 1,
-        size: (args.size as number) || 20,
+        // 模型常误传 size=-1（角色列表习惯）；-1 在 JS 中为真值，不能用 || 兜底
+        size: normalizeUserPageSize(args.size, 500),
         username: args.username as string,
         name: args.name as string,
         status: args.status as API.getUsersParams['status'],
@@ -90,7 +104,8 @@ export function registerUacTools() {
 
   registerFunctionCall({
     name: 'uac_filter_users',
-    description: '按页面过滤项检索用户（用户名/姓名/邮箱/电话/状态/部门/用户ID），返回全部命中项；面向检索而非分页浏览',
+    description:
+      '按过滤项检索用户（用户名/姓名/邮箱/电话/状态/部门/用户ID），内部固定 page=1&size=500；勿传 size=-1',
     parameters: {
       type: 'object',
       properties: {
@@ -105,7 +120,8 @@ export function registerUacTools() {
     },
     handler: async (args) => {
       const res = await getUsers({
-        size: -1,
+        page: 1,
+        size: 500,
         username: args.username as string,
         name: args.name as string,
         email: args.email as string,

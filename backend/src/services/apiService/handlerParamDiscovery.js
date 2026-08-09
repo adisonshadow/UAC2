@@ -4,6 +4,8 @@
  * - params.xxx / ctx.params.xxx / parameters.xxx 访问
  */
 
+const { stripSqlComments } = require('./sqlTextUtils');
+
 /** 命名参数 :foo；排除 entity code（fmms:production:WorkCard）与 PG cast（::uuid） */
 const NAMED_PARAM_RE = /(?<![A-Za-z0-9_:]):(\w+)/g;
 const RESERVED_SQL_PARAMS = new Set(['limit', 'skip']);
@@ -31,7 +33,7 @@ function extractStringLiterals(script) {
 
 function extractSqlNamedParamsFromText(text) {
   if (!text) return [];
-  const matches = String(text).match(NAMED_PARAM_RE) || [];
+  const matches = stripSqlComments(text).match(NAMED_PARAM_RE) || [];
   return [
     ...new Set(
       matches
@@ -45,7 +47,7 @@ function extractSqlNamedParamsFromText(text) {
 function extractHandlerSqlNamedParams(handlerScript, { includeReserved = false } = {}) {
   const names = new Set();
   extractStringLiterals(handlerScript).forEach((literal) => {
-    const matches = String(literal).match(NAMED_PARAM_RE) || [];
+    const matches = stripSqlComments(literal).match(NAMED_PARAM_RE) || [];
     matches.forEach((m) => {
       const name = m.slice(1);
       if (!includeReserved && RESERVED_SQL_PARAMS.has(name.toLowerCase())) return;

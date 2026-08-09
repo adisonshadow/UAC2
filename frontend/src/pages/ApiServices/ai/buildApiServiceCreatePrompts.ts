@@ -1,4 +1,4 @@
-import type { AIChatPromptItem, ChatReferenceItem } from '@EADAF/ai-base';
+import type { AIChatPromptItem, ChatReferenceItem } from '@eadaf/ai-base';
 
 export interface ApiServiceCreatePromptContext {
   primaryOperation?: string;

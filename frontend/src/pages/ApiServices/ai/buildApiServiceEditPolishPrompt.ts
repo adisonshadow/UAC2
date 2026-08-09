@@ -31,7 +31,7 @@ export function buildApiServiceEditPolishPrompt(ctx: ApiServiceEditPolishContext
 ## SQL / Handler 规范
 - **禁止**占位 SQL：\`SELECT 1\` 等
 - **create** + SQL：物化表结构参考 \`WHERE 1=0\`
-- **find** + SQL：含 \`:limit\`/\`:skip\`
+- **find** + SQL：只写 SELECT/WHERE/ORDER BY；**禁止** SQL 内 \`LIMIT\`/\`OFFSET\`（分页由网关按 \`limit\`/\`skip\` 施加）
 
 ## TypeScript Handler 契约（scriptMode=typescript 时必遵）
 - \`requestParameterInterface\` 为唯一真相源；\`params.xxx\` 须先声明
@@ -43,22 +43,36 @@ export function buildApiServiceEditPolishPrompt(ctx: ApiServiceEditPolishContext
 - where 操作符：\`$gte/$lte/$in/$ilike/$isNull\` 等
 - 示例：
   \`\`\`ts
-  const { items, total } = await db('fmms:production:WorkCard')
+  return await db('fmms:production:WorkCard')
     .where({ status: params.status })
     .orderBy('created_at', 'DESC')
     .paginate({ limit: params.limit, skip: params.skip });
-  return { items, total };
+  // → { items, pagination: { total, page, pageSize, totalPages, hasNext } }
   \`\`\`
 - 修改 Handler 后：\`apiservice_check_handler\` → \`apiservice_update_service\` →（可选测前 \`get_service\`）→ \`apiservice_run_test\` → **STOP**
 
-## Response Example
-- **禁止** \`"item": null\`；create/findOne 须具体 item；find 须 items[] + total
+## Response Example（分页必遵）
+- **禁止** \`"item": null\`；create/findOne 须具体 item
+- **find 必须** \`data.items\` + \`data.pagination\`：
+  \`\`\`json
+  {
+    "items": [{ "...": "..." }],
+    "pagination": {
+      "total": 53,
+      "page": 1,
+      "pageSize": 10,
+      "totalPages": 6,
+      "hasNext": true
+    }
+  }
+  \`\`\`
+- Schema / Example / Handler 返回值三者一致；禁止仅 \`items+total\` 或 \`items+count\` 平铺
 
 ## 完善后校验 Todo（顺序固定，测过后禁止加戏）
 - [ ] typescript：\`apiservice_check_handler\` ok=true
-- [ ] \`apiservice_update_service\` 保存
+- [ ] \`apiservice_update_service\` 保存（含完整 responseOverrides）
 - [ ] （可选）测前 \`apiservice_get_service\` 确认非占位 —— **不得在测试成功后再做**
-- [ ] interface / Example / Response Example 完整
+- [ ] interface / Example / Response Example 完整（find 含 pagination）
 - [ ] \`apiservice_run_test\` success=true
 - [ ] **STOP**：向用户汇报测试结果；**禁止**再 get_service / read_surfaces / check_handler「确认完整 handler」
 - [ ] **禁止**测试成功后再改 handler 除非用户明确要求继续改

@@ -13,8 +13,13 @@ export const skillTableColumns: ProColumns<Record<string, any>>[] = [
   { title: '描述', width: 120, dataIndex: 'description' },
   {
     title: '应用范围',
-    dataIndex: 'isGlobal',
+    dataIndex: 'visibility',
     width: 120,
+    valueType: 'select',
+    valueEnum: {
+      global: { text: '全局' },
+      dedicated: { text: '专用' },
+    },
     render: (_, record) => (
       <Space size={[0, 4]} wrap>
         {record.isDedicated ? (
@@ -28,6 +33,7 @@ export const skillTableColumns: ProColumns<Record<string, any>>[] = [
   {
     title: '关联 Tool',
     dataIndex: 'tools',
+    search: false,
     render: (_, record) => (record.tools || []).map((t: any) => t.functionName).join(', ') || '-',
   },
   {
@@ -40,5 +46,11 @@ export const skillTableColumns: ProColumns<Record<string, any>>[] = [
       false: { text: '停用', status: 'Default' },
     },
   },
-  { title: '更新时间', dataIndex: 'updatedAt', valueType: 'dateTime', width: 100 },
+  {
+    title: '更新时间',
+    dataIndex: 'updatedAt',
+    valueType: 'dateTime',
+    width: 100,
+    search: false,
+  },
 ];

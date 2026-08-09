@@ -30,9 +30,17 @@ declare type HandlerWhereValue = unknown | HandlerWhereOps | null;
 
 declare type HandlerWhereFilter = Record<string, HandlerWhereValue>;
 
+declare type HandlerPaginationMeta = {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasNext: boolean;
+};
+
 declare type HandlerPaginateResult = {
   items: Record<string, unknown>[];
-  total: number;
+  pagination: HandlerPaginationMeta;
 };
 
 declare interface HandlerQueryBuilder {
@@ -62,8 +70,14 @@ declare interface HandlerQueryBuilder {
   getCount(): Promise<number>;
   /** 同一套 where/join：先 count 再分页查询，避免过滤写两遍 */
   getManyAndCount(): Promise<HandlerPaginateResult>;
-  /** 钳制 limit/skip 后 getManyAndCount；limit 默认 20、上限 maxLimit（默认 100） */
-  paginate(options?: { limit?: unknown; skip?: unknown; maxLimit?: number }): Promise<HandlerPaginateResult>;
+  /** 钳制 limit/skip（或 page/pageSize）后 getManyAndCount；limit 默认 20、上限 maxLimit（默认 100） */
+  paginate(options?: {
+    limit?: unknown;
+    skip?: unknown;
+    page?: unknown;
+    pageSize?: unknown;
+    maxLimit?: number;
+  }): Promise<HandlerPaginateResult>;
   /** 别名 = getMany */
   find(): Promise<Record<string, unknown>[]>;
   /** 别名 = getOne */

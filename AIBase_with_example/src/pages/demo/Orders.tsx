@@ -1,5 +1,5 @@
 import { Card, Table, Tag, Typography } from 'antd';
-import { useChatReference } from '@EADAF/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 import { useEffect, useState } from 'react';
 import ChatReferenceTarget from '@/components/ChatReferenceTarget';
 import { fetchDemoOrders, type DemoOrder } from './demoApi';

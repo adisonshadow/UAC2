@@ -14,7 +14,7 @@ import type { ProColumns } from '@ant-design/pro-components';
 import { Button, Popconfirm, Splitter, Tag, Tooltip, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAIChatPrompts, useChatReference, useAISurface } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference, useAISurface } from '@eadaf/ai-base';
 import { buildApiServiceListPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
@@ -372,6 +372,7 @@ const ApiServiceListPage: React.FC = () => {
                   </Button>,
                   <Button
                     key="exception-responses"
+                    className="btn-function"
                     icon={<WarningOutlined />}
                     onClick={() => navigate('/api_services/exception-responses')}
                   >

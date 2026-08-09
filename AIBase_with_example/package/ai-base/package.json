@@ -1,9 +1,30 @@
 {
-  "name": "@EADAF/ai-base",
-  "version": "0.1.0",
+  "name": "@eadaf/ai-base",
+  "version": "0.1.1",
+  "description": "EADAF AI 助手基础库（React 前端组件 + 对接 EADAF AI runtime 的对话/Skill/Tool 能力）。",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adisonshadow/UAC2.git"
+  },
+  "homepage": "https://www.npmjs.com/package/@eadaf/ai-base",
+  "keywords": [
+    "eadaf",
+    "ai-base",
+    "ai",
+    "chat",
+    "tool",
+    "skill",
+    "openai-compatible",
+    "react",
+    "typescript"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -16,7 +37,7 @@
   ],
   "scripts": {
     "dev": "tsup --watch",
-    "build": "tsup && cp src/ui/AIChatPanel.css dist/style.css && cat src/a2ui/NextStepA2uiDeck.css >> dist/style.css",
+    "build": "tsup && cp src/ui/AIChatPanel.css dist/style.css && cat src/a2ui/NextStepA2uiDeck.css >> dist/style.css && cat src/ui/UserChoiceCard.css >> dist/style.css",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {

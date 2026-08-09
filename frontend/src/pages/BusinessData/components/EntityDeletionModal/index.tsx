@@ -12,7 +12,7 @@ import {
   message,
 } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
-import { sendMockUserMessage } from '@EADAF/ai-base';
+import { sendMockUserMessage } from '@eadaf/ai-base';
 import {
   postEntityDeletionAnalysis,
   postEntityDeletionExecute,

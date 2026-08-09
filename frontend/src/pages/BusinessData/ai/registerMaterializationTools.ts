@@ -3,7 +3,7 @@ import {
   getMaterializedTableSchema,
   postMaterializedMockData,
 } from '@/services/UAC/api/businessData';
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { getApiData, getApiErrorMessage } from '@/utils/apiResponse';
 import { resolveBizDataEntityId } from './bizdataFieldUtils';

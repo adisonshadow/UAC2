@@ -16,7 +16,7 @@ import {
   patchAdminToolsId,
   postAdminTools,
 } from '@/services/UAC/api/adminTools';
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall, invalidateSkillCache } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { getApiData, parseApiListResponse } from '@/utils/apiResponse';
 
@@ -215,6 +215,7 @@ export function registerAibaseAdminTools() {
         });
         const data = getApiData(res);
         if (!data) throw new Error('创建 Tool 失败');
+        invalidateSkillCache();
         return data;
       },
     }),
@@ -262,6 +263,7 @@ export function registerAibaseAdminTools() {
         );
         const data = getApiData(res);
         if (!data) throw new Error('更新 Tool 失败');
+        invalidateSkillCache();
         return data;
       },
     }),
@@ -336,6 +338,7 @@ export function registerAibaseAdminTools() {
         });
         const data = getApiData(res);
         if (!data) throw new Error('创建 Skill 失败');
+        invalidateSkillCache();
         return data;
       },
     }),
@@ -383,6 +386,7 @@ export function registerAibaseAdminTools() {
         );
         const data = getApiData(res);
         if (!data) throw new Error('更新 Skill 失败');
+        invalidateSkillCache();
         return data;
       },
     }),

@@ -1,7 +1,7 @@
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { AIChatProvider, registerFunctionCall } from '@EADAF/ai-base';
-import '@EADAF/ai-base/style.css';
+import { AIChatProvider, registerFunctionCall } from '@eadaf/ai-base';
+import '@eadaf/ai-base/style.css';
 import { BrowserRouter } from 'react-router-dom';
 import AppRoutes from './routes';
 import { ChatSessionGroupProvider } from './ChatSessionGroupProvider';

@@ -4,7 +4,7 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Image, Modal, Space, Upload, Tooltip } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildStorageBrowserPrompts } from '@/ai/pageChatPrompts';
 import { buildStorageObjectReference } from '@/ai/chatReferenceBuilders';
 import { augmentColumnsWithChatReference } from '@/utils/augmentColumnsWithChatReference';

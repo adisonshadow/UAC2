@@ -25,10 +25,10 @@ VALUES
         '列出用户',
         'uac-list-users',
         'uac_list_users',
-        '分页列出系统用户，支持 username/name/status 筛选',
+        '分页列出系统用户，支持 username/name/status 筛选。禁止 size=-1；拉较多数据用 page=1&size=500，或改用 uac_filter_users',
         'client',
-        '{"type":"object","properties":{"page":{"type":"integer"},"size":{"type":"integer"},"username":{"type":"string"},"name":{"type":"string"},"status":{"type":"string","enum":["ACTIVE","DISABLED","ARCHIVED"]}}}'::jsonb,
-        '## uac_list_users',
+        '{"type":"object","properties":{"page":{"type":"integer","description":"页码，从 1 起"},"size":{"type":"integer","description":"每页条数，1–500；禁止 -1","minimum":1,"maximum":500},"username":{"type":"string"},"name":{"type":"string"},"status":{"type":"string","enum":["ACTIVE","DISABLED","ARCHIVED"]}}}'::jsonb,
+        E'## uac_list_users\n\n- **禁止** `size=-1`（用户接口不支持，会 HTTP 500）\n- 拉较多数据：`page=1&size=500`\n- 按条件检索优先 `uac_filter_users`（内部固定 size=500）',
         '{}'::jsonb,
         true
     ),
@@ -272,10 +272,10 @@ VALUES
         '过滤用户',
         'uac-filter-users',
         'uac_filter_users',
-        '按页面过滤项检索用户：用户名/姓名/邮箱/电话/状态/部门/用户ID，返回全部命中项。与 list 区别：面向检索而非分页浏览。',
+        '按过滤项检索用户，返回命中项（内部固定 page=1&size=500）。勿传 size=-1',
         'client',
         '{"type":"object","properties":{"username":{"type":"string"},"name":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"status":{"type":"string","enum":["ACTIVE","DISABLED","ARCHIVED"]},"departmentId":{"type":"string","description":"部门ID"},"userId":{"type":"string","description":"用户ID精确匹配"}}}'::jsonb,
-        E'## uac_filter_users\n\n参数全可选；不传则返回全部。返回 { items, total }。字段名用 camelCase（departmentId/userId）。',
+        E'## uac_filter_users\n\n参数全可选；不传则返回最多 500 条。返回 { items, total }。\n\n- 字段名用 camelCase（departmentId/userId）\n- **禁止**对用户接口使用 size=-1',
         '{}'::jsonb,
         true
     )
@@ -299,7 +299,7 @@ VALUES (
     '成员与权限管理',
     'uac-access-control',
     '用户、角色、权限与 bizdata Scope 数据规则管理助手',
-    E'# 成员与权限管理助手\n\n你是 EADAF UAC 访问控制助手，帮助管理员管理成员、角色、权限与数据范围规则。\n\n## 重要：Scope 含义\n- 用户说的「Scope / 设备域 / 业务域」指 **bizdata 实体 code 前缀**（如 `equipment`）\n- 用 `uac_list_bizdata_scopes` 或 `bizdata_list_entity_summaries`（浏览）/ `bizdata_get_entity`（详情）查询\n- **禁止**调用 `aibase_create_scope` / `aibase_list_scopes`（AI 能力域 Scope 管理已暂时关闭）\n\n## 创建用户\n- **departmentId 必填**（先 `uac_list_departments_tree`）\n- password 可自动生成 6 位数字并告知用户\n- 用 `uac_assign_user_roles` 或创建时传 roleIds 绑定角色\n\n## 受限用户标准流程（例：仅 equipment 域数据模型 + API 服务）\n1. `uac_list_bizdata_scopes` 确认 `equipment` 存在\n2. `uac_list_roles` 查找 code=`equipment:data-operator`；若无则创建并赋权\n3. `uac_list_permissions` 筛选 `business_data:*`、`api_services:*`、`bizdata:*`、`apiservice:*`、`api:bizdata:*`、`api:apiservice:*`\n4. `uac_set_role_permissions` 全量设置角色权限\n5. `uac_create_data_rule`：`resourceType=bizdata_scope`，conditions 含 `bizdata_scope_codes:["equipment"]`、`allowed_modules:["business_data","api_services"]`\n6. `uac_create_user` + 绑定上述角色\n\n## 已有模板\n- 角色 code `equipment:data-operator`（equipment:数据与API操作员）已预置时可复用，无需重复创建\n\n## 权限模型\n- 功能权限：Permission → Role → User\n- 数据规则：`uac.data_permission_rules`（配置契约，运行时 enforcement 待接入）\n\n## UI 同步\n- 写操作成功后列表会自动刷新，**不要**提示用户手动刷新',
+    E'# 成员与权限管理助手\n\n你是 EADAF UAC 访问控制助手，帮助管理员管理成员、角色、权限与数据范围规则。\n\n## 重要：Scope 含义\n- 用户说的「Scope / 设备域 / 业务域」指 **bizdata 实体 code 前缀**（如 `equipment`）\n- 用 `uac_list_bizdata_scopes` 或 `bizdata_list_entity_summaries`（浏览）/ `bizdata_get_entity`（详情）查询\n- **禁止**调用 `aibase_create_scope` / `aibase_list_scopes`（AI 能力域 Scope 管理已暂时关闭）\n\n## 列出用户\n- 用 `uac_list_users` 或 `uac_filter_users`\n- **禁止**传 `size=-1`（用户接口会 500；与角色列表不同）\n- 正确示例：`page=1, size=500`\n\n## 创建用户\n- **departmentId 必填**（先 `uac_list_departments_tree`）\n- password 可自动生成 6 位数字并告知用户\n- 用 `uac_assign_user_roles` 或创建时传 roleIds 绑定角色\n\n## 受限用户标准流程（例：仅 equipment 域数据模型 + API 服务）\n1. `uac_list_bizdata_scopes` 确认 `equipment` 存在\n2. `uac_list_roles` 查找 code=`equipment:data-operator`；若无则创建并赋权\n3. `uac_list_permissions` 筛选 `business_data:*`、`api_services:*`、`bizdata:*`、`apiservice:*`、`api:bizdata:*`、`api:apiservice:*`\n4. `uac_set_role_permissions` 全量设置角色权限\n5. `uac_create_data_rule`：`resourceType=bizdata_scope`，conditions 含 `bizdata_scope_codes:["equipment"]`、`allowed_modules:["business_data","api_services"]`\n6. `uac_create_user` + 绑定上述角色\n\n## 已有模板\n- 角色 code `equipment:data-operator`（equipment:数据与API操作员）已预置时可复用，无需重复创建\n\n## 权限模型\n- 功能权限：Permission → Role → User\n- 数据规则：`uac.data_permission_rules`（配置契约，运行时 enforcement 待接入）\n\n## UI 同步\n- 写操作成功后列表会自动刷新，**不要**提示用户手动刷新',
     true,
     false,
     true

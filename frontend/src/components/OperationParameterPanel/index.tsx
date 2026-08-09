@@ -118,7 +118,7 @@ function ValueInput({
   onValueChange: (next: unknown) => void;
 }) {
   if (row.enum?.length && row.type !== 'object') {
-    const options = row.enum.map((item) => ({
+    const enumOptions = row.enum.map((item) => ({
       value: item,
       label: row.enumLabels?.[String(item)] || String(item),
     }));
@@ -134,22 +134,39 @@ function ValueInput({
           size="small"
           allowClear
           style={{ width: '100%' }}
-          placeholder="请选择（可多选）"
-          options={options}
+          placeholder={row.required ? '请选择（可多选）' : '请选择（可多选，可不选）'}
+          options={enumOptions}
           value={multiValue}
           onChange={(val) => onValueChange(Array.isArray(val) && val.length ? val : undefined)}
         />
       );
     }
+    // 可选枚举：空选项 + allowClear；清空后值为 undefined（不写入 Example）
+    const emptyOptionValue = '';
+    const options = row.required
+      ? enumOptions
+      : [{ value: emptyOptionValue, label: '（不选）' }, ...enumOptions];
+    const selectValue =
+      value == null || value === ''
+        ? row.required
+          ? undefined
+          : emptyOptionValue
+        : (value as string | number);
     return (
       <Select
         size="small"
-        allowClear
+        allowClear={!row.required}
         style={{ width: '100%' }}
         placeholder="请选择"
         options={options}
-        value={value == null || value === '' ? undefined : value as string | number}
-        onChange={(val) => onValueChange(val)}
+        value={selectValue}
+        onChange={(val) => {
+          if (val == null || val === emptyOptionValue) {
+            onValueChange(undefined);
+            return;
+          }
+          onValueChange(val);
+        }}
       />
     );
   }

@@ -688,6 +688,69 @@ router.get('/scopes', authWithBuiltinApiGuard, BusinessDataController.listScopes
 
 /**
  * @swagger
+ * /api/v1/business-data/scope-docs:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 列出有内容的 Scope 业务说明（供树节点 icon） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: codes
+ *         schema: { type: string }
+ *         description: 可选，逗号分隔的 Scope code 过滤
+ *     responses:
+ *       200:
+ *         description: 获取成功，data 为含 code、updatedAt、hasContent 的对象数组
+ *   put:
+ *     tags: [BusinessData]
+ *     summary: 保存 Scope 业务说明（Markdown）；空内容则删除 [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: Scope code，如 IPS 或 IPS:bom
+ *               contentMarkdown:
+ *                 type: string
+ *                 description: Markdown 正文；trim 后为空则删除记录
+ *     responses:
+ *       200:
+ *         description: 保存成功
+ */
+router.get('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.listScopeDocs);
+router.put('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.upsertScopeDoc);
+
+/**
+ * @swagger
+ * /api/v1/business-data/scope-docs/content:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取单个 Scope 业务说明（query code，避免路径含冒号） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema: { type: string }
+ *         description: Scope code，如 IPS 或 IPS:bom
+ *       - in: query
+ *         name: includeAncestors
+ *         schema: { type: string, enum: ['0', '1', 'true', 'false'] }
+ *         description: 为 1/true 时同时返回祖先链有内容的说明
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ */
+router.get('/scope-docs/content', authWithBuiltinApiGuard, BusinessDataController.getScopeDoc);
+
+/**
+ * @swagger
  * /api/v1/business-data/metrics/dashboard:
  *   get:
  *     tags: [BusinessData]

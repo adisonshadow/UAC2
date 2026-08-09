@@ -47,6 +47,15 @@ function normalizeScriptMode(value) {
   return value === 'typescript' ? 'typescript' : 'sql';
 }
 
+/**
+ * AI / 旧示例常把系统默认 schema 名写进 SQL；若已推断出真实物化 schema，则纠正。
+ * 仅替换标识符 "bizdata_mat"，避免误伤注释中的说明文字时仍可接受（该名本就不该出现在可执行 SQL）。
+ */
+function rewriteHardcodedMatSchema(sql, targetSchema) {
+  if (!sql || !targetSchema || targetSchema === 'bizdata_mat') return sql;
+  return String(sql).replace(/"bizdata_mat"/g, `"${targetSchema}"`);
+}
+
 function resolvePayloadCode(payload) {
   if (payload.code) return validateCode(payload.code);
   const scopeCode = payload.scopeCode || payload.scope_code;
@@ -369,17 +378,29 @@ async function createService(payload, createdBy) {
   }
 
   const connRow = await databaseConnectionService.resolveConnectionRecord(connectionId);
-  const targetSchema = payload.targetSchema
-    || payload.target_schema
-    || connRow.target_schema
-    || await businessDataService.getDefaultMaterializationSchema();
+  // 有主实体时优先用物化记录的 schema，禁止静默落到连接默认 bizdata_mat
+  let targetSchema = payload.targetSchema || payload.target_schema || null;
+  if (!targetSchema && entityId) {
+    const schemaResolved = await resolveConnection({
+      connectionId,
+      scopeCode,
+      entityId,
+      entityCodes: payload.entityCodes || payload.entity_codes,
+    });
+    targetSchema = schemaResolved.targetSchema || null;
+  }
+  if (!targetSchema) {
+    targetSchema = connRow.target_schema
+      || await businessDataService.getDefaultMaterializationSchema();
+  }
 
   let entityCode = null;
   let tableName = null;
 
-  const definitionScript = payload.definitionScript
-    || payload.definition_script
-    || null;
+  const definitionScript = rewriteHardcodedMatSchema(
+    payload.definitionScript || payload.definition_script || null,
+    targetSchema,
+  );
   const handlerScript = payload.handlerScript || payload.handler_script || null;
   const scriptMode = normalizeScriptMode(payload.scriptMode || payload.script_mode);
   const requestParameterInterface = payload.requestParameterInterface
@@ -544,7 +565,14 @@ async function updateService(id, payload, options = {}) {
     updates.script_overrides = payload.scriptOverrides || payload.script_overrides;
   }
   if (payload.definitionScript != null || payload.definition_script != null) {
-    const definitionScript = payload.definitionScript || payload.definition_script;
+    const schemaForRewrite = updates.target_schema
+      || payload.targetSchema
+      || payload.target_schema
+      || service.target_schema;
+    const definitionScript = rewriteHardcodedMatSchema(
+      payload.definitionScript || payload.definition_script,
+      schemaForRewrite,
+    );
     updates.definition_script = definitionScript;
     updates.script_overrides = {
       ...(updates.script_overrides || service.script_overrides || {}),
@@ -576,14 +604,41 @@ async function updateService(id, payload, options = {}) {
 
   const scopeChanged = updates.scope_code && updates.scope_code !== service.scope_code;
   const explicitConnectionId = payload.connectionId || payload.connection_id;
+  const nextEntityId = payload.entityId !== undefined || payload.entity_id !== undefined
+    ? (payload.entityId || payload.entity_id || null)
+    : undefined;
+  if (nextEntityId !== undefined) {
+    if (nextEntityId) {
+      const entity = await BizdataEntity.findByPk(nextEntityId);
+      if (!entity || entity.entity_kind !== 'er_table') {
+        throw Object.assign(new Error('绑定实体须为 ER 表类型'), { status: 400 });
+      }
+      updates.entity_id = nextEntityId;
+      updates.entity_code = entity.code;
+      updates.table_name = resolveEntityTableName(entity.code, entity.table_name);
+    } else {
+      updates.entity_id = null;
+      updates.entity_code = null;
+      updates.table_name = null;
+    }
+  }
+
+  const entityIdForResolve = nextEntityId !== undefined ? nextEntityId : service.entity_id;
   if (explicitConnectionId) {
     updates.connection_id = explicitConnectionId;
-  } else if (scopeChanged) {
+  } else if (scopeChanged || (nextEntityId !== undefined && nextEntityId !== service.entity_id)) {
     const resolved = await resolveConnection({
-      scopeCode: updates.scope_code,
-      entityId: service.entity_id,
+      scopeCode: updates.scope_code || service.scope_code,
+      entityId: entityIdForResolve || undefined,
     });
     updates.connection_id = resolved.connectionId;
+    if (resolved.targetSchema) {
+      updates.target_schema = resolved.targetSchema;
+    }
+  }
+
+  if (payload.targetSchema != null || payload.target_schema != null) {
+    updates.target_schema = payload.targetSchema || payload.target_schema;
   }
 
   const enabledOperations = payload.enabledOperations || payload.enabled_operations;

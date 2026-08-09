@@ -1,4 +1,8 @@
 -- 业务数据 AI Scope / Skills / Tools 种子数据
+--
+-- 可见性约定（新 Skill 必遵，对齐 outbound-webhook-manage）：
+--   业务 Skill 在 seed 内直接写 is_dedicated=true + skill_applications，
+--   勿依赖事后 migrate-eadaf-skill-visibility 才「能被 AI 用到」。
 
 INSERT INTO aibase.scopes (id, name, slug, description, is_active)
 VALUES (
@@ -267,7 +271,8 @@ VALUES
         true
     ),
     (
-        '66666666-6666-4666-8666-666666666637',
+        -- 不可复用 …637/638/639（已分别分配给 rename / browse-schema / browse-rows）
+        '66666666-6666-4666-8666-666666666646',
         '55555555-5555-4555-8555-555555555501',
         '列出关系',
         'bizdata-list-relations',
@@ -280,7 +285,7 @@ VALUES
         true
     ),
     (
-        '66666666-6666-4666-8666-666666666638',
+        '66666666-6666-4666-8666-666666666647',
         '55555555-5555-4555-8555-555555555501',
         '删除关系',
         'bizdata-delete-relation',
@@ -293,7 +298,7 @@ VALUES
         true
     ),
     (
-        '66666666-6666-4666-8666-666666666639',
+        '66666666-6666-4666-8666-666666666648',
         '55555555-5555-4555-8555-555555555501',
         '更新实体索引',
         'bizdata-upsert-entity-indexes',
@@ -317,6 +322,32 @@ VALUES
         E'## bizdata_query_relation_graph\n\n总览某 Scope 下实体关系（与「关系图谱」页过滤一致）。\n\n### 参数\n- **scope**：一级 Scope（code 第一段），如 `IPS`、`fmms`\n- **codePrefix**：可选更细前缀，如 `IPS:bom`（与 scope 同时传时取交集）\n\n### 返回\n- `nodes` / `edges`（含 cardinality、directionSummary）\n- `orphanNodes`：无关系边的实体（建模缺口）\n- `availableScopes`：当前库已有一级 Scope\n\n### 何时用\n- 添加关系前先摸清现有边与缺口\n- 用户问「某 Scope 关系是否完整」时优先本 Tool（比全量 list_relations 更适合总览）',
         '{}'::jsonb,
         true
+    ),
+    (
+        '66666666-6666-4666-8666-666666666644',
+        '55555555-5555-4555-8555-555555555501',
+        '读取 Scope 业务说明',
+        'bizdata-get-scope-description',
+        'bizdata_get_scope_description',
+        '读取 Scope 业务说明（Markdown）及祖先链有内容的说明；对某 Scope 建模前应先调用',
+        'client',
+        '{"type":"object","properties":{"scopeCode":{"type":"string","description":"Scope code，如 IPS 或 IPS:bom"}},"required":["scopeCode"]}'::jsonb,
+        E'## bizdata_get_scope_description\n\n读取 Scope 级业务说明（类似 Skill 的领域知识，不是字段 DDL）。\n\n### 参数\n- **scopeCode**：与模型树 Scope 节点一致，如 `IPS`、`IPS:bom`\n\n### 返回\n- `contentMarkdown`：本 Scope 正文（可空）\n- `ancestors`：祖先链上**有内容**的说明\n\n### 何时用\n- 对某 Scope 下实体做设计/补齐前，**优先**调用本 Tool',
+        '{}'::jsonb,
+        true
+    ),
+    (
+        '66666666-6666-4666-8666-666666666645',
+        '55555555-5555-4555-8555-555555555501',
+        '写入 Scope 业务说明',
+        'bizdata-upsert-scope-description',
+        'bizdata_upsert_scope_description',
+        '写入/更新 Scope 业务说明；合并已有内容，禁止无故清空；空字符串删除',
+        'client',
+        '{"type":"object","properties":{"scopeCode":{"type":"string","description":"Scope code，如 IPS 或 IPS:bom"},"contentMarkdown":{"type":"string","description":"完整 Markdown；空字符串删除"}},"required":["scopeCode","contentMarkdown"]}'::jsonb,
+        E'## bizdata_upsert_scope_description\n\n沉淀该 Scope 的**稳定领域知识**。\n\n### 应写入\n- 业务目标、边界与术语表；关键规则/约束；实体职责划分；上下游关系\n\n### 不应写入\n- 字段类型/长度、索引明细、临时笔记\n\n### 写法\n- 先 get 再合并更新；空 contentMarkdown 删除；以 `_verification.verified=true` 为准',
+        '{}'::jsonb,
+        true
     )
 ON CONFLICT (slug) DO UPDATE SET
     name = EXCLUDED.name,
@@ -329,7 +360,7 @@ ON CONFLICT (slug) DO UPDATE SET
     is_active = EXCLUDED.is_active,
     updated_at = CURRENT_TIMESTAMP;
 
-INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdown, is_active)
+INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdown, is_global, is_dedicated, is_active)
 VALUES
     (
         '77777777-7777-4777-8777-777777777701',
@@ -337,7 +368,9 @@ VALUES
         '业务数据模型设计',
         'bizdata-model-design',
         '辅助设计 Scope:Entity 层级模型',
-        E'# 业务数据模型设计助手\n\n你是 EADAF 业务数据建模助手。**禁止**只建空实体或只写字段就结束。\n\n## 编码规范\n- Entity code：`Scope1[:Scope2...]:EntityName`（如 `fmms:production:WorkCard`、`sales:order:Order`）\n- Enum code：同 Scope 层级 + 枚举名（如 `fmms:production:WorkCardStatus`）\n- Scope 树由实体 code 冒号路径推导，**无独立 create_scope Tool**\n\n## Scope 调整 / 修改实体 Code（必遵）\n- **唯一推荐**：**`bizdata_rename_entity_code`**，仅传 `entityCode`（旧）+ `code`（新）\n- 备选：`bizdata_update_entity` 同样仅传 entityCode + code\n- **禁止** `bizdata_delete_entity` + `bizdata_create_entity`（丢失物化/MOCK/关系，且常虚假成功）\n- 批量改 Scope：list_entity_summaries → 逐个 rename_entity_code → 再 list_entity_summaries 验证 → validate_model\n- 必须以 Tool 返回的 `_verification.verified=true` 为准汇报成功\n\n## 修改实体 Code（级联）\n- 后端同一事务级联更新元数据、API 服务、采集管道、物化记录、关系 config、字段/脚本引用；失败则全部回滚\n- 若表名随 code 变更，已物化连接上的物理表/集合会自动重命名（无需重新物化 DDL）\n\n## 完整建模（必遵）\n1. **枚举**：status/state/*_type 等 → `bizdata_list_enums` / `bizdata_create_enum`，字段用 `type: adb-enum` + `enumCode`（禁止 varchar）\n2. **字段**：`bizdata_create_entity` / `bizdata_update_entity` 传 fields（枚举字段必须同时带 enumCode）\n3. **索引（必做）**：`bizdata_upsert_entity_indexes` 或 create 时传 indexes\n4. **关系（必做）**：按下方「关系添加五步法」执行（禁止跳步口头声称成功）\n5. **校验**：`bizdata_validate_model` 每个实体必调（entityCode，markValidated 默认 true）\n\n## 关系添加五步法（必遵）\n1. **查源实体字段**：`bizdata_get_entity(fromEntityCode)`（`get_entity` **不**返回 relations）\n2. **确认外键**：`manyToOne`/`oneToOne` 时 from 侧须有对应外键（`name` / `nameId` / `name_id` 或 `config.foreignKey`）；没有则先 `bizdata_update_entity` 加字段再加关系\n3. **确认目标与命名**：只用 `toEntityCode`（禁止凭感觉抄 UUID）。name 在**同一 from 实体内唯一**（非全局唯一）：推荐目标短名 camelCase（`Customer`→`customer`）或外键去 Id（`materialId`→`material`）；禁止 `bomSchemeNode_material` 拼接。重名错误会带已有边 from/to；**重名 ≠ 要加的边已存在**\n4. **添加**：`bizdata_add_relation`，**必须**传 `fromEntityCode` + `toEntityCode`\n5. **回读验证**：以返回 `_verification.verified=true` 为准；再 `bizdata_list_relations({ entityCode: fromEntityCode })` 确认 `directionSummary`；**禁止**口头「已生效」\n\n## 枚举字段修复（校验失败时必遵）\n若 `bizdata_validate_model` 报「疑似状态/类型字段」或 `bizdata_update_entity` 报「缺少 enumCode」：\n1. `bizdata_list_enums`\n2. 无则 `bizdata_create_enum`（code + values）\n3. `bizdata_update_entity` **同时**传：`{ "fieldKey": "station_type", "type": "adb-enum", "enumCode": "fmms:StationType", "label": "站点类型" }`\n4. 再 `bizdata_validate_model`\n\n**禁止**：只改 `typeormConfig.type`；只传 `type=adb-enum` 不传 `enumCode`；用 varchar 建 status/*_type。\n\n## 实体列表 Tool 选用\n- **浏览 / 批量 / Scope 调整**：优先 **`bizdata_list_entity_summaries`**（不含 fields，含 fieldCount）\n- **关系图谱总览**：`bizdata_query_relation_graph`（传 `scope` 如 IPS，与关系图谱页一致；看 nodes/edges/orphanNodes）\n- **单实体字段详情**：`bizdata_get_entity`（传 entityCode）\n- **`bizdata_list_entities`**：已对 AI 停用；需要字段请 `bizdata_get_entity`\n\n## 验证通过标记\n- 新建实体默认未验证通过\n- 批量创建后须对每个实体调用 `bizdata_validate_model`，isValid 为 true 时自动标记验证通过\n- 校验失败则按「枚举字段修复」步骤修复后重新校验\n\n## 连续执行（重要）\n用户确认「开始」「继续」「完善」后，须**连续调用 Tool** 完成枚举→字段→索引→关系→**校验**，**禁止**做完一步只输出「第N步」叙述就停。\n- 写了「第五步：模型校验」必须立刻对每个实体调用 `bizdata_validate_model`（entityCode）。\n\n## ID 规则\n- 禁止编造 entityId；用 entityCode 或 list 返回的 UUID\n- 关系两端优先只用 entityCode\n\n## UI 同步\n- 写操作成功后前端会自动刷新，不要提示用户手动刷新\n\n## 阶段边界（必遵）\n- **默认任务范围**：仅**逻辑模型**（枚举 → 字段 → 索引 → 关系 → `bizdata_validate_model` 校验）\n- 全部目标实体的 `bizdata_validate_model` 均 isValid=true 后，**本阶段结束**，停止 Tool 调用\n- **禁止**在本阶段调用：物化、MOCK 数据、API 服务、指标、采集管道\n- 仅当用户**明确**要求「一并物化 / 创建 API / 创建指标 / 全套服务」时，才在总结中说明需切换对应页面\n\n## 阶段完成后的下一步（A2UI）\n全部实体校验通过后，按 **aibase-chat-framework** 约定，在回复末尾输出 `a2ui-commands` 块（见全局 Framework Skill），建议 materialize / create_api / create_metrics / refine_model 等 3～5 条。',
+        E'# 业务数据模型设计助手\n\n你是 EADAF 业务数据建模助手。**禁止**只建空实体或只写字段就结束。\n\n## 编码规范\n- Entity code：`Scope1[:Scope2...]:EntityName`（如 `fmms:production:WorkCard`、`sales:order:Order`）\n- Enum code：同 Scope 层级 + 枚举名（如 `fmms:production:WorkCardStatus`）\n- Scope 树由实体 code 冒号路径推导，**无独立 create_scope Tool**\n\n## Scope 业务说明（领域知识）\n- 任意 Scope 节点（如 `IPS`、`IPS:bom`）可有一份 Markdown 业务说明，类似 Skill 描述\n- **建模前**：对目标 Scope 优先 `bizdata_get_scope_description`（含祖先链有内容说明）\n- **应写入**（`bizdata_upsert_scope_description`）：业务目标/边界、术语表、关键规则与约束、实体职责划分、与上下游关系\n- **不应写入**：字段类型/长度、索引明细、临时笔记\n- 发现稳定领域规则时写入；先 get 再合并更新，禁止无故清空\n\n## Scope 调整 / 修改实体 Code（必遵）\n- **唯一推荐**：**`bizdata_rename_entity_code`**，仅传 `entityCode`（旧）+ `code`（新）\n- 备选：`bizdata_update_entity` 同样仅传 entityCode + code\n- **禁止** `bizdata_delete_entity` + `bizdata_create_entity`（丢失物化/MOCK/关系，且常虚假成功）\n- 批量改 Scope：list_entity_summaries → 逐个 rename_entity_code → 再 list_entity_summaries 验证 → validate_model\n- 必须以 Tool 返回的 `_verification.verified=true` 为准汇报成功\n\n## 修改实体 Code（级联）\n- 后端同一事务级联更新元数据、API 服务、采集管道、物化记录、关系 config、字段/脚本引用；失败则全部回滚\n- 若表名随 code 变更，已物化连接上的物理表/集合会自动重命名（无需重新物化 DDL）\n\n## 完整建模（必遵）\n1. **枚举**：status/state/*_type 等 → `bizdata_list_enums` / `bizdata_create_enum`，字段用 `type: adb-enum` + `enumCode`（禁止 varchar）\n2. **字段**：`bizdata_create_entity` / `bizdata_update_entity` 传 fields（枚举字段必须同时带 enumCode）\n3. **索引（必做）**：`bizdata_upsert_entity_indexes` 或 create 时传 indexes\n4. **关系（必做）**：按下方「关系添加五步法」执行（禁止跳步口头声称成功）\n5. **校验**：`bizdata_validate_model` 每个实体必调（entityCode，markValidated 默认 true）\n\n## 关系添加五步法（必遵）\n1. **查源实体字段**：`bizdata_get_entity(fromEntityCode)`（`get_entity` **不**返回 relations）\n2. **确认外键**：`manyToOne`/`oneToOne` 时 from 侧须有对应外键（`name` / `nameId` / `name_id` 或 `config.foreignKey`）；没有则先 `bizdata_update_entity` 加字段再加关系\n3. **确认目标与命名**：只用 `toEntityCode`（禁止凭感觉抄 UUID）。name 在**同一 from 实体内唯一**（非全局唯一）：推荐目标短名 camelCase（`Customer`→`customer`）或外键去 Id（`materialId`→`material`）；禁止 `bomSchemeNode_material` 拼接。重名错误会带已有边 from/to；**重名 ≠ 要加的边已存在**\n4. **添加**：`bizdata_add_relation`，**必须**传 `fromEntityCode` + `toEntityCode`\n5. **回读验证**：以返回 `_verification.verified=true` 为准；再 `bizdata_list_relations({ entityCode: fromEntityCode })` 确认 `directionSummary`；**禁止**口头「已生效」\n\n## 枚举字段修复（校验失败时必遵）\n若 `bizdata_validate_model` 报「疑似状态/类型字段」或 `bizdata_update_entity` 报「缺少 enumCode」：\n1. `bizdata_list_enums`\n2. 无则 `bizdata_create_enum`（code + values）\n3. `bizdata_update_entity` **同时**传：`{ "fieldKey": "station_type", "type": "adb-enum", "enumCode": "fmms:StationType", "label": "站点类型" }`\n4. 再 `bizdata_validate_model`\n\n**禁止**：只改 `typeormConfig.type`；只传 `type=adb-enum` 不传 `enumCode`；用 varchar 建 status/*_type。\n\n## 实体列表 Tool 选用\n- **浏览 / 批量 / Scope 调整**：优先 **`bizdata_list_entity_summaries`**（不含 fields，含 fieldCount）\n- **Scope 业务说明**：`bizdata_get_scope_description` / `bizdata_upsert_scope_description`\n- **关系图谱总览**：`bizdata_query_relation_graph`（传 `scope` 如 IPS，与关系图谱页一致；看 nodes/edges/orphanNodes）\n- **单实体字段详情**：`bizdata_get_entity`（传 entityCode）\n- **`bizdata_list_entities`**：已对 AI 停用；需要字段请 `bizdata_get_entity`\n\n## 验证通过标记\n- 新建实体默认未验证通过\n- 批量创建后须对每个实体调用 `bizdata_validate_model`，isValid 为 true 时自动标记验证通过\n- 校验失败则按「枚举字段修复」步骤修复后重新校验\n\n## 连续执行（重要）\n用户确认「开始」「继续」「完善」后，须**连续调用 Tool** 完成枚举→字段→索引→关系→**校验**，**禁止**做完一步只输出「第N步」叙述就停。\n- 写了「第五步：模型校验」必须立刻对每个实体调用 `bizdata_validate_model`（entityCode）。\n\n## ID 规则\n- 禁止编造 entityId；用 entityCode 或 list 返回的 UUID\n- 关系两端优先只用 entityCode\n\n## UI 同步\n- 写操作成功后前端会自动刷新，不要提示用户手动刷新\n\n## 阶段边界（必遵）\n- **默认任务范围**：仅**逻辑模型**（枚举 → 字段 → 索引 → 关系 → `bizdata_validate_model` 校验）\n- 全部目标实体的 `bizdata_validate_model` 均 isValid=true 后，**本阶段结束**，停止 Tool 调用\n- **禁止**在本阶段调用：物化、MOCK 数据、API 服务、指标、采集管道\n- 仅当用户**明确**要求「一并物化 / 创建 API / 创建指标 / 全套服务」时，才在总结中说明需切换对应页面\n\n## 阶段完成后的下一步（A2UI）\n全部实体校验通过后，按 **aibase-chat-framework** 约定，在回复末尾输出 `a2ui-commands` 块（见全局 Framework Skill），建议 materialize / create_api / create_metrics / refine_model 等 3～5 条。',
+        false,
+        true,
         true
     ),
     (
@@ -347,6 +380,8 @@ VALUES
         'bizdata-materialization',
         '辅助 SQL/代码物化与版本对比',
         E'# 业务数据物化助手\n\n你是 EADAF 数据物化助手。\n\n## 支持的数据库\n- PostgreSQL（SQL DDL）\n- MongoDB（Collection + 索引）\n- Redis（Key 结构/schema 元数据）\n\n## 流程\n1. 确认目标 connectionId（可先让用户在「物化执行」页选择连接）\n2. bizdata_get_materialization_status 查看 stale 状态\n3. bizdata_preview_materialization 预览脚本（传 connectionId）\n4. 用户确认后 bizdata_execute_materialization（dryRun=false，传 connectionId）\n\n## MOCK 测试数据（开发用途）\n- **仅用于开发/测试**，会向物化物理表写入真实数据\n- 流程：`bizdata_get_entity` → `bizdata_insert_mock_data`（connectionId + entityCode + rows）\n- 可选 `bizdata_browse_materialized_rows` 查看现有数据\n- 每个实体建议 5–10 条；枚举用 enum items 的 value\n\n## 版本\n- 物化记录绑定 entity_version 与 connection_id\n- 若模型 version > 物化 version，需提示用户重新物化',
+        false,
+        true,
         true
     )
 ON CONFLICT (slug) DO UPDATE SET
@@ -354,8 +389,17 @@ ON CONFLICT (slug) DO UPDATE SET
     description = EXCLUDED.description,
     content_markdown = EXCLUDED.content_markdown,
     scope_id = EXCLUDED.scope_id,
+    is_global = EXCLUDED.is_global,
+    is_dedicated = EXCLUDED.is_dedicated,
     is_active = EXCLUDED.is_active,
     updated_at = CURRENT_TIMESTAMP;
+
+-- 专用 Skill 绑定 EADAF 应用（可见性与 seed 同处；勿依赖事后 migrate）
+INSERT INTO aibase.skill_applications (skill_id, application_id)
+SELECT s.id, '10000000-0000-4000-8000-000000000002'::uuid
+FROM aibase.skills s
+WHERE s.slug IN ('bizdata-model-design', 'bizdata-materialization')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO aibase.skill_tools (skill_id, tool_id, sort_order)
 SELECT s.id, t.id, row_number() OVER (PARTITION BY s.slug ORDER BY t.slug) - 1
@@ -368,7 +412,8 @@ WHERE s.slug = 'bizdata-model-design'
     'bizdata_update_entity', 'bizdata_rename_entity_code', 'bizdata_delete_entity', 'bizdata_create_enum',
     'bizdata_update_enum', 'bizdata_list_enums',
     'bizdata_list_relations', 'bizdata_query_relation_graph', 'bizdata_add_relation', 'bizdata_delete_relation',
-    'bizdata_upsert_entity_indexes', 'bizdata_validate_model'
+    'bizdata_upsert_entity_indexes', 'bizdata_validate_model',
+    'bizdata_get_scope_description', 'bizdata_upsert_scope_description'
   )
 ON CONFLICT DO NOTHING;
 

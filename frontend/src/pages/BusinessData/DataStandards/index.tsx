@@ -5,7 +5,7 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Drawer, Form } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
-import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAISurface, useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildDataStandardPrompts } from '@/ai/pageChatPrompts';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';

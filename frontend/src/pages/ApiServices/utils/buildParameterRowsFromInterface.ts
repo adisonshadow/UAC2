@@ -9,7 +9,7 @@ import { isQueryOnlyMethod } from '@/components/OperationParameterPanel';
 import { optionsFromEnum } from '@/pages/BusinessData/utils/enumUtils';
 import { getBusinessDataEnums } from '@/services/UAC/api/businessData';
 import { isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
-import { parseInterfaceFields, type InterfaceField } from './parseInterfaceFields';
+import { parseInterfaceFields, parseNestedInterfaceFields, type InterfaceField } from './parseInterfaceFields';
 
 export type EnumOptionsByCode = Record<
   string,
@@ -24,6 +24,7 @@ function normalizeRowType(field: InterfaceField): string {
     return 'number';
   }
   if (field.isArray || raw.includes('[]') || raw.includes('array')) return 'string';
+  if (raw.includes('object') || raw.includes('record')) return 'object';
   return raw || 'string';
 }
 
@@ -31,6 +32,11 @@ export function collectEnumCodesFromInterface(interfaceText?: string | null): st
   const codes = new Set<string>();
   parseInterfaceFields(interfaceText).forEach((field) => {
     if (field.enumCode) codes.add(field.enumCode);
+  });
+  (['body', 'set'] as const).forEach((container) => {
+    parseNestedInterfaceFields(interfaceText, container).forEach((field) => {
+      if (field.enumCode) codes.add(field.enumCode);
+    });
   });
   return [...codes];
 }
@@ -102,11 +108,13 @@ export function buildParameterRowsFromInterface(options: {
   });
 }
 
-/** 按参数行生成默认 Example（boolean→false，枚举取首项等） */
+/** 按参数行生成默认 Example（boolean→false，必填枚举取首项；可选枚举不预填） */
 export function buildDefaultExampleValues(rows: ParameterRow[]): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   rows.forEach((row) => {
     if (row.enum?.length) {
+      // 可选枚举：不预填，允许空选；必填才取首项
+      if (!row.required) return;
       values[row.name] = row.isArray ? [row.enum[0]] : row.enum[0];
       return;
     }
@@ -119,28 +127,29 @@ export function buildDefaultExampleValues(rows: ParameterRow[]): Record<string, 
         values[row.name] = 20;
       } else if (row.name === 'skip' || row.name === 'offset' || row.name === 'page') {
         values[row.name] = 0;
-      } else {
+      } else if (row.required) {
         values[row.name] = 0;
       }
       return;
     }
     if (row.isArray) {
-      values[row.name] = [];
+      if (row.required) values[row.name] = [];
       return;
     }
     if (row.type === 'object') {
-      values[row.name] = {};
+      if (row.required) values[row.name] = {};
       return;
     }
-    // 字符串：必填给占位，可选也可给空串以便 Example 非「无字段」
-    values[row.name] = '';
+    // 字符串：必填给占位；可选不写入，避免「假有值」
+    if (row.required) values[row.name] = '';
   });
   return values;
 }
 
 /**
- * Example 与结构对齐：保留已有非空值，缺失字段用默认值补齐。
+ * Example 与结构对齐：保留已有值，缺失字段用默认值补齐。
  * 若整体为空对象，则整份用默认 Example。
+ * 可选字段若用户已清空（键不存在），不会被再次补回。
  */
 export function ensureExampleValues(
   rows: ParameterRow[],
@@ -154,9 +163,9 @@ export function ensureExampleValues(
 
   const next: Record<string, unknown> = { ...cur };
   rows.forEach((row) => {
-    if (next[row.name] === undefined) {
-      next[row.name] = defaults[row.name];
-    }
+    if (next[row.name] !== undefined) return;
+    if (!Object.prototype.hasOwnProperty.call(defaults, row.name)) return;
+    next[row.name] = defaults[row.name];
   });
   return next;
 }

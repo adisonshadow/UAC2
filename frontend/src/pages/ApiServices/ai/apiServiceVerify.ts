@@ -13,6 +13,8 @@ export interface ApiServiceVerification {
   /** 请求参数 TypeScript interface 是否非空（编辑页「请求参数结构」来源） */
   hasRequestParameterInterface?: boolean;
   requestDocsComplete?: boolean;
+  /** find 响应是否含完整 pagination 文档 */
+  hasPaginationDocs?: boolean;
 }
 
 export interface VerifyApiServiceOptions {
@@ -21,6 +23,8 @@ export interface VerifyApiServiceOptions {
   expectedStatus?: 'draft' | 'published' | 'disabled';
   /** 为 true 时要求 requestParameterInterface 非空，否则 verified=false */
   requireRequestParameterInterface?: boolean;
+  /** 为 true 且主操作为 find 时，要求 responseExample 含完整 pagination */
+  requireFindPaginationDocs?: boolean;
 }
 
 export function assessRequestParameterInterface(service?: Partial<API.ApiService> | null): {
@@ -39,10 +43,75 @@ export function assessRequestParameterInterface(service?: Partial<API.ApiService
   };
 }
 
+const PAGINATION_KEYS = ['total', 'page', 'pageSize', 'totalPages', 'hasNext'] as const;
+
+/** find 类响应文档须含 data.items + data.pagination 完整字段 */
+export function assessFindPaginationResponseDocs(
+  service?: Partial<API.ApiService> | null,
+  operation?: string,
+): {
+  hasPaginationDocs: boolean;
+  message?: string;
+} {
+  const op = String(operation || service?.enabledOperations?.[0] || '').trim();
+  if (op !== 'find') {
+    return { hasPaginationDocs: true };
+  }
+
+  const securityConfig = (service?.securityConfig || {}) as Record<string, unknown>;
+  const overrides = securityConfig.responseOverrides as
+    | Record<string, { responseExample?: unknown; responsesSchema?: unknown }>
+    | undefined;
+  const entry = overrides?.find;
+  const example = entry?.responseExample;
+  const data =
+    example && typeof example === 'object' && !Array.isArray(example)
+      ? (example as Record<string, unknown>).data
+      : null;
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return {
+      hasPaginationDocs: false,
+      message:
+        'find 响应文档缺少 data；须含 items[] 与 pagination{ total, page, pageSize, totalPages, hasNext }',
+    };
+  }
+
+  const record = data as Record<string, unknown>;
+  if (!Array.isArray(record.items) || record.items.length < 1) {
+    return {
+      hasPaginationDocs: false,
+      message: 'find 的 responseExample.data.items 至少须有 1 条示例',
+    };
+  }
+
+  const pagination = record.pagination;
+  if (!pagination || typeof pagination !== 'object' || Array.isArray(pagination)) {
+    return {
+      hasPaginationDocs: false,
+      message:
+        'find 须使用 data.pagination 对象（禁止仅平铺 total/count）；字段：total, page, pageSize, totalPages, hasNext',
+    };
+  }
+
+  const missing = PAGINATION_KEYS.filter(
+    (key) => !Object.prototype.hasOwnProperty.call(pagination, key),
+  );
+  if (missing.length) {
+    return {
+      hasPaginationDocs: false,
+      message: `find 的 pagination 缺少字段：${missing.join(', ')}`,
+    };
+  }
+
+  return { hasPaginationDocs: true };
+}
+
 function buildVerificationMessage(
   data: API.ApiService,
   options?: VerifyApiServiceOptions,
   docs?: ReturnType<typeof assessRequestParameterInterface>,
+  paginationDocs?: ReturnType<typeof assessFindPaginationResponseDocs>,
 ): string {
   const code = data.code || options?.expectedCode || data.id || '';
   let base: string;
@@ -55,8 +124,15 @@ function buildVerificationMessage(
   } else {
     base = `已验证「${code}」存在（status=${data.status ?? '未知'}）`;
   }
+  const extras: string[] = [];
   if (options?.requireRequestParameterInterface && docs && !docs.requestDocsComplete) {
-    return `${base}；但${docs.message}`;
+    extras.push(docs.message || '请求文档不完整');
+  }
+  if (options?.requireFindPaginationDocs && paginationDocs && !paginationDocs.hasPaginationDocs) {
+    extras.push(paginationDocs.message || '分页响应文档不完整');
+  }
+  if (extras.length) {
+    return `${base}；但${extras.join('；')}`;
   }
   return base;
 }
@@ -84,9 +160,14 @@ export async function verifyApiServiceById(
     !opts.expectedStatus || data.status === opts.expectedStatus;
   const docs = assessRequestParameterInterface(data);
   const docsOk = !opts.requireRequestParameterInterface || docs.requestDocsComplete;
+  const paginationDocs = assessFindPaginationResponseDocs(
+    data,
+    data.enabledOperations?.[0],
+  );
+  const paginationOk = !opts.requireFindPaginationDocs || paginationDocs.hasPaginationDocs;
 
   return {
-    verified: statusOk && docsOk,
+    verified: statusOk && docsOk && paginationOk,
     id: data.id,
     code: data.code || opts.expectedCode || serviceId,
     name: data.name,
@@ -95,7 +176,8 @@ export async function verifyApiServiceById(
     entityCode: data.entityCode,
     hasRequestParameterInterface: docs.hasRequestParameterInterface,
     requestDocsComplete: docs.requestDocsComplete,
-    message: buildVerificationMessage(data, opts, docs),
+    hasPaginationDocs: paginationDocs.hasPaginationDocs,
+    message: buildVerificationMessage(data, opts, docs, paginationDocs),
   };
 }
 

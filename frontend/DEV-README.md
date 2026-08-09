@@ -51,7 +51,7 @@ pnpm dev
 | `pnpm preview` | 本地预览生产构建 |
 | `pnpm openapi2ts` | 根据 OpenAPI 生成 API 类型（需后端 Swagger 可访问） |
 | `pnpm format` | Prettier 格式化 |
-| `pnpm refresh:ai-base` | 清除并更新 `@EADAF/ai-base`（见下文） |
+| `pnpm refresh:ai-base` | 清除并更新 `@eadaf/ai-base`（见下文） |
 
 ## 项目结构（迁移后）
 
@@ -70,19 +70,19 @@ pnpm dev
 | `config/routes.ts` | 原 Umi 路由定义（保留作参考，运行时不再使用） |
 | `config/env.ts` | 端口与 API 地址 |
 
-## Monorepo 与 `@EADAF/ai-base`
+## Monorepo 与 `@eadaf/ai-base`
 
 本项目通过 pnpm workspace 依赖本地包：
 
 ```
-EADAF/node_modules/@EADAF/ai-base  →  AIBase_with_example/package/ai-base
+EADAF/node_modules/@eadaf/ai-base  →  AIBase_with_example/package/ai-base
 ```
 
 AI Chat 相关能力（`AIChatProvider`、`useChatReference`、Chat Reference 等）均来自该包。
 
 开发时 Vite 通过 alias **直接引用 ai-base 源码**（见 `vite.config.ts` 的 `resolve.alias` + `optimizeDeps.exclude`），修改 ai-base 后 HMR 即可生效；若行为异常可执行 refresh 脚本。
 
-## 清除并更新 `@EADAF/ai-base`
+## 清除并更新 `@eadaf/ai-base`
 
 若出现类似 **`useChatReference is not a function`**、AI Chat 行为与 ai-base 源码不一致，通常是 **Vite 预构建缓存** 或 **旧的 workspace 链接** 未刷新。
 
@@ -101,7 +101,7 @@ bash EADAF_frontend/shells/refresh-ai-base.sh
 
 脚本会依次：
 
-1. 删除 `node_modules/@EADAF/ai-base`（根目录与 frontend）
+1. 删除 `node_modules/@eadaf/ai-base`（根目录与 frontend）
 2. 清除 `node_modules/.vite` 预构建缓存
 3. 在 `AIBase_with_example/package/ai-base` 重新 `pnpm run build`
 4. 在 monorepo 根目录执行 `pnpm install` 重建链接
@@ -151,7 +151,7 @@ Server Tool 日志输出到 **EADAF_backend 终端**。
   error: Request failed with status code 500
 ```
 
-修改 `@EADAF/ai-base` 后若日志未生效，执行 `pnpm refresh:ai-base` 并重启 dev。
+修改 `@eadaf/ai-base` 后若日志未生效，执行 `pnpm refresh:ai-base` 并重启 dev。
 
 Vite `configureServer` 已实现 `/__dev/ai-tool-log` 端点（见 `vite.config.ts`）。
 

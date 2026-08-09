@@ -5,7 +5,7 @@ import { message } from '@/utils/antdAppApis';
 import Editor from '@monaco-editor/react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAISurface, useChatReference, useAIChatPrompts, sendMockUserMessage } from '@EADAF/ai-base';
+import { useAISurface, useChatReference, useAIChatPrompts, sendMockUserMessage } from '@eadaf/ai-base';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import {
   getOutboundWebhookTestProfile,

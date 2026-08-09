@@ -46,28 +46,34 @@ function buildSqlExecutionParameters(parameters, service) {
 }
 
 /**
- * 从 parameters.filter 解析等值过滤条件（外层 WHERE）。
- * 顶层同名字段优先；已在 definition SQL 中作为 :param 的字段不再重复过滤。
+ * 从 parameters.filter + 顶层标量字段解析等值过滤条件（外层 WHERE）。
+ * - 顶层同名字段优先于 filter
+ * - 已在 definition SQL 中作为 :param 的字段不再重复过滤（由 SQL 替换处理）
  */
 function resolveFilterEntries(parameters, service) {
+  const sqlParamNames = getSqlParamNameSet(service);
+  const merged = {};
+
   const filter = parameters?.filter;
-  if (!filter || typeof filter !== 'object' || Array.isArray(filter)) {
-    return [];
+  if (filter && typeof filter === 'object' && !Array.isArray(filter)) {
+    Object.entries(filter).forEach(([key, value]) => {
+      if (!COLUMN_NAME_RE.test(key)) return;
+      if (STRUCTURAL_PARAM_KEYS.has(key)) return;
+      if (!isFilterableValue(value)) return;
+      if (sqlParamNames.has(key.toLowerCase())) return;
+      merged[key] = value;
+    });
   }
 
-  const sqlParamNames = getSqlParamNameSet(service);
-
-  const entries = [];
-  Object.entries(filter).forEach(([key, value]) => {
-    if (!COLUMN_NAME_RE.test(key)) return;
+  Object.entries(parameters || {}).forEach(([key, value]) => {
     if (STRUCTURAL_PARAM_KEYS.has(key)) return;
+    if (!COLUMN_NAME_RE.test(key)) return;
     if (!isFilterableValue(value)) return;
-    if (parameters[key] !== undefined && parameters[key] !== null) return;
     if (sqlParamNames.has(key.toLowerCase())) return;
-    entries.push({ key, value });
+    merged[key] = value;
   });
 
-  return entries;
+  return Object.entries(merged).map(([key, value]) => ({ key, value }));
 }
 
 /**

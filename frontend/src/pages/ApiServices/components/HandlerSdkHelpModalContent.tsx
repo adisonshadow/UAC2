@@ -41,21 +41,20 @@ export const HandlerSdkHelpModalContent: React.FC = () => (
     </Paragraph>
 
     <Title level={5}>分页 + 计数（推荐，避免过滤写两遍）</Title>
-    <pre style={preStyle}>{`const { items, total } = await db('fmms:production:WorkCard')
+    <pre style={preStyle}>{`const result = await db('fmms:production:WorkCard')
   .where({ status: params.status })
   .orderBy('created_at', 'DESC')
   .paginate({ limit: params.limit, skip: params.skip });
 
-return { items, total };`}</pre>
+// result = { items, pagination: { total, page, pageSize, totalPages, hasNext } }
+return result;`}</pre>
 
     <Title level={5}>JOIN</Title>
-    <pre style={preStyle}>{`const { items, total } = await db('order:Order', 'o')
+    <pre style={preStyle}>{`return await db('order:Order', 'o')
   .leftJoin('order:OrderItem', 'oi', 'o.id', 'oi.order_id')
   .where({ 'o.status': params.status, 'oi.qty': { $gte: 1 } })
   .orderBy('o.created_at', 'DESC')
-  .paginate({ limit: params.limit, skip: params.skip });
-
-return { items, total };`}</pre>
+  .paginate({ limit: params.limit, skip: params.skip });`}</pre>
 
     <Title level={5}>where 操作符</Title>
     <pre style={preStyle}>{`await db('A')

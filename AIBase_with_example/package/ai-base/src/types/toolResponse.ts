@@ -1,4 +1,4 @@
-export type ToolResultKind = 'success' | 'business_error' | 'system_error';
+export type ToolResultKind = 'success' | 'business_error' | 'system_error' | 'user_choice_request';
 
 export interface ToolResponseError {
   code?: string;

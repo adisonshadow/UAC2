@@ -19,6 +19,27 @@ const router = new Router({ prefix: '/api/v1/admin/skills' });
  *       - in: query
  *         name: size
  *         schema: { type: integer }
+ *       - in: query
+ *         name: name
+ *         schema: { type: string }
+ *         description: 名称模糊匹配
+ *       - in: query
+ *         name: slug
+ *         schema: { type: string }
+ *         description: Skill ID 模糊匹配
+ *       - in: query
+ *         name: description
+ *         schema: { type: string }
+ *         description: 描述模糊匹配
+ *       - in: query
+ *         name: isActive
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: isGlobal
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: isDedicated
+ *         schema: { type: boolean }
  *     responses:
  *       200:
  *         description: 获取成功

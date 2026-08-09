@@ -70,7 +70,7 @@ module.exports = async (ctx, next) => {
     let isSsoAuth = false;
     
     if (app) {
-      // 验证application_id并获取SSO salt
+      // 验证 application_id 并解析 SSO 签名密钥（client_secret / app_secret，兼容旧 salt）
       const application = await Application.findOne({
         where: {
           application_id: app,

@@ -1,0 +1,63 @@
+.entity-code-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 280px;
+  padding: 0 8px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: rgba(0, 0, 0, 0.65);
+  line-height: 1;
+  user-select: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.entity-code-chip:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.entity-code-chip:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.entity-code-chip__prefix {
+  display: inline-grid;
+  grid-template-columns: 0fr;
+  overflow: hidden;
+  transition: grid-template-columns 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.entity-code-chip:hover .entity-code-chip__prefix,
+.entity-code-chip:focus-visible .entity-code-chip__prefix {
+  grid-template-columns: 1fr;
+}
+
+.entity-code-chip__prefix-inner {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.entity-code-chip:hover .entity-code-chip__prefix-inner,
+.entity-code-chip:focus-visible .entity-code-chip__prefix-inner {
+  opacity: 1;
+}
+
+.entity-code-chip__leaf {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entity-code-chip,
+  .entity-code-chip__prefix,
+  .entity-code-chip__prefix-inner {
+    transition: none;
+  }
+}

@@ -8,7 +8,7 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useMemo } from 'react';
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildAISkillListPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { useAIListSurface } from '@/ai/useAIListSurface';
@@ -79,7 +79,20 @@ const SkillsPage: React.FC = () => {
           },
         ]}
         request={async (params) => {
-          const response = await getAdminSkills({ page: params.current, size: params.pageSize });
+          const visibility = params.visibility as string | undefined;
+          const response = await getAdminSkills({
+            page: params.current,
+            size: params.pageSize,
+            name: params.name || undefined,
+            slug: params.slug || undefined,
+            description: params.description || undefined,
+            isActive:
+              params.isActive === undefined || params.isActive === ''
+                ? undefined
+                : params.isActive,
+            isGlobal: visibility === 'global' ? true : undefined,
+            isDedicated: visibility === 'dedicated' ? true : undefined,
+          });
           return parseApiListResponse(response);
         }}
         toolBarRender={() => [

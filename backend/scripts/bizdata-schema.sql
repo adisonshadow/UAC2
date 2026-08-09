@@ -143,3 +143,11 @@ CREATE TABLE bizdata.materialization_entities (
 
 CREATE INDEX idx_bizdata_mat_entities_entity ON bizdata.materialization_entities (entity_id);
 CREATE INDEX idx_bizdata_mat_entities_run ON bizdata.materialization_entities (run_id);
+
+-- Scope 业务说明（Markdown；code 与模型树 Scope 节点一致，如 IPS / IPS:bom）
+CREATE TABLE bizdata.scope_docs (
+    code VARCHAR(255) PRIMARY KEY,
+    content_markdown TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);

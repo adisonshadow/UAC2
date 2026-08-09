@@ -1,5 +1,5 @@
 import { PlayCircleOutlined, RobotOutlined } from '@ant-design/icons';
-import { sendMockUserMessage, useAISurface } from '@EADAF/ai-base';
+import { sendMockUserMessage, useAISurface } from '@eadaf/ai-base';
 import { Alert, Button, Collapse, Descriptions, Input, Space, Spin, Tag, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';

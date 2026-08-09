@@ -2,7 +2,7 @@ import { DatabaseOutlined } from '@ant-design/icons';
 import { Button, Card, Col, Form, Input, Row, Select, Space, Splitter, Table } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAISurface, useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAISurface, useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildMetadataPrompts } from '@/ai/pageChatPrompts';
 import {
   getBizdataMetadataTable,
@@ -191,13 +191,13 @@ const MetadataCatalogPage: React.FC = () => {
               getLeafReference={buildMetadataTableReference}
               getScopeReference={buildCodeScopeReference}
               toolbar={
-                <Space wrap style={{ marginBottom: 8 }}>
+                <Space wrap style={{ padding: '8px' }}>
                   <Input
                     allowClear
                     placeholder="搜索编码/元数据编码"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    style={{ width: 180 }}
+                    style={{ width: 120 }}
                   />
                   <Select
                     allowClear
@@ -211,7 +211,7 @@ const MetadataCatalogPage: React.FC = () => {
                       { label: '枚举', value: 'enum' },
                     ]}
                   />
-                  <Button loading={syncing} onClick={() => void handleSync()}>
+                  <Button className="btn-function" loading={syncing} onClick={() => void handleSync()}>
                     从模型同步
                   </Button>
                 </Space>

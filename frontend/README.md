@@ -1,6 +1,6 @@
 # EADAF Frontend
 
-EADAF 管理端，基于 React 19、Vite、Ant Design 6 与 Pro Components，集成 `@EADAF/ai-base` 对话能力。
+EADAF 管理端，基于 React 19、Vite、Ant Design 6 与 Pro Components，集成 `@eadaf/ai-base` 对话能力。
 
 ## 功能
 
@@ -49,13 +49,13 @@ pnpm dev              # 开发
 pnpm build            # 生产构建
 pnpm preview          # 预览构建结果
 pnpm openapi2ts       # 从后端 OpenAPI 生成 API 类型与客户端
-pnpm refresh:ai-base  # 重新链接 / 刷新 @EADAF/ai-base 本地包
+pnpm refresh:ai-base  # 重新链接 / 刷新 @eadaf/ai-base 本地包
 ```
 
 ## 关键注意事项
 
 1. **先启动后端**（`EADAF_backend`，默认 `9526`），否则页面请求会失败。
-2. **Monorepo 依赖**：`@EADAF/ai-base` 来自 `AIBase_with_example/package/ai-base`；改 ai-base 源码后需在其目录 `pnpm build`，再执行 `pnpm refresh:ai-base`。
+2. **Monorepo 依赖**：`@eadaf/ai-base` 来自 `AIBase_with_example/package/ai-base`；改 ai-base 源码后需在其目录 `pnpm build`，再执行 `pnpm refresh:ai-base`。
 3. **React 单例**：`vite.config.ts` 已对 `react` / `react-dom` 做 dedupe，勿在子包中引入第二份 React。
 4. **OpenAPI 类型**：后端接口变更后执行 `pnpm openapi2ts` 更新 `src/services/UAC/api/`。
 5. **菜单与路由**：菜单数据在 `src/routes/config.ts` 的 `appRouteMeta`，新增页面需同步注册路由与菜单项。

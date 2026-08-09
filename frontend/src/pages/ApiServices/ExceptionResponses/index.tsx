@@ -10,7 +10,7 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Form, Modal, Popconfirm, Tag, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useRef, useState } from 'react';
-import { sendMockUserMessage, useAISurface } from '@EADAF/ai-base';
+import { sendMockUserMessage, useAISurface } from '@eadaf/ai-base';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';

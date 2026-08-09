@@ -1,6 +1,9 @@
 /** 模型输入模态（与后台 model_io_tags.modality 一致） */
 export type ModelInputModality = 'text' | 'image' | 'audio' | 'video' | 'file';
 
+/** 模型能力标签（与后台 ModelCapability.capability 一致） */
+export const MODEL_CAPABILITY_AUDIO_INPUT = 'audio_input';
+
 const ATTACHMENT_MODALITIES: ModelInputModality[] = ['image', 'audio', 'video', 'file'];
 
 const IMAGE_ACCEPT = 'image/*';
@@ -24,6 +27,15 @@ const TEXT_LIKE_EXTENSIONS = new Set([
 export function supportsModelAttachments(inputTags?: string[]): boolean {
   if (!inputTags?.length) return false;
   return inputTags.some((tag) => ATTACHMENT_MODALITIES.includes(tag as ModelInputModality));
+}
+
+/**
+ * 是否支持语音输入（麦克风 STT → 填入 Sender）。
+ * 按 capabilities 含 `audio_input` 门控；与附件模态 `inputTags: audio`（上传音频文件）无关。
+ */
+export function supportsModelVoiceInput(capabilities?: string[]): boolean {
+  if (!capabilities?.length) return false;
+  return capabilities.includes(MODEL_CAPABILITY_AUDIO_INPUT);
 }
 
 export function getModelAttachmentAccept(inputTags?: string[]): string | undefined {

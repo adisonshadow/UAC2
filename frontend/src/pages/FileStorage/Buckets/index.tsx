@@ -17,7 +17,7 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Checkbox, Form, Select, Space, Tag } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildStorageBucketPrompts } from '@/ai/pageChatPrompts';
 import { BizdataScopePickerModal } from '@/components/BizdataScopePicker';
 import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/components/TableActions';

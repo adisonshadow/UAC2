@@ -11,6 +11,7 @@ export interface MilkdownCrepeEditorProps {
   readonly?: boolean;
   placeholder?: string;
   minHeight?: number;
+  style?: React.CSSProperties;
   /** 变更时 remount 编辑器以加载新内容 */
   editorKey?: string | number;
 }
@@ -68,12 +69,13 @@ const MilkdownCrepeEditor: React.FC<MilkdownCrepeEditorProps> = ({
   readonly = false,
   placeholder,
   minHeight = 320,
+  style,
   editorKey,
 }) => {
   return (
     <div
       className={`milkdown-crepe-editor${readonly ? ' milkdown-crepe-editor--readonly' : ''}`}
-      style={{ minHeight }}
+      style={{ minHeight, height: '100%', ...style }}
     >
       <MilkdownProvider key={editorKey}>
         <CrepeEditorInner

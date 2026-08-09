@@ -1,4 +1,4 @@
-import { AIChatDisplay } from '@EADAF/ai-base';
+import { AIChatDisplay } from '@eadaf/ai-base';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AuthGate from '@/auth/AuthGate';
 import AuthCallback from '@/auth/AuthCallback';

@@ -28,7 +28,7 @@ import { Button, Modal, Space, Form, Typography, Tabs } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import { LinkOutlined } from '@ant-design/icons';
 import React, { useRef, useState, useMemo, useEffect } from "react";
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildApplicationPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { tableColumns, SYSTEM_APPLICATION_CODE } from "./Schemas";

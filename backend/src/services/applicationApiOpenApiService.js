@@ -29,6 +29,41 @@ function normalizePath(path) {
   return `/${p.split('/').filter(Boolean).join('/')}`;
 }
 
+/** Express `:id` → OpenAPI `{id}` */
+function toOpenApiPath(path) {
+  return normalizePath(path).replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '{$1}');
+}
+
+function extractPathParamNames(routePattern = '') {
+  return new Set(
+    String(routePattern || '')
+      .match(/:[A-Za-z_][A-Za-z0-9_]*/g)
+      ?.map((token) => token.slice(1)) || [],
+  );
+}
+
+function buildPathParameter(name, propSchema, requestExample) {
+  const prop = propSchema && typeof propSchema === 'object' ? propSchema : {};
+  const exampleFromRequest = requestExample && Object.prototype.hasOwnProperty.call(requestExample, name)
+    ? requestExample[name]
+    : undefined;
+  const resolvedExample = exampleFromRequest !== undefined ? exampleFromRequest : prop.example;
+  const paramSchema = { type: prop.type || 'string' };
+  if (prop.format) paramSchema.format = prop.format;
+  else if (name === 'id') paramSchema.format = 'uuid';
+  if (prop.description) paramSchema.description = prop.description;
+  if (resolvedExample != null) paramSchema.example = resolvedExample;
+  const param = {
+    name,
+    in: 'path',
+    required: true,
+    schema: paramSchema,
+  };
+  if (prop.description) param.description = prop.description;
+  if (resolvedExample != null) param.example = resolvedExample;
+  return param;
+}
+
 /** HTTP method 决定参数来源：GET/HEAD/DELETE 的参数在 URL query string，无 request body */
 const QUERY_ONLY_METHODS = new Set(['get', 'head', 'delete']);
 
@@ -67,11 +102,7 @@ function buildParametersAndBody(parametersSchema, method, routePattern = '', req
   const schema = parametersSchema;
   const type = schema.type || (schema.properties ? 'object' : undefined);
   const isQueryMethod = QUERY_ONLY_METHODS.has(String(method || 'get'));
-  const pathParamNames = new Set(
-    String(routePattern || '')
-      .match(/:[A-Za-z_][A-Za-z0-9_]*/g)
-      ?.map((token) => token.slice(1)) || [],
-  );
+  const pathParamNames = extractPathParamNames(routePattern);
 
   // GET / HEAD / DELETE：对象 schema 的 properties 拆为 query / path 参数，不生成 body
   if (isQueryMethod && type === 'object' && schema.properties) {
@@ -83,7 +114,6 @@ function buildParametersAndBody(parametersSchema, method, routePattern = '', req
         ? requestExample[name]
         : undefined;
       const resolvedExample = exampleFromRequest !== undefined ? exampleFromRequest : prop.example;
-      // 构建完整 schema：透传 type/format/约束/default/example
       const paramSchema = { type: prop.type || 'string' };
       if (prop.format) paramSchema.format = prop.format;
       if (prop.minimum != null) paramSchema.minimum = prop.minimum;
@@ -91,7 +121,6 @@ function buildParametersAndBody(parametersSchema, method, routePattern = '', req
       if (prop.default != null) paramSchema.default = prop.default;
       if (prop.description) paramSchema.description = prop.description;
       if (resolvedExample != null) paramSchema.example = resolvedExample;
-      // object/array 类型补 properties/items，确保可用
       if (prop.type === 'object') {
         paramSchema.properties = prop.properties || {};
         paramSchema.additionalProperties = prop.additionalProperties !== false;
@@ -104,28 +133,61 @@ function buildParametersAndBody(parametersSchema, method, routePattern = '', req
         required,
         schema: paramSchema,
       };
-      // description 同时放到参数顶层（OpenAPI 规范位置）和 schema 内
       if (prop.description) param.description = prop.description;
       if (resolvedExample != null) param.example = resolvedExample;
       result.parameters.push(param);
     });
+    // routePattern 声明了但 schema 未列的 path 参数（兜底）
+    pathParamNames.forEach((name) => {
+      if (result.parameters.some((p) => p.name === name && p.in === 'path')) return;
+      result.parameters.push(buildPathParameter(name, { type: 'string' }, requestExample));
+    });
     return result;
   }
 
-  // POST / PUT / PATCH：对象 schema 视为请求体
+  // POST / PUT / PATCH：path 参数 + 其余字段作为 requestBody
   if (type === 'object' && schema.properties) {
-    const mediaType = {
-      schema,
-    };
-    if (requestExample && typeof requestExample === 'object' && !Array.isArray(requestExample)) {
-      mediaType.example = requestExample;
+    pathParamNames.forEach((name) => {
+      result.parameters.push(
+        buildPathParameter(name, schema.properties[name] || { type: 'string' }, requestExample),
+      );
+    });
+
+    const bodyProperties = { ...schema.properties };
+    pathParamNames.forEach((name) => {
+      delete bodyProperties[name];
+    });
+    const bodyRequired = Array.isArray(schema.required)
+      ? schema.required.filter((name) => !pathParamNames.has(name) && bodyProperties[name])
+      : undefined;
+
+    if (Object.keys(bodyProperties).length > 0) {
+      const bodySchema = {
+        ...schema,
+        properties: bodyProperties,
+        ...(bodyRequired?.length ? { required: bodyRequired } : { required: undefined }),
+      };
+      if (!bodyRequired?.length) delete bodySchema.required;
+
+      let bodyExample;
+      if (requestExample && typeof requestExample === 'object' && !Array.isArray(requestExample)) {
+        bodyExample = { ...requestExample };
+        pathParamNames.forEach((name) => {
+          delete bodyExample[name];
+        });
+      }
+
+      const mediaType = { schema: bodySchema };
+      if (bodyExample && Object.keys(bodyExample).length) {
+        mediaType.example = bodyExample;
+      }
+      result.requestBody = {
+        required: true,
+        content: {
+          'application/json': mediaType,
+        },
+      };
     }
-    result.requestBody = {
-      required: true,
-      content: {
-        'application/json': mediaType,
-      },
-    };
     return result;
   }
 
@@ -279,7 +341,7 @@ async function getPublicApiOpenApi(applicationKey) {
     for (const op of ops) {
       const methodRaw = String(op.httpMethod || 'get').toLowerCase();
       if (!VALID_METHODS.has(methodRaw)) continue;
-      const fullPath = normalizePath(`${basePath}/${op.routePattern || ''}`);
+      const fullPath = toOpenApiPath(`${basePath}/${op.routePattern || ''}`);
       const opId = ensureUniqueOpId(`${service.code}_${op.operation}`);
       const opObject = buildOperationObject({
         operationId: opId,
@@ -296,6 +358,13 @@ async function getPublicApiOpenApi(applicationKey) {
           ? resolveResponsesSchema(op.responsesSchema, resolveEntitySchema)
           : undefined,
       });
+      // 兼容说明：亦可用 POST + body 传 path 参数（如 id）
+      if (['delete', 'patch', 'put'].includes(methodRaw) && String(op.routePattern || '').includes(':')) {
+        opObject.description = [
+          opObject.description,
+          '亦兼容 POST 到服务 basePath（无 path 后缀），在 JSON body 中传 path 参数（如 id）',
+        ].filter(Boolean).join(' · ');
+      }
       registerOperation(fullPath, methodRaw, opObject);
     }
   }
@@ -428,4 +497,6 @@ module.exports = {
   getPublicApiOpenApi,
   buildParametersAndBody,
   buildOperationObject,
+  normalizePath,
+  toOpenApiPath,
 };

@@ -1,6 +1,6 @@
 import { RobotOutlined } from '@ant-design/icons';
 import { ProForm } from '@ant-design/pro-components';
-import { sendMockUserMessage, useAISurface, useChatReference } from '@EADAF/ai-base';
+import { sendMockUserMessage, useAISurface, useChatReference } from '@eadaf/ai-base';
 import { Alert, Button, Popconfirm, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,6 +15,7 @@ import ApiServiceForm, {
   buildDefaultRequestExample,
   type ApiServiceFormValues,
 } from '../components/ApiServiceForm';
+import { scopeCodeFromEntityCode } from '@/pages/ApiServices/ai/apiServiceCodeUtils';
 import {
   getApiService,
   getApiServiceOperationCatalog,
@@ -31,6 +32,7 @@ import { renderStatusBadge } from '@/utils/statusBadge';
 import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
 import {
   buildResponseOverridesPayload,
+  ensureResponseOverridesForOperation,
   readResponseOverride,
   resolveResponseExample,
 } from '../utils/responseOverrides';
@@ -101,9 +103,18 @@ const ApiServiceEditPage: React.FC = () => {
       const savedOverride = readResponseOverride(data.securityConfig, operation);
       const savedRequestOverride = readRequestOverride(data.securityConfig, operation);
       if (savedOverride?.responsesSchema) {
-        setResponsesSchemaText(JSON.stringify(savedOverride.responsesSchema, null, 2));
+        const { overrides } = ensureResponseOverridesForOperation({
+          operation: operation || 'find',
+          entityCode: data.entityCode,
+          requestParameterInterface: data.requestParameterInterface,
+          responseOverrides: operation
+            ? { [operation]: savedOverride }
+            : undefined,
+        });
+        const ensured = operation ? overrides[operation] : savedOverride;
+        setResponsesSchemaText(JSON.stringify(ensured?.responsesSchema || savedOverride.responsesSchema, null, 2));
         const resolvedExample = resolveResponseExample(
-          savedOverride.responseExample ?? {},
+          ensured?.responseExample ?? savedOverride.responseExample ?? {},
           operation,
           data.entityCode,
           data.requestParameterInterface,
@@ -141,6 +152,9 @@ const ApiServiceEditPage: React.FC = () => {
         departmentIds: restriction.departmentIds,
         scriptMode: data.scriptMode || 'sql',
         transportProtocols: data.transportProtocols?.length ? data.transportProtocols : ['http'],
+        entityId: data.entityId,
+        entityCode: data.entityCode,
+        entityLabel: data.entity?.label,
       });
     } catch (error) {
       message.error(getApiErrorMessage(error, '加载 API 服务失败'));
@@ -180,7 +194,24 @@ const ApiServiceEditPage: React.FC = () => {
         serviceSlug: values.serviceSlug || serviceMeta?.serviceSlug,
         name: values.name || serviceMeta?.name,
         status: serviceMeta?.status,
-        entityCode: serviceMeta?.entityCode,
+        entityId: values.entityId || serviceMeta?.entityId,
+        entityCode: values.entityCode || serviceMeta?.entityCode,
+        entityLabel: values.entityLabel || serviceMeta?.entity?.label,
+        resolvedConnection: values.resolvedConnectionId
+          ? {
+              connectionId: values.resolvedConnectionId,
+              connectionName: values.resolvedConnectionName,
+              dbType: values.resolvedDbType,
+              targetSchema: values.resolvedTargetSchema,
+            }
+          : serviceMeta?.connectionId
+            ? {
+                connectionId: serviceMeta.connectionId,
+                connectionName: serviceMeta.connection?.name,
+                targetSchema: serviceMeta.targetSchema,
+              }
+            : undefined,
+        targetSchema: values.resolvedTargetSchema || serviceMeta?.targetSchema,
         primaryOperation: values.primaryOperation,
         scriptMode: values.scriptMode || serviceMeta?.scriptMode,
         definitionScript: definitionScriptRef.current,
@@ -271,12 +302,20 @@ const ApiServiceEditPage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      if (!values.entityId) {
+        message.error('请选择主实体');
+        setSubmitting(false);
+        return;
+      }
       const res = await patchApiService(serviceId, {
-        scopeCode: values.scopeCode,
+        scopeCode: values.scopeCode || scopeCodeFromEntityCode(values.entityCode),
         serviceSlug: values.serviceSlug,
         name: String(values.name || '').trim(),
         tags: values.tags || [],
         scriptMode: values.scriptMode,
+        entityId: values.entityId,
+        connectionId: values.resolvedConnectionId,
+        targetSchema: values.resolvedTargetSchema,
         definitionScript: values.scriptMode === 'typescript' ? undefined : definitionScript.trim() || undefined,
         handlerScript: values.scriptMode === 'typescript'
           ? normalizeHandlerBody(handlerScript).trim() || undefined
@@ -441,8 +480,6 @@ const ApiServiceEditPage: React.FC = () => {
           requestExampleText={requestExampleText}
           onRequestExampleTextChange={setRequestExampleText}
           readonlyCode={serviceMeta?.code}
-          entityId={serviceMeta?.entityId}
-          entityCode={serviceMeta?.entityCode}
           responsesSchemaText={responsesSchemaText}
           onResponsesSchemaTextChange={setResponsesSchemaText}
           responseExampleText={responseExampleText}

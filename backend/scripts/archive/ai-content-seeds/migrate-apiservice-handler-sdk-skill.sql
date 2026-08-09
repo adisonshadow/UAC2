@@ -5,7 +5,8 @@ INSERT INTO aibase.tools (
     id, scope_id, name, slug, function_name, description, execution_type,
     parameters_schema, review_markdown, server_config, is_active
 ) VALUES (
-    '66666666-6666-4666-8666-666666666637',
+    -- 不可复用 …637（已分配给 bizdata-rename-entity-code）；按 slug upsert，存量库 id 不变
+    '66666666-6666-4666-8666-666666666649',
     '55555555-5555-4555-8555-555555555501',
     '检查 TypeScript Handler',
     'apiservice-check-handler',

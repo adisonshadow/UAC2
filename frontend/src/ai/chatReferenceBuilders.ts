@@ -1,4 +1,4 @@
-import type { AddReferenceParams } from '@EADAF/ai-base';
+import type { AddReferenceParams } from '@eadaf/ai-base';
 
 /** 通用：按 code 分层 Scope 节点引用 */
 export function buildCodeScopeReference(code: string, name?: string): AddReferenceParams {

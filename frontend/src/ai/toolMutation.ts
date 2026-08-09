@@ -1,5 +1,5 @@
-import type { AIMutation, ToolMutationResult } from '@EADAF/ai-base';
-import { emitAIMutation, getAllAISurfaces, subscribeAIMutation, subscribeToolInvoke } from '@EADAF/ai-base';
+import type { AIMutation, ToolMutationResult } from '@eadaf/ai-base';
+import { emitAIMutation, getAllAISurfaces, subscribeAIMutation, subscribeToolInvoke } from '@eadaf/ai-base';
 import { resolveApiServiceWorkflowToolNavigation } from '@/pages/ApiServices/ai/apiServiceWorkflowNavigation';
 import { history } from '@/utils/navigation';
 

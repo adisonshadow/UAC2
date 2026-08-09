@@ -57,6 +57,14 @@ export interface AIChatConfig {
    * 默认 600ms；对 DeepSeek 等容忍较高的 Provider 可设为 0 关闭节流。
    */
   roundDelayMs?: number;
+  /**
+   * 灰度开关：开启结构化终止（task_complete / update_plan）机制。
+   * - false（默认）：保持现有 auto-continue 行为不变（text-only round 默认 STOP）。
+   * - true：注入 task_complete / update_plan 两个 harness Tool；text-only round
+   *   反转为「默认续命」，只有 task_complete 返回 verified=true 才终止。
+   * 详见 docs/AIBase 成熟闭环与 Planning next moves 统一方案.md。
+   */
+  enableStructuredTermination?: boolean;
 }
 
 export interface ResolvedAIChatConfig {
@@ -80,6 +88,8 @@ export interface ResolvedAIChatConfig {
   maxToolResultChars: number;
   /** 续接循环每轮 LLM 请求之间的最小间隔（毫秒），默认 600 */
   roundDelayMs: number;
+  /** 是否开启结构化终止（task_complete / update_plan）机制，默认 false */
+  enableStructuredTermination: boolean;
 }
 
 export interface AIBaseScope {
@@ -142,8 +152,14 @@ export interface AIBaseSkill {
  * 由业务方（而非 SDK）声明：哪些 Tool 必须调用、什么文本算任务完成、是否连续执行。
  */
 export interface SkillCompletionStrategy {
-  /** 必须全部调用过才算完成的关键 Tool functionName 列表 */
+  /** 关键 Tool functionName 列表；匹配方式见 requiredToolsMode */
   requiredTools?: string[];
+  /**
+   * requiredTools 匹配方式：
+   * - `all`（默认）：列表内全部须已调用
+   * - `any`：至少调用其中一个（互斥替代 Tool，如单条/批量创建）
+   */
+  requiredToolsMode?: 'all' | 'any';
   /** 文本中出现这些关键词时视为「任务完成」，停止 auto-continue */
   completionKeywords?: string[];
   /** 文本中出现这些关键词时禁止 auto-continue（如收尾建议句） */
@@ -158,12 +174,62 @@ export interface SkillCompletionStrategy {
     keywords: string[];
     requiredTools: string[];
   }>;
+  /**
+   * 结构化终止（task_complete）的校验强度。仅在开启
+   * `AIChatConfig.enableStructuredTermination` 时生效：
+   * - `strict`（默认）：task_complete 须通过三层校验
+   *   （plan 全完成 + 关键 Tool 全 verified + successCriteria 全满足）
+   * - `plan-only`：只校验 plan 全 completed，不重复验 Tool / successCriteria
+   * - `off`：task_complete 无条件通过（向后兼容纯对话型 Skill）
+   */
+  terminationStrictness?: 'strict' | 'plan-only' | 'off';
+  /**
+   * 查询/只读型任务可在「结果已返回且已直接回答用户问题」后自然终止，
+   * 无需强制补一次 task_complete。
+   * 仅建议用于列表/详情/检索类 Skill；默认 false。
+   */
+  allowDirectAnswerTermination?: boolean;
+  /**
+   * 可验证的成功标准（对应成熟闭环流程的 TaskSpec.success_criteria）。
+   * `strict` 模式下，task_complete 调用须逐条勾选满足情况，harness 校验是否全满足。
+   */
+  successCriteria?: string[];
+  /**
+   * 同性质批量 Tool 调用结果的聚合策略（阶段 E）。
+   * 同一轮内同一 Tool 被多次调用且达到 minBatchSize 时，
+   * 把回灌给 LLM 的上下文压缩成一条摘要消息（UI 展示不变）。
+   */
+  resultAggregation?: {
+    /** 触发聚合的 Tool functionName 列表（如 ['apiservice_run_test']） */
+    tools: string[];
+    /** 单批聚合阈值，达到才聚合（默认 3） */
+    minBatchSize?: number;
+  };
+}
+
+/**
+ * 结构化任务清单（Plan）的单项。由 `update_plan` Tool 维护，
+ * harness 持有权威状态，用于每轮对账与 task_complete 的终止校验。
+ */
+export interface PlanItem {
+  id: string;
+  /** 任务描述（做什么） */
+  content: string;
+  /** 当前状态 */
+  status: 'pending' | 'in_progress' | 'completed';
+  /**
+   * 完成该任务须调用的关键 Tool。用于 task_complete 的 verification 校验：
+   * 这些 Tool 在 toolOutcomes 中必须全部 verified=true。
+   */
+  requiresVerification?: string[];
 }
 
 export interface AIBaseModelInfo {
   slug: string;
   displayName: string;
+  /** 能力标签：text / vision / audio_input / audio_output / function_calling 等 */
   capabilities?: string[];
+  /** 输入模态：text / image / audio / video / file（附件门控用） */
   inputTags?: string[];
   outputTags?: string[];
 }

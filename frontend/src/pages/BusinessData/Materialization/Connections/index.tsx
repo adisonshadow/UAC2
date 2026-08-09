@@ -1,7 +1,7 @@
 import { PageContainer } from '@ant-design/pro-components';
 import { message } from '@/utils/antdAppApis';
 
-import { useAISurface } from '@EADAF/ai-base';
+import { useAISurface } from '@eadaf/ai-base';
 import React from 'react';
 import DatabaseConnectionManager from '../components/DatabaseConnectionManager';
 import { useDatabaseConnections } from '../hooks/useMaterializationData';

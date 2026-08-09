@@ -13,7 +13,7 @@
     "refresh:ai-base": "bash shells/refresh-ai-base.sh"
   },
   "dependencies": {
-    "@EADAF/ai-base": "workspace:*",
+    "@eadaf/ai-base": "workspace:*",
     "@ant-design/icons": "^5.0.1",
     "@ant-design/plots": "^2.6.8",
     "@ant-design/pro-components": "^2.8.10",

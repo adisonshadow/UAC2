@@ -64,6 +64,7 @@ export {
   unregisterSkillCompletionPolicy,
   clearSkillCompletionPolicies,
   getSkillCompletionStrategy,
+  resolveTerminationCompletionStrategy,
 } from './registry/skillPolicyRegistry';
 export type { SkillCompletionPolicyOverride } from './registry/skillPolicyRegistry';
 
@@ -75,6 +76,36 @@ export type { UseFunctionCallOptions } from './hooks/useFunctionCall';
 
 export { serializeToolResultForContext, resolveToolResultBudget } from './utils/toolResultBudget';
 export type { TrimmedToolResult } from './utils/toolResultBudget';
+export { aggregateToolResults } from './utils/aggregateToolResults';
+export {
+  supportsModelAttachments,
+  supportsModelVoiceInput,
+  MODEL_CAPABILITY_AUDIO_INPUT,
+} from './utils/modelAttachmentConfig';
+/**
+ * 结构化终止（task_complete / update_plan）机制。
+ * 开启方式：在 AIChatConfig 设 enableStructuredTermination: true。
+ * 详见 docs/AIBase 成熟闭环与 Planning next moves 统一方案.md。
+ */
+export {
+  TASK_COMPLETE_TOOL,
+  UPDATE_PLAN_TOOL,
+  ASK_USER_TOOL,
+  ASK_USER_OPENAI_TOOL,
+  HARNESS_TOOL_NAMES,
+  HARNESS_OPENAI_TOOLS,
+} from './registry/builtinTools';
+export {
+  formatUserChoiceMessage,
+  isUserChoiceRequestData,
+} from './chat/userChoice';
+export type {
+  AskUserArgs,
+  UserChoiceMode,
+  UserChoiceOption,
+  UserChoiceRequest,
+  UserChoiceSubmission,
+} from './chat/userChoice';
 export { resolveToolStepFromEnvelope } from './chat/resolveToolStepFromEnvelope';
 
 export { AIBaseClient } from './sdk';
@@ -93,6 +124,7 @@ export type {
   ToolInvokeResult,
   FunctionCallDef,
   SkillCompletionStrategy,
+  PlanItem,
 } from './types';
 export type {
   ToolResponse,

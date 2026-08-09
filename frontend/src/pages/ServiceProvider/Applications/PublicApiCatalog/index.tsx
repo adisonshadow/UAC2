@@ -1,4 +1,4 @@
-import { useAIChatDisplayMode } from '@EADAF/ai-base';
+import { useAIChatDisplayMode } from '@eadaf/ai-base';
 import { ApiOutlined, PartitionOutlined, CopyOutlined, WarningOutlined, ReadOutlined } from '@ant-design/icons';
 import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';

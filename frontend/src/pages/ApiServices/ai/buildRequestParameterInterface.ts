@@ -97,12 +97,13 @@ function bodyFieldLines(
   fields: API.BusinessDataField[],
   indent = '  ',
   aliasByCode: Map<string, string> = new Map(),
+  options: { allOptional?: boolean } = {},
 ): string[] {
   const lines: string[] = [];
   fields.forEach((field) => {
     const key = String(field.fieldKey || '').trim();
     if (!key || SKIP_BODY_KEYS.has(key)) return;
-    const optional = fieldRequired(field) ? '' : '?';
+    const optional = options.allOptional || !fieldRequired(field) ? '?' : '';
     const comment = fieldComment(field);
     if (comment) lines.push(`${indent}/** ${comment} */`);
     const enumCode = fieldEnumCode(field);
@@ -148,14 +149,16 @@ export function buildRequestParameterInterface(
   }
 
   if (op === 'updateOne' || op === 'findOneAndUpdate') {
-    const inner = bodyLines.length ? bodyLines.join('\n') : '    [key: string]: unknown;';
+    const inner = bodyLines.length
+      ? bodyFieldLines(fields, '    ', aliasByCode, { allOptional: true }).join('\n')
+      : '    [key: string]: unknown;';
     return withAliases(
       aliasByCode,
       [
         'interface RequestParams {',
         '  /** 资源 ID */',
         '  id: string;',
-        '  /** 更新字段的请求体 */',
+        '  /** 部分更新字段（仅传需修改的字段） */',
         '  body?: {',
         inner,
         '  };',

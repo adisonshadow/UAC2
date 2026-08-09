@@ -14,6 +14,10 @@ export function resolveToolStepFromEnvelope(
       error: envelope.error?.message || '执行失败',
     };
   }
+  // ask_user：请求已送达 UI，ThoughtChain 记成功（卡片由 user_choice segment 渲染）
+  if (envelope.kind === 'user_choice_request') {
+    return { status: 'success' };
+  }
   if (envelope.kind === 'business_error' || envelope.verified === false) {
     return {
       status: 'business_error',

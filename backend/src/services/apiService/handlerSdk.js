@@ -1,6 +1,7 @@
 const { quotePgIdentifier, withPgClient } = require('../businessData/materialization/connectionRunner');
 const { resolveEntityTableName } = require('../businessData/entityTableName');
 const { BizdataEntity } = require('../../models');
+const { buildPaginationMeta } = require('./paginationMeta');
 
 const COLUMN_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -469,11 +470,26 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
       async getManyAndCount() {
         const total = await builder.getCount();
         const items = await builder.getMany();
-        return { items, total };
+        return {
+          items,
+          pagination: buildPaginationMeta({
+            total,
+            limit: state.limit,
+            skip: state.offset,
+          }),
+        };
       },
-      async paginate({ limit, skip, maxLimit = 100 } = {}) {
-        state.limit = clampLimit(limit, maxLimit);
-        state.offset = clampSkip(skip);
+      async paginate({ limit, skip, page, pageSize, maxLimit = 100 } = {}) {
+        let resolvedLimit = limit ?? pageSize;
+        let resolvedSkip = skip;
+        if (resolvedSkip == null && page != null) {
+          const ps = clampLimit(resolvedLimit ?? 20, maxLimit);
+          const p = Math.max(1, Number(page) || 1);
+          resolvedSkip = (p - 1) * ps;
+          resolvedLimit = ps;
+        }
+        state.limit = clampLimit(resolvedLimit, maxLimit);
+        state.offset = clampSkip(resolvedSkip);
         return builder.getManyAndCount();
       },
       // aliases

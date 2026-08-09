@@ -1,4 +1,4 @@
-import type { ToolInvokeLogEntry } from '@EADAF/ai-base';
+import type { ToolInvokeLogEntry } from '@eadaf/ai-base';
 
 export const API_SERVICE_CREATE_PATH = '/api_services/create';
 

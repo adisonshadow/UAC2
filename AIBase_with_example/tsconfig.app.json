@@ -21,8 +21,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@EADAF/ai-base": ["./package/ai-base/dist/index.d.ts"],
-      "@EADAF/ai-base/*": ["./package/ai-base/dist/*"]
+      "@eadaf/ai-base": ["./package/ai-base/dist/index.d.ts"],
+      "@eadaf/ai-base/*": ["./package/ai-base/dist/*"]
     }
   },
   "include": ["src"]

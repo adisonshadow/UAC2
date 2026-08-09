@@ -21,6 +21,7 @@ const {
   loadEnumMapForEntity,
   resolveOptionalSqlParamNames,
   parseRequestParameterInterface,
+  normalizeWriteBody,
 } = require('./operationParameterSchemas');
 const { executeHandlerScript, buildHandlerContext } = require('./apiServiceHandlerRuntime');
 const { assertAccessAllowed } = require('./apiServicePermissionService');
@@ -32,10 +33,26 @@ const {
 const { bindNamedSqlParams, sqlHasNamedParams } = require('./namedSqlBindings');
 const { createHandlerSdk } = require('./handlerSdk');
 const { assertHandlerScriptValid } = require('./handlerTypeCheck');
+const { buildPaginationMeta, normalizeListResult } = require('./paginationMeta');
 
 function pickDefaultOperation(enabledOperations) {
   const enabled = Array.isArray(enabledOperations) ? enabledOperations : [];
   return enabled[0] || null;
+}
+
+/**
+ * 去掉 SQL 末尾的 LIMIT / OFFSET（含 :limit/:skip 或已替换数字）。
+ * 网关会在外层统一分页；definition 内再写会导致双重 OFFSET、COUNT 被裁剪。
+ */
+function stripTrailingLimitOffset(sql) {
+  let next = String(sql || '').replace(/;\s*$/, '').trimEnd();
+  let prev;
+  do {
+    prev = next;
+    next = next.replace(/\s+OFFSET\s+(?:\d+|:\w+)\s*$/i, '');
+    next = next.replace(/\s+LIMIT\s+(?:\d+|:\w+)(?:\s+OFFSET\s+(?:\d+|:\w+))?\s*$/i, '');
+  } while (next !== prev);
+  return next.trimEnd();
 }
 
 function applyScriptParams(script, parameters, { limit, skip, optionalSqlParams } = {}) {
@@ -77,10 +94,15 @@ function buildFromSource(service, parameters, {
   operation,
   entity,
   enumMap,
+  /** find/count/findOne：剥离 definition 内分页，由网关外层 LIMIT/OFFSET */
+  gatewayPagination = false,
 } = {}) {
   const schema = service.targetSchema || 'bizdata_mat';
-  const definitionScript = resolveDefinitionScript(service);
+  let definitionScript = resolveDefinitionScript(service);
   if (definitionScript) {
+    if (gatewayPagination) {
+      definitionScript = stripTrailingLimitOffset(definitionScript);
+    }
     const sqlParameters = buildSqlExecutionParameters(parameters, service);
     const optionalSqlParams = operation
       ? resolveOptionalSqlParamNames(service, operation, entity, enumMap)
@@ -145,6 +167,7 @@ async function executeFindPg(client, service, parameters, execContext = {}) {
     operation: execContext.operation,
     entity: execContext.entity,
     enumMap: execContext.enumMap,
+    gatewayPagination: true,
   });
   const filterEntries = resolveFilterEntries(parameters, service);
   const { clause, bindings, nextIndex } = buildParameterizedWhere(filterEntries);
@@ -152,7 +175,15 @@ async function executeFindPg(client, service, parameters, execContext = {}) {
     ? `SELECT * FROM (${sourceSql}) AS _svc${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`
     : `SELECT * FROM ${sourceSql}${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`;
   const res = await client.query(sql, [...bindings, limit, skip]);
-  return { items: res.rows, count: res.rowCount };
+  const countResult = await executeCountPg(client, service, parameters, execContext);
+  return {
+    items: res.rows,
+    pagination: buildPaginationMeta({
+      total: countResult.count,
+      limit,
+      skip,
+    }),
+  };
 }
 
 async function executeCountPg(client, service, parameters, execContext = {}) {
@@ -162,6 +193,7 @@ async function executeCountPg(client, service, parameters, execContext = {}) {
     operation: execContext.operation,
     entity: execContext.entity,
     enumMap: execContext.enumMap,
+    gatewayPagination: true,
   });
   const filterEntries = resolveFilterEntries(parameters, service);
   const { clause, bindings } = buildParameterizedWhere(filterEntries);
@@ -190,6 +222,7 @@ async function executeFindOnePg(client, service, parameters, execContext = {}) {
       operation: execContext.operation,
       entity: execContext.entity,
       enumMap: execContext.enumMap,
+      gatewayPagination: true,
     });
     const sql = `SELECT * FROM (${sourceSql}) AS _svc${clause} LIMIT 1`;
     const res = await client.query(sql, bindings);
@@ -246,9 +279,17 @@ async function executeCustomWriteSqlPg(client, service, parameters, operation, e
   return { rows: res.rows, rowCount: res.rowCount };
 }
 
-async function executeCreatePg(client, service, parameters) {
+async function executeCreatePg(client, service, parameters, execContext = {}) {
   const table = qualifiedTable(service);
-  const body = parameters.body || {};
+  let body = parameters.body || {};
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw Object.assign(
+      new Error('create 操作的 body 须为 JSON 对象（实体字段键值），不能是字符串或数组'),
+      { status: 400 },
+    );
+  }
+  // 防御：仅写入实体已建模字段（拒绝未建模列）
+  body = normalizeWriteBody(body, execContext.entity, 'body') || body;
   const keys = Object.keys(body);
   if (!keys.length) {
     throw Object.assign(new Error('create 操作需要 body 字段'), { status: 400 });
@@ -261,10 +302,11 @@ async function executeCreatePg(client, service, parameters) {
   return { item: res.rows[0] };
 }
 
-async function executeUpdateOnePg(client, service, parameters) {
+async function executeUpdateOnePg(client, service, parameters, execContext = {}) {
   const table = qualifiedTable(service);
-  const patch = parameters.set || parameters.body || {};
-  const keys = Object.keys(patch);
+  let patch = parameters.set || parameters.body || {};
+  patch = normalizeWriteBody(patch, execContext.entity, parameters.set ? 'set' : 'body') || patch;
+  const keys = Object.keys(patch || {});
   if (!keys.length) {
     throw Object.assign(new Error('updateOne 操作需要 set 或 body 字段'), { status: 400 });
   }
@@ -300,10 +342,10 @@ async function executeOperation(client, service, operation, parameters, execCont
     return executeFindOnePg(client, service, parameters, ctx);
   }
   if (operation === 'create' || operation === 'insertOne') {
-    return executeCreatePg(client, service, parameters);
+    return executeCreatePg(client, service, parameters, ctx);
   }
   if (operation === 'updateOne' || operation === 'findOneAndUpdate') {
-    return executeUpdateOnePg(client, service, parameters);
+    return executeUpdateOnePg(client, service, parameters, ctx);
   }
   if (operation === 'deleteOne' || operation === 'findOneAndDelete') {
     return executeDeleteOnePg(client, service, parameters);
@@ -506,6 +548,8 @@ async function testService(serviceId, {
     }
   }
 
+  preview = normalizeListResult(preview, validated);
+
   return {
     serviceId: serviceForTest.id,
     code: serviceForTest.code,
@@ -522,4 +566,5 @@ async function testService(serviceId, {
 module.exports = {
   pickDefaultOperation,
   testService,
+  stripTrailingLimitOffset,
 };

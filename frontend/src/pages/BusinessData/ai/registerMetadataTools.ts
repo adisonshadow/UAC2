@@ -12,7 +12,7 @@ import {
   putBizdataMetadataTable,
   putBizdataMetadataTableFields,
 } from '@/services/UAC/api/businessData';
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { getApiData, getApiErrorMessage, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import {

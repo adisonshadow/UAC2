@@ -5,6 +5,7 @@ import {
   getBusinessDataEnums,
   getBusinessDataRelations,
   getBusinessDataSchema,
+  getBusinessDataScopeDoc,
   patchBusinessDataEntity,
   patchBusinessDataEnum,
   postBusinessDataEntity,
@@ -12,8 +13,8 @@ import {
   postBusinessDataRelation,
   postEntityDeletionExecute,
   putBusinessDataEntityFields,
-} from '@/services/UAC/api/businessData';
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+  putBusinessDataScopeDoc,
+} from '@/services/UAC/api/businessData';import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { getApiData, getApiErrorMessage, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import {
@@ -74,6 +75,8 @@ const TOOL_NAMES = [
   'bizdata_delete_relation',
   'bizdata_upsert_entity_indexes',
   'bizdata_validate_model',
+  'bizdata_get_scope_description',
+  'bizdata_upsert_scope_description',
 ] as const;
 
 type RelationInput = Record<string, unknown>;
@@ -1142,6 +1145,85 @@ export function registerBizDataTools() {
           isValid: true,
           entityCount: data?.entities?.length || 0,
           relationCount: relations.length,
+        };
+      },
+    }),
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_get_scope_description',
+    description:
+      '读取 Scope 业务说明（Markdown）及祖先链有内容的说明；对某 Scope 建模前应先调用以获取领域知识',
+    parameters: {
+      type: 'object',
+      properties: {
+        scopeCode: {
+          type: 'string',
+          description: 'Scope code，如 IPS 或 IPS:bom（与模型树节点一致）',
+        },
+      },
+      required: ['scopeCode'],
+    },
+    handler: async (args) => {
+      const scopeCode = String(args.scopeCode || '').trim();
+      if (!scopeCode) throw new Error('scopeCode 不能为空');
+      const res = await getBusinessDataScopeDoc({ code: scopeCode, includeAncestors: true });
+      const data = getApiData<API.BusinessDataScopeDoc>(res);
+      if (!isApiSuccess(res) || !data) {
+        throw new Error(getApiErrorMessage(res, '获取 Scope 业务说明失败'));
+      }
+      return data;
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_upsert_scope_description',
+    description:
+      '写入/更新 Scope 业务说明（领域知识、术语、规则与建模约定）；合并已有内容，禁止无故清空；空字符串会删除说明',
+    requiresVerification: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        scopeCode: {
+          type: 'string',
+          description: 'Scope code，如 IPS 或 IPS:bom',
+        },
+        contentMarkdown: {
+          type: 'string',
+          description:
+            '完整 Markdown 正文（应写入业务目标/术语/规则/实体职责划分；勿写字段 DDL）；传空字符串则删除',
+        },
+      },
+      required: ['scopeCode', 'contentMarkdown'],
+    },
+    handler: createMutatingHandler({
+      domain: BIZDATA_DOMAIN,
+      type: 'scopeDoc.upserted',
+      scope: BIZDATA_SURFACE,
+      buildResourceId: (args) => String(args.scopeCode || ''),
+      buildPayload: (_args, data) => data,
+      handler: async (args) => {
+        const scopeCode = String(args.scopeCode || '').trim();
+        if (!scopeCode) throw new Error('scopeCode 不能为空');
+        const contentMarkdown = args.contentMarkdown == null ? '' : String(args.contentMarkdown);
+        const res = await putBusinessDataScopeDoc({ code: scopeCode, contentMarkdown });
+        const data = getApiData<API.BusinessDataScopeDoc>(res);
+        if (!isApiSuccess(res) || !data) {
+          throw new Error(getApiErrorMessage(res, '保存 Scope 业务说明失败'));
+        }
+        const verified = data.code === scopeCode;
+        return {
+          ...data,
+          _verification: {
+            verified,
+            scopeCode: data.code,
+            hasContent: Boolean(data.hasContent),
+            message: verified
+              ? data.hasContent
+                ? `已验证 Scope「${data.code}」业务说明已保存`
+                : `已验证 Scope「${data.code}」业务说明已清空`
+              : `保存校验失败：期望 code=${scopeCode}`,
+          },
         };
       },
     }),

@@ -1,4 +1,4 @@
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import {
   deleteAdminModelsId,

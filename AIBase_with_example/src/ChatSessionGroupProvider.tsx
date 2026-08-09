@@ -1,4 +1,4 @@
-import { ChatSessionGroupProvider as BaseChatSessionGroupProvider } from '@EADAF/ai-base';
+import { ChatSessionGroupProvider as BaseChatSessionGroupProvider } from '@eadaf/ai-base';
 import { useMemo, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 

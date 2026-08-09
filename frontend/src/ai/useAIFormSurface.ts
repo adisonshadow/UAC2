@@ -1,5 +1,5 @@
 import type { FormInstance } from 'antd';
-import { useAISurface } from '@EADAF/ai-base';
+import { useAISurface } from '@eadaf/ai-base';
 
 export function useAIFormSurface(options: {
   resourceType: 'skill' | 'tool' | 'scope' | 'provider' | 'model';

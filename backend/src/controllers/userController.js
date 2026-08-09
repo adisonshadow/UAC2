@@ -316,8 +316,14 @@ class UserController {
         department_id, 
         user_id 
       } = ctx.query;
-      
-      const offset = (page - 1) * size;
+
+      // size=-1 等非法值会令 Sequelize limit 报错 → HTTP 500；统一钳制到 1..500
+      //（与角色列表不同：用户列表不做“无 limit 全量”，避免关联角色加载过重）
+      const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+      let sizeNum = parseInt(size, 10);
+      if (!Number.isFinite(sizeNum) || sizeNum <= 0) sizeNum = 500;
+      sizeNum = Math.min(Math.max(sizeNum, 1), 500);
+      const offset = (pageNum - 1) * sizeNum;
 
       // 构建查询条件
       const where = {};
@@ -381,8 +387,8 @@ class UserController {
           required: false
         }],
         order: [['updated_at', 'DESC']],
-        offset: parseInt(offset),
-        limit: parseInt(size),
+        offset,
+        limit: sizeNum,
         distinct: true
       });
 
@@ -405,8 +411,8 @@ class UserController {
         data: {
           total: count,
           items,
-          page: parseInt(page),
-          size: parseInt(size)
+          page: pageNum,
+          size: sizeNum
         }
       };
     } catch (error) {

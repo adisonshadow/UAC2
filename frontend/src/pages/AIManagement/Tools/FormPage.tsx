@@ -1,4 +1,5 @@
 import { EditOutlined } from '@ant-design/icons';
+import { invalidateSkillCache } from '@eadaf/ai-base';
 import { PageContainer, ProForm, ProFormSelect, ProFormSwitch, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { Button, Form, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
@@ -157,6 +158,7 @@ const ToolFormPage: React.FC<ToolFormPageProps> = ({ mode }) => {
         }
         message.success('更新成功');
       }
+      invalidateSkillCache();
       navigate(listPath);
     } catch (error) {
       if (error instanceof Error) {

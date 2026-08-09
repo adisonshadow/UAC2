@@ -11,6 +11,52 @@ export async function getBusinessDataScopes() {
   }>(`${BASE}/scopes`, { method: 'GET' });
 }
 
+export async function getBusinessDataScopeDocs(params?: { codes?: string }) {
+  return request<{
+    code: number;
+    message: string;
+    data: API.BusinessDataScopeDocSummary[];
+  }>(`${BASE}/scope-docs`, {
+    method: 'GET',
+    params,
+  });
+}
+
+export async function getBusinessDataScopeDoc(params: {
+  code: string;
+  includeAncestors?: boolean | '0' | '1' | 'true' | 'false';
+}) {
+  return request<{
+    code: number;
+    message: string;
+    data: API.BusinessDataScopeDoc;
+  }>(`${BASE}/scope-docs/content`, {
+    method: 'GET',
+    params: {
+      code: params.code,
+      ...(params.includeAncestors != null
+        ? {
+            includeAncestors:
+              params.includeAncestors === true || params.includeAncestors === '1' || params.includeAncestors === 'true'
+                ? '1'
+                : '0',
+          }
+        : {}),
+    },
+  });
+}
+
+export async function putBusinessDataScopeDoc(body: { code: string; contentMarkdown?: string }) {
+  return request<{
+    code: number;
+    message: string;
+    data: API.BusinessDataScopeDoc;
+  }>(`${BASE}/scope-docs`, {
+    method: 'PUT',
+    data: body,
+  });
+}
+
 export async function getBusinessDataSchema(options?: Record<string, unknown>) {
   return request<{ code: number; message: string; data: API.BusinessDataSchema }>(`${BASE}/schema`, {
     method: 'GET',

@@ -1,4 +1,4 @@
-import type { AIChatPromptItem, ChatReferenceItem } from '@EADAF/ai-base';
+import type { AIChatPromptItem, ChatReferenceItem } from '@eadaf/ai-base';
 
 function refsOfType(refs: ChatReferenceItem[], type: string) {
   return refs.filter((r) => r.type === type);

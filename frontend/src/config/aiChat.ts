@@ -1,4 +1,4 @@
-import type { AIChatConfig } from '@EADAF/ai-base';
+import type { AIChatConfig } from '@eadaf/ai-base';
 
 /** 全站 Tool 成功汇报硬约束；页面 systemPromptPrefix 覆盖根配置时须自行拼接本段 */
 export const AI_CHAT_TOOL_VERIFICATION_RULES = [
@@ -42,6 +42,10 @@ export function createAIChatConfig(
     welcome: AI_CHAT_WELCOME,
     prompts: AI_CHAT_PROMPTS,
     applicationId: '10000000-0000-4000-8000-000000000002',
+    // 开启结构化终止（task_complete / update_plan）：模型必须显式调用 task_complete 才终止，
+    // 反转「text-only 默认 STOP」的旧逻辑，治「过早结束 / 迟迟不结束」。
+    // 详见 docs/AIBase 成熟闭环与 Planning next moves 统一方案.md。skill 的校验强度由 completion_strategy.terminationStrictness 控制。
+    enableStructuredTermination: true,
     // topLevelSkillMarkdown: '本应用 Skill 使用说明…', // 开发期硬编码注入，覆盖 DB
   };
 }

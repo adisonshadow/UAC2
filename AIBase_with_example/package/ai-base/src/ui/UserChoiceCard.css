@@ -1,0 +1,43 @@
+.eadaf-user-choice-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.eadaf-user-choice-card.is-submitted {
+  opacity: 0.72;
+}
+
+.eadaf-user-choice-question {
+  display: block;
+  margin-bottom: 10px;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.eadaf-user-choice-options {
+  display: block;
+  width: 100%;
+}
+
+.eadaf-user-choice-label {
+  font-weight: 500;
+}
+
+.eadaf-user-choice-desc {
+  display: block;
+  margin-top: 2px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+}
+
+.eadaf-user-choice-custom {
+  margin-top: 10px;
+}
+
+.eadaf-user-choice-actions {
+  margin-top: 12px;
+}

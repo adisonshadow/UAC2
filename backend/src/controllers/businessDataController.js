@@ -409,6 +409,58 @@ class BusinessDataController {
       sendBizDataError(ctx, error, { fallbackStatus: 500 });
     }
   }
+
+  static async listScopeDocs(ctx) {
+    try {
+      const codesRaw = ctx.query.codes;
+      let codes;
+      if (typeof codesRaw === 'string' && codesRaw.trim()) {
+        codes = codesRaw.split(',').map((c) => c.trim()).filter(Boolean);
+      } else if (Array.isArray(codesRaw)) {
+        codes = codesRaw.map(String).map((c) => c.trim()).filter(Boolean);
+      }
+      const data = await businessDataService.listScopeDocs({ codes });
+      ctx.body = { code: 200, message: '获取 Scope 业务说明列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async getScopeDoc(ctx) {
+    try {
+      const code = ctx.query.code;
+      if (!code || !String(code).trim()) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: '缺少 query 参数 code' };
+        return;
+      }
+      const includeAncestors =
+        ctx.query.includeAncestors === '1'
+        || ctx.query.includeAncestors === 'true'
+        || ctx.query.includeAncestors === true;
+      const data = includeAncestors
+        ? await businessDataService.getScopeDocWithAncestors(code)
+        : await businessDataService.getScopeDoc(code);
+      ctx.body = { code: 200, message: '获取 Scope 业务说明成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async upsertScopeDoc(ctx) {
+    try {
+      const { code, contentMarkdown } = ctx.request.body || {};
+      if (!code || !String(code).trim()) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: 'code 不能为空' };
+        return;
+      }
+      const data = await businessDataService.upsertScopeDoc(code, contentMarkdown);
+      ctx.body = { code: 200, message: '保存 Scope 业务说明成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
 }
 
 module.exports = BusinessDataController;

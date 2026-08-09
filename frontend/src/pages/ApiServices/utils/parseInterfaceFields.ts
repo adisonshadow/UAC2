@@ -9,6 +9,10 @@
  *   }
  *
  * 兼容：getADBEnumByCode("code") 旧写法、行内 @adb-enum / 「枚举 code」
+ *
+ * 嵌套对象（如 create 的 body: { ... }）：
+ * - 顶层记为 type=Record<string, unknown>
+ * - 内部字段可通过 parseNestedInterfaceFields / flatten 供面板使用
  */
 
 export interface InterfaceField {
@@ -23,6 +27,8 @@ export interface InterfaceField {
   isArray?: boolean;
   /** BizdataEnum code */
   enumCode?: string;
+  /** 所属内联对象容器（如 body / set）；顶层字段无此字段 */
+  parent?: string;
 }
 
 const FILE_MARKERS = /@file|@storage|storage\s*objectId|文件字段|文件引用/i;
@@ -92,29 +98,57 @@ function resolveFieldType(
   };
 }
 
-/** 取最后一个 interface/type 对象体（避免 type 别名干扰） */
-function extractInterfaceBody(text: string): string {
-  const matches = [...text.matchAll(/\binterface\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\{([\s\S]*?)\}/g)];
-  if (matches.length) {
-    return matches[matches.length - 1][1] || '';
+function findMatchingBrace(text: string, startIdx: number): number {
+  if (startIdx < 0 || startIdx >= text.length || text[startIdx] !== '{') return -1;
+  let depth = 0;
+  for (let i = startIdx; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
   }
-  const brace = text.match(/\{([\s\S]*)\}/);
-  return brace ? brace[1] : text;
+  return -1;
 }
 
-export function parseInterfaceFields(interfaceText?: string | null): InterfaceField[] {
-  const text = String(interfaceText || '').trim();
-  if (!text) return [];
+/** 取最后一个 interface 对象体（括号配对，支持嵌套 body: { ... }） */
+function extractInterfaceBody(text: string): string {
+  const source = String(text || '');
+  const re = /\binterface\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\{/g;
+  let match: RegExpExecArray | null;
+  let lastOpen = -1;
+  while ((match = re.exec(source)) !== null) {
+    lastOpen = match.index + match[0].length - 1;
+  }
+  if (lastOpen >= 0) {
+    const close = findMatchingBrace(source, lastOpen);
+    if (close > lastOpen) return source.slice(lastOpen + 1, close);
+    return source.slice(lastOpen + 1);
+  }
+  const firstBrace = source.indexOf('{');
+  if (firstBrace >= 0) {
+    const close = findMatchingBrace(source, firstBrace);
+    if (close > firstBrace) return source.slice(firstBrace + 1, close);
+  }
+  return source;
+}
 
-  const aliasMap = parseAdbEnumTypeAliases(text);
-  const body = extractInterfaceBody(text);
-
+function parseInterfaceBodyFields(
+  body: string,
+  aliasMap: Map<string, string>,
+  parent?: string,
+): { fields: InterfaceField[]; nested: Record<string, InterfaceField[]> } {
   const fields: InterfaceField[] = [];
+  const nested: Record<string, InterfaceField[]> = {};
   let pendingDescription = '';
-
   const lines = body.split('\n');
-  for (const rawLine of lines) {
+  let i = 0;
+
+  while (i < lines.length) {
+    const rawLine = lines[i];
     const line = rawLine.trim();
+    i += 1;
     if (!line) continue;
 
     const singleLineBlock = line.match(/^\/\*\*\s*(.*?)\s*\*\/$/);
@@ -123,13 +157,13 @@ export function parseInterfaceFields(interfaceText?: string | null): InterfaceFi
       continue;
     }
 
-    const blockComment = line.match(/^\*\/\s*(.*)$/) || line.match(/^\/\*+\s*(.*)$/);
-    const leadingComment = line.match(/^\*\s*(.*)$/);
     const inlineBlockStart = line.match(/^\/\*\*\s*(.*)$/);
     if (inlineBlockStart) {
       pendingDescription = inlineBlockStart[1]?.trim() || '';
       continue;
     }
+    const blockComment = line.match(/^\*\/\s*(.*)$/) || line.match(/^\/\*+\s*(.*)$/);
+    const leadingComment = line.match(/^\*\s*(.*)$/);
     if (blockComment) {
       const content = blockComment[1]?.trim();
       if (content) pendingDescription = content;
@@ -137,35 +171,121 @@ export function parseInterfaceFields(interfaceText?: string | null): InterfaceFi
     }
     if (leadingComment) {
       const content = leadingComment[1]?.trim();
-      if (content) pendingDescription = pendingDescription ? `${pendingDescription} ${content}` : content;
+      if (content) {
+        pendingDescription = pendingDescription ? `${pendingDescription} ${content}` : content;
+      }
+      continue;
+    }
+
+    const nestedObjMatch = line.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*(\?)?\s*:\s*\{(.*)$/);
+    if (nestedObjMatch) {
+      const [, name, optional, afterBrace = ''] = nestedObjMatch;
+      const description = pendingDescription || undefined;
+      let depth = 1;
+      const collected: string[] = [];
+      const consume = (chunk: string): boolean => {
+        for (let c = 0; c < chunk.length; c += 1) {
+          const ch = chunk[c];
+          if (ch === '{') depth += 1;
+          else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              collected.push(chunk.slice(0, c));
+              return true;
+            }
+          }
+        }
+        collected.push(chunk);
+        return false;
+      };
+      let closed = consume(afterBrace);
+      while (!closed && i < lines.length) {
+        closed = consume(lines[i]);
+        i += 1;
+      }
+      const inner = collected.join('\n');
+      const nestedParsed = parseInterfaceBodyFields(inner, aliasMap, name);
+      nested[name] = nestedParsed.fields;
+      Object.assign(nested, nestedParsed.nested);
+
+      fields.push({
+        name: String(name),
+        type: 'Record<string, unknown>',
+        typeLabel: 'object',
+        description,
+        required: !optional,
+        isFile: false,
+        isArray: false,
+        ...(parent ? { parent } : {}),
+      });
+      pendingDescription = '';
       continue;
     }
 
     const fieldMatch = line.match(
       /^([A-Za-z_$][A-Za-z0-9_$]*)\s*(\?)?\s*:\s*([^;\/]+?)\s*;?\s*(?:\/\/(.*))?$/,
     );
-    if (fieldMatch) {
-      const [, name, optional, typeRaw, inlineCommentRaw] = fieldMatch;
-      let description = pendingDescription;
-      const inlineComment = inlineCommentRaw?.trim();
-      if (inlineComment) {
-        description = description ? `${description} ${inlineComment}` : inlineComment;
-      }
-      const resolved = resolveFieldType(typeRaw, aliasMap);
-      const commentEnum = extractInterfaceEnumCode(pendingDescription, inlineComment, line);
+    if (!fieldMatch) continue;
+
+    const [, name, optional, typeRaw, inlineCommentRaw] = fieldMatch;
+    let description = pendingDescription;
+    const inlineComment = inlineCommentRaw?.trim();
+    if (inlineComment) {
+      description = description ? `${description} ${inlineComment}` : inlineComment;
+    }
+
+    if (String(typeRaw).trim() === '{' || String(typeRaw).trim().startsWith('{')) {
       fields.push({
         name: String(name),
-        type: resolved.type,
-        typeLabel: resolved.typeLabel,
+        type: 'Record<string, unknown>',
+        typeLabel: 'object',
         description: description || undefined,
         required: !optional,
-        isFile: FILE_MARKERS.test(line),
-        isArray: resolved.isArray,
-        enumCode: resolved.enumCode || commentEnum,
+        isFile: false,
+        isArray: false,
+        ...(parent ? { parent } : {}),
       });
       pendingDescription = '';
+      continue;
     }
+
+    const resolved = resolveFieldType(typeRaw, aliasMap);
+    const commentEnum = extractInterfaceEnumCode(pendingDescription, inlineComment, line);
+    fields.push({
+      name: String(name),
+      type: resolved.type,
+      typeLabel: resolved.typeLabel,
+      description: description || undefined,
+      required: !optional,
+      isFile: FILE_MARKERS.test(line),
+      isArray: resolved.isArray,
+      enumCode: resolved.enumCode || commentEnum,
+      ...(parent ? { parent } : {}),
+    });
+    pendingDescription = '';
   }
 
-  return fields;
+  return { fields, nested };
+}
+
+export function parseInterfaceFields(interfaceText?: string | null): InterfaceField[] {
+  const text = String(interfaceText || '').trim();
+  if (!text) return [];
+
+  const aliasMap = parseAdbEnumTypeAliases(text);
+  const body = extractInterfaceBody(text);
+  return parseInterfaceBodyFields(body, aliasMap).fields;
+}
+
+/** 解析内联对象容器（如 body / set）内的字段 */
+export function parseNestedInterfaceFields(
+  interfaceText?: string | null,
+  containerName = 'body',
+): InterfaceField[] {
+  const text = String(interfaceText || '').trim();
+  if (!text) return [];
+  const aliasMap = parseAdbEnumTypeAliases(text);
+  const body = extractInterfaceBody(text);
+  const { nested } = parseInterfaceBodyFields(body, aliasMap);
+  return nested[containerName] || [];
 }

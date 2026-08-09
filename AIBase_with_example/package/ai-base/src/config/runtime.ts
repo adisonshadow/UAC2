@@ -39,5 +39,6 @@ export function resolveConfig(config: AIChatConfig = {}): ResolvedAIChatConfig {
     nextStepPrompts: config.nextStepPrompts ?? {},
     maxToolResultChars: config.maxToolResultChars ?? 8000,
     roundDelayMs: config.roundDelayMs ?? 600,
+    enableStructuredTermination: config.enableStructuredTermination ?? false,
   };
 }

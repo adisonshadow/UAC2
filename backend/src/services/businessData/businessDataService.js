@@ -5,6 +5,7 @@ const {
   BizdataEnum,
   BizdataRelation,
   BizdataSetting,
+  BizdataScopeDoc,
   BizdataMaterializationEntity,
   sequelize
 } = require('../../models');
@@ -791,6 +792,124 @@ async function listScopes() {
   };
 }
 
+function formatScopeDoc(row) {
+  if (!row) {
+    return null;
+  }
+  const plain = typeof row.toJSON === 'function' ? row.toJSON() : row;
+  const contentMarkdown = plain.contentMarkdown ?? plain.content_markdown ?? '';
+  return {
+    code: plain.code,
+    contentMarkdown,
+    hasContent: String(contentMarkdown).trim().length > 0,
+    createdAt: plain.createdAt ?? plain.created_at,
+    updatedAt: plain.updatedAt ?? plain.updated_at,
+  };
+}
+
+/** 返回 scopeCode 自身及祖先路径（含自身），如 IPS:bom → ['IPS', 'IPS:bom'] */
+function buildScopeAncestorCodes(scopeCode) {
+  const trimmed = String(scopeCode || '').trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(':').filter(Boolean);
+  const codes = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    codes.push(parts.slice(0, i + 1).join(':'));
+  }
+  return codes;
+}
+
+async function listScopeDocs({ codes } = {}) {
+  const where = {};
+  if (Array.isArray(codes) && codes.length) {
+    where.code = { [Op.in]: codes.map((c) => String(c).trim()).filter(Boolean) };
+  }
+  const rows = await BizdataScopeDoc.findAll({
+    where,
+    order: [['code', 'ASC']],
+  });
+  return rows
+    .map(formatScopeDoc)
+    .filter((item) => item && item.hasContent)
+    .map(({ code, updatedAt, hasContent }) => ({ code, updatedAt, hasContent }));
+}
+
+async function getScopeDoc(code) {
+  const scopeCode = String(code || '').trim();
+  if (!scopeCode) {
+    throw new Error('code 不能为空');
+  }
+  const row = await BizdataScopeDoc.findByPk(scopeCode);
+  if (!row) {
+    return {
+      code: scopeCode,
+      contentMarkdown: '',
+      hasContent: false,
+      createdAt: null,
+      updatedAt: null,
+    };
+  }
+  return formatScopeDoc(row);
+}
+
+async function getScopeDocWithAncestors(code) {
+  const scopeCode = String(code || '').trim();
+  if (!scopeCode) {
+    throw new Error('code 不能为空');
+  }
+  const ancestorCodes = buildScopeAncestorCodes(scopeCode);
+  const rows = await BizdataScopeDoc.findAll({
+    where: { code: { [Op.in]: ancestorCodes } },
+  });
+  const byCode = new Map(rows.map((r) => [r.code, formatScopeDoc(r)]));
+  const self = byCode.get(scopeCode) || {
+    code: scopeCode,
+    contentMarkdown: '',
+    hasContent: false,
+    createdAt: null,
+    updatedAt: null,
+  };
+  const ancestors = ancestorCodes
+    .filter((c) => c !== scopeCode)
+    .map((c) => byCode.get(c))
+    .filter((doc) => doc && doc.hasContent);
+  return {
+    code: scopeCode,
+    contentMarkdown: self.contentMarkdown || '',
+    hasContent: Boolean(self.hasContent),
+    updatedAt: self.updatedAt || null,
+    ancestors,
+  };
+}
+
+async function upsertScopeDoc(code, contentMarkdown) {
+  const scopeCode = String(code || '').trim();
+  if (!scopeCode) {
+    throw new Error('code 不能为空');
+  }
+  const markdown = contentMarkdown == null ? '' : String(contentMarkdown);
+  const trimmed = markdown.trim();
+
+  if (!trimmed) {
+    await BizdataScopeDoc.destroy({ where: { code: scopeCode } });
+    return {
+      code: scopeCode,
+      contentMarkdown: '',
+      hasContent: false,
+      createdAt: null,
+      updatedAt: null,
+      deleted: true,
+    };
+  }
+
+  const [row] = await BizdataScopeDoc.upsert({
+    code: scopeCode,
+    contentMarkdown: markdown,
+  });
+  const formatted = formatScopeDoc(row) || (await getScopeDoc(scopeCode));
+  return { ...formatted, deleted: false };
+}
+
 module.exports = {
   formatEntity,
   formatField,
@@ -814,4 +933,8 @@ module.exports = {
   deleteRelation,
   getDefaultMaterializationSchema,
   listScopes,
+  listScopeDocs,
+  getScopeDoc,
+  getScopeDocWithAncestors,
+  upsertScopeDoc,
 };

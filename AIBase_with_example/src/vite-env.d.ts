@@ -10,4 +10,4 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
-declare module '@EADAF/ai-base/style.css';
+declare module '@eadaf/ai-base/style.css';

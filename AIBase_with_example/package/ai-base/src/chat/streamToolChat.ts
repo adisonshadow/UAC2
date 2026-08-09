@@ -22,6 +22,15 @@ export interface StreamRoundResult {
   reasoningContent: string;
   toolCalls: ToolCallResult[];
   assistantMessage: Record<string, unknown>;
+  /**
+   * 本轮 LLM 的结束原因（choices[0].finish_reason）。
+   * - `stop`：模型主动结束（自然语言收尾）
+   * - `tool_calls`：模型要求调用 Tool（本轮含 tool_calls）
+   * - `length`：达到 max_tokens 被截断（需续命补全，不能当作完成）
+   * - `content_filter` 等：其他原因
+   * 流式中可能缺失（部分 Provider 末帧不带 finish_reason），此时为 undefined。
+   */
+  finishReason?: string;
 }
 
 type ToolCallAccumulator = Record<
@@ -57,7 +66,7 @@ function toolCallsFromAccumulator(acc: ToolCallAccumulator): ToolCallResult[] {
 
 function parseSsePayload(
   dataStr: string,
-  state: { content: string; reasoningContent: string; toolCalls: ToolCallAccumulator },
+  state: { content: string; reasoningContent: string; toolCalls: ToolCallAccumulator; finishReason?: string },
   enableThinking: boolean,
 ) {
   if (!dataStr || dataStr === '[DONE]') return;
@@ -74,6 +83,7 @@ function parseSsePayload(
         reasoning_content?: string;
         tool_calls?: ToolCallResult[];
       };
+      finish_reason?: string | null;
     }>;
     error?: { message?: string };
   };
@@ -90,6 +100,9 @@ function parseSsePayload(
 
   const delta = parsed.choices?.[0]?.delta;
   const message = parsed.choices?.[0]?.message;
+  // 末帧（或非流式帧）携带 finish_reason；中途帧为 null/undefined，只在拿到非空值时记录
+  const finishReason = parsed.choices?.[0]?.finish_reason;
+  if (finishReason) state.finishReason = finishReason;
 
   if (delta) {
     state.content += delta.content ?? '';
@@ -202,7 +215,7 @@ export async function streamChatRound(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  const state = { content: '', reasoningContent: '', toolCalls: {} as ToolCallAccumulator };
+  const state = { content: '', reasoningContent: '', toolCalls: {} as ToolCallAccumulator, finishReason: undefined as string | undefined };
   let buffer = '';
 
   const emit = () => {
@@ -245,5 +258,6 @@ export async function streamChatRound(
     reasoningContent: state.reasoningContent,
     toolCalls,
     assistantMessage,
+    finishReason: state.finishReason,
   };
 }

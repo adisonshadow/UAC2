@@ -6,6 +6,8 @@ import type { AssistantSegment } from '../chat/chatToolSteps';
 import { sendMockUserMessage } from '../utils/aiChatBridge';
 import AssistantMarkdown from './AssistantMarkdown';
 import ToolInvokeSteps from './ToolInvokeSteps';
+import UserChoiceCard from './UserChoiceCard';
+import { planningNextMovesToMarkdown } from './planningNextMovesToMarkdown';
 
 export interface AssistantSegmentsProps {
   segments?: AssistantSegment[];
@@ -110,11 +112,25 @@ export default function AssistantSegments({
         if (segment.kind === 'tool') {
           return <ToolInvokeSteps key={segment.id} step={segment.step} />;
         }
+        if (segment.kind === 'planning') {
+          return (
+            <AssistantMarkdown
+              key={segment.id}
+              content={planningNextMovesToMarkdown(segment)}
+              reasoningContent={reasoningContent}
+              status={status}
+              contentStreaming={false}
+            />
+          );
+        }
+        if (segment.kind === 'user_choice') {
+          return <UserChoiceCard key={segment.id} segment={segment} />;
+        }
         const view = textViews.find((v) => v.id === segment.id);
         return (
           <AssistantMarkdown
             key={segment.id}
-            content={view?.displayText ?? segment.content}
+            content={view?.displayText ?? ('content' in segment ? segment.content : '')}
             reasoningContent={reasoningContent}
             status={status}
             contentStreaming={status === 'updating' && !hasActiveTool}

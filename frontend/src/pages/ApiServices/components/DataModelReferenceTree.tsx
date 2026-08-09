@@ -1,5 +1,5 @@
 import { BuildOutlined, DatabaseOutlined, PartitionOutlined } from '@ant-design/icons';
-import { useChatReference } from '@EADAF/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 import { Button, Empty, Spin, Typography } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { buildEntityReference, buildScopeReference } from '@/pages/BusinessData/ai/chatReferenceUtils';

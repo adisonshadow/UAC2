@@ -1,8 +1,8 @@
 import { Suspense } from 'react';
 import { App as AntdApp, ConfigProvider, Spin, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { AIChatProvider } from '@EADAF/ai-base';
-import '@EADAF/ai-base/style.css';
+import { AIChatProvider } from '@eadaf/ai-base';
+import '@eadaf/ai-base/style.css';
 import { BrowserRouter } from 'react-router-dom';
 import AIChatClientToolsRegistrar from '@/components/AIChatClientToolsRegistrar';
 import { ChatSessionGroupProvider } from '@/ai/ChatSessionGroupProvider';

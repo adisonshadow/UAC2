@@ -8,7 +8,7 @@ import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useMemo } from 'react';
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildAIToolListPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { useAIListSurface } from '@/ai/useAIListSurface';

@@ -1,8 +1,20 @@
 const { v4: uuidv4 } = require('uuid');
+const { Op } = require('sequelize');
 const { Skill, Tool, SkillTool, Scope, Application, SkillApplication } = require('../models');
 const { isValidSlug, resolveUniqueSlug } = require('../constants/aiCapabilities');
 const { formatOpenAITool } = require('../services/ai/toolInvokeService');
 const logger = require('../utils/logger');
+
+function escapeIlike(value) {
+  return String(value).replace(/[%_\\]/g, '\\$&');
+}
+
+function parseBoolQuery(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
+}
 
 const skillInclude = [
   {
@@ -123,17 +135,35 @@ class SkillController {
       const size = Math.min(Math.max(parseInt(ctx.query.size, 10) || 10, 1), 100);
       const where = {};
 
-      if (ctx.query.isActive !== undefined) {
-        where.is_active = ctx.query.isActive === 'true';
+      const isActive = parseBoolQuery(ctx.query.isActive);
+      if (isActive !== undefined) {
+        where.is_active = isActive;
+      }
+      const isGlobal = parseBoolQuery(ctx.query.isGlobal);
+      if (isGlobal !== undefined) {
+        where.is_global = isGlobal;
+      }
+      const isDedicated = parseBoolQuery(ctx.query.isDedicated);
+      if (isDedicated !== undefined) {
+        where.is_dedicated = isDedicated;
+      }
+      if (ctx.query.name) {
+        where.name = { [Op.iLike]: `%${escapeIlike(ctx.query.name)}%` };
+      }
+      if (ctx.query.slug) {
+        where.slug = { [Op.iLike]: `%${escapeIlike(ctx.query.slug)}%` };
+      }
+      if (ctx.query.description) {
+        where.description = { [Op.iLike]: `%${escapeIlike(ctx.query.description)}%` };
       }
 
-      const count = await Skill.count({ where });
-      const rows = await Skill.findAll({
+      const { count, rows } = await Skill.findAndCountAll({
         where,
         include: skillInclude,
         limit: size,
         offset: (page - 1) * size,
         order: [['created_at', 'DESC']],
+        distinct: true,
       });
 
       ctx.body = {
@@ -495,7 +525,13 @@ class SkillController {
   }
 }
 
-/** 供 capabilities 接口按应用系统过滤 Skill（需配置 applicationId 才返回远端 Skill） */
+/**
+ * 供 capabilities 接口按应用系统过滤 Skill（需配置 applicationId 才返回远端 Skill）。
+ *
+ * 页面级隔离由前端 `AIChatPageScope.fallbackSkillSlugs` 负责（只加载全局框架 + 当前页 Skill）。
+ * 调用方可能传入 `scopeSlug`，但本函数**不**用它过滤——scopeSlug 仅作缓存 key / 元数据标注。
+ * 既非 global 也非 dedicated 的 Skill 在此会被丢弃（capabilities 不可见）。
+ */
 SkillController.filterSkillsForContext = function filterSkillsForContext(skills, { applicationId } = {}) {
   if (!applicationId) {
     return [];

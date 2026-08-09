@@ -16,13 +16,18 @@ export function buildEntityReference(entity: API.BusinessDataEntity) {
   } as const;
 }
 
-export function buildScopeReference(scope: { code: string; name: string }) {
+export function buildScopeReference(scope: {
+  code: string;
+  name: string;
+  hasDescription?: boolean;
+}) {
   return {
     type: 'scope',
     label: scope.name || scope.code || 'Scope',
     content: {
       code: scope.code,
       name: scope.name,
+      ...(scope.hasDescription ? { hasDescription: true } : {}),
     },
     unique: false,
   } as const;

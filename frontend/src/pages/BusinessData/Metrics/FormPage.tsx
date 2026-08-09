@@ -3,7 +3,7 @@ import { Button, Form, Space, Spin } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAIChatPrompts, useAISurface } from '@EADAF/ai-base';
+import { useAIChatPrompts, useAISurface } from '@eadaf/ai-base';
 import { buildMetricFormPrompts } from '@/ai/pageChatPrompts';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import {

@@ -1,6 +1,6 @@
 import type { ActionType } from '@ant-design/pro-components';
 import type { RefObject } from 'react';
-import { useAISurface } from '@EADAF/ai-base';
+import { useAISurface } from '@eadaf/ai-base';
 
 /** ProTable 列表页：AI mutation 触发 reload */
 export function useAIListSurface(

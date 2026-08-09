@@ -1,51 +1,31 @@
-# @EADAF/ai-base
+# @eadaf/ai-base
 
 EADAF AI 聊天基础库。宿主应用通过 `AIChatProvider` 接入侧边栏 / 漂浮按钮式 AI 助手，并可在页面内配置 Skill、Tool、Prompts、Chat 引用等能力。
 
-## 双模式引用
+> 仓库内 `AIBase_with_example` 仅作演示与联调沙箱，正式接入请以本 README 与 `dist/` 为准。
 
-| 消费方 | 引用方式 | 读什么 |
-|--------|----------|--------|
-| AIBase_with_example | Vite alias | `src/`（保存即 HMR，无需 tsup watch） |
-| EADAF_frontend | `file:` 依赖 | `dist/`（改 ai-base 后需 build） |
+## 宿主接入（读 dist）
 
-### AIBase_with_example 联调（读 src）
-
-`AIBase_with_example/vite.config.ts` 已将 `@EADAF/ai-base` alias 到本目录 `src/index.ts`。peer 依赖从 `AIBase_with_example/node_modules` 解析。
+运行时通过包 `exports` 加载 **`dist/`**。改动本包源码后需重新 build；宿主侧可用 `pnpm refresh:ai-base`（若已配置）清除缓存并同步。
 
 ```bash
-cd AIBase_with_example
-pnpm dev
-```
-
-修改 `package/ai-base/src/**` 后保存即可 HMR 刷新，**不需要**单独开 `tsup --watch`。
-
-### EADAF_frontend 接入（读 dist）
-
-`EADAF_frontend/package.json` 通过 `file:../AIBase_with_example/package/ai-base` 引用，运行时走 `exports` 指向的 **`dist/`**。
-
-```bash
-cd AIBase_with_example/package/ai-base
 pnpm build
-
-# 或在 EADAF_frontend 根目录
-pnpm refresh:ai-base   # 清除缓存并同步 dist
 ```
 
 ```tsx
-import { AIChatProvider } from '@EADAF/ai-base';
-import '@EADAF/ai-base/style.css';
+import { AIChatProvider } from '@eadaf/ai-base';
+import '@eadaf/ai-base/style.css';
 ```
 
-修改 ai-base **导出** 或 **dist 行为** 后，需重新 build；若新 API 不生效，执行 `pnpm refresh:ai-base` 并重启 frontend dev。
+修改 **导出** 或 **dist 行为** 后若新 API 不生效，重新 build、刷新宿主依赖链接，并重启 frontend dev。
 
 ---
 
 ## 快速接入
 
 ```tsx
-import { AIChatProvider } from '@EADAF/ai-base';
-import '@EADAF/ai-base/style.css';
+import { AIChatProvider } from '@eadaf/ai-base';
+import '@eadaf/ai-base/style.css';
 
 <AIChatProvider
   config={{
@@ -65,7 +45,7 @@ import '@EADAF/ai-base/style.css';
 路由 wrapper 内再用 `AIChatPageScope` 覆盖页面级 Skill / 欢迎语 / 静态 prompts：
 
 ```tsx
-import { AIChatPageScope } from '@EADAF/ai-base';
+import { AIChatPageScope } from '@eadaf/ai-base';
 
 <AIChatPageScope
   scopeSlug="business-data"
@@ -77,6 +57,11 @@ import { AIChatPageScope } from '@EADAF/ai-base';
   <Outlet />
 </AIChatPageScope>
 ```
+
+### 语音输入
+
+Sender 使用 `@ant-design/x` 内置语音录入（麦克风 → 转写进输入框，交互类似 Cursor）。  
+仅当当前选中模型的 `capabilities` 包含 **`audio_input`** 时显示语音按钮；与附件模态 `inputTags: audio`（上传音频文件）相互独立。浏览器需支持 SpeechRecognition，并授予麦克风权限。
 
 ---
 
@@ -100,13 +85,14 @@ import { AIChatPageScope } from '@EADAF/ai-base';
 |------|------|
 | Skill 关联 Tool | 来自已加载 Skill，含 client / server 类型 |
 | 本地 client Tool | `registerFunctionCall` 注册；可为 Skill 关联的 client Tool 提供 handler，也可注册纯本地 Tool |
+| Harness Tool | `ask_user` 始终注入；`update_plan` / `task_complete` 在 `enableStructuredTermination` 时注入（见下方「Agent 内置 Tool」） |
 
-**合并规则**：`openaiTools` = Skill 关联 Tool + 本地 `registerFunctionCall`；同名时 **Skill 侧 schema 优先**，本地补充 Skill 未覆盖的 Tool。
+**合并规则**：`openaiTools` = Skill 关联 Tool + Harness Tool + 本地 `registerFunctionCall`；同名时 **Skill 侧 schema 优先**，本地补充 Skill 未覆盖的 Tool。
 
 ```tsx
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 
-// 应用级：App 入口集中注册（如 EADAF_frontend 的 AIChatClientToolsRegistrar）
+// 应用级：App 入口集中注册（如宿主的 AIChatClientToolsRegistrar）
 registerFunctionCall({
   name: 'bizdata_list_entities',
   description: '列出业务数据实体',
@@ -177,7 +163,7 @@ clearFunctionCalls('sales-app'); // 清空某命名空间
 组件级注册推荐用 `useFunctionCall` Hook，**卸载即自动注销**：
 
 ```tsx
-import { useFunctionCall } from '@EADAF/ai-base';
+import { useFunctionCall } from '@eadaf/ai-base';
 
 function PageWithTools({ entityId }) {
   useFunctionCall(
@@ -200,7 +186,7 @@ function PageWithTools({ entityId }) {
 也可由前端注册表覆盖：
 
 ```tsx
-import { registerSkillCompletionPolicy } from '@EADAF/ai-base';
+import { registerSkillCompletionPolicy } from '@eadaf/ai-base';
 
 registerSkillCompletionPolicy('bizdata-model-design', {
   requiredTools: ['bizdata_validate_model'], // 完成前必须调用过
@@ -221,12 +207,79 @@ SDK 自身不包含任何业务工具名集合或中文正则，新业务接入�
 
 ---
 
+## Agent 内置 Tool（Harness）
+
+对话循环会向 LLM **始终或按配置**注入若干流程控制 Tool（不属于业务 Skill 关联）：
+
+| Tool | 何时注入 | 作用 |
+|------|----------|------|
+| `ask_user` | **始终** | mid-task HITL：向用户展示结构化选择题并挂起循环 |
+| `update_plan` | `enableStructuredTermination: true` | 维护任务清单（Plan） |
+| `task_complete` | `enableStructuredTermination: true` | 显式验收并终止循环 |
+
+```tsx
+<AIChatProvider
+  config={{
+    // …
+    enableStructuredTermination: true, // 注入 update_plan / task_complete，并启用「默认续命、task_complete 才停」
+  }}
+>
+```
+
+### `ask_user`：向用户询问并确认选择
+
+用于方案取舍、危险写操作前确认、多路径决策等**任务中途**决策门。模型调用后：
+
+1. Tool 返回信封 `kind: 'user_choice_request'`（**不是**业务写成功）
+2. 聊天循环 **hard-stop**（`waiting_user_choice`），禁止 auto-continue / nudge
+3. 助手消息中渲染 **Choice Card**（`UserChoiceCard`）
+4. 用户提交后，SDK 通过 `sendMockUserMessage` 注入格式化消息并续跑 Agent
+
+**参数摘要**：
+
+| 字段 | 说明 |
+|------|------|
+| `question` | 展示给用户的问题 |
+| `mode` | `single`（单选）或 `multi`（多选） |
+| `options` | `{ id, label, description? }[]`，通常 2–5 项（推荐 3） |
+| `allowCustom` | 是否显示「其他」输入；`single` 默认 `true`，`multi` 默认 `false` |
+| `minSelect` / `maxSelect` | 仅 `multi`：最少 / 最多选择数 |
+
+提交后写入对话历史的文案形如：
+
+```text
+【用户选择】
+题：……
+模式：单选
+已选：opt_b（方案 B）
+自定义：（无）
+```
+
+也可在宿主侧复用格式化工具：
+
+```tsx
+import { formatUserChoiceMessage, ASK_USER_TOOL } from '@eadaf/ai-base';
+```
+
+> **与「下一步建议」的边界**
+>
+> | 机制 | 时机 | UI |
+> |------|------|-----|
+> | `ask_user` | 任务**中途**决策门 | Choice Card（单选/多选 + 可选自定义） |
+> | `a2ui-commands` / `task_complete.next_steps` | 阶段**完成后**的可选快捷动作 | A2UI 下一步按钮 |
+>
+> 禁止仅用「请确认后回复」等口头话术代替 `ask_user`（口头等待确认正则仍保留作兜底 hard-stop）。
+
+全局行为约定写在 Framework Skill `aibase-chat-framework`；开启结构化终止时，系统提示还会注入含 `ask_user` 的执行协议。
+
+---
+
 ## AISurface 与 UI 联动（Mutation）
 
 页面注册 **Surface** 供 AI 读取上下文；Tool 写操作返回 **mutation** 后自动刷新 UI。
 
 ```tsx
-import { useAISurface } from '@EADAF/ai-base';
+import { useAISurface } from '@eadaf/ai-base';
 
 useAISurface({
   id: 'bizdata.model-designer',
@@ -277,7 +330,7 @@ prompts={[{ key: '1', description: '列出当前所有实体' }]}
 
 ```tsx
 import { useMemo } from 'react';
-import { useAIChatPrompts } from '@EADAF/ai-base';
+import { useAIChatPrompts } from '@eadaf/ai-base';
 
 function ModelDesigner({ selectedEntity }) {
   const chatPrompts = useMemo(() => {
@@ -301,7 +354,7 @@ function ModelDesigner({ selectedEntity }) {
 命令式更新（事件回调中）：
 
 ```tsx
-import { useSetAIChatPrompts } from '@EADAF/ai-base';
+import { useSetAIChatPrompts } from '@eadaf/ai-base';
 
 const { setPrompts, resetPrompts } = useSetAIChatPrompts();
 setPrompts([{ key: '1', description: '为当前实体自动生成关系' }]);
@@ -321,7 +374,7 @@ resetPrompts(); // 恢复为 PageScope / 根配置
 页面元素可将上下文加入 AI 对话引用区，随下一条消息一并发送。
 
 ```tsx
-import { useChatReference } from '@EADAF/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 
 const { addReference, removeReference, clearReferences, references } = useChatReference();
 
@@ -333,7 +386,7 @@ addReference({
 });
 ```
 
-EADAF_frontend 中配合 `ChatReferenceTarget` 组件（`className: chat-reference-target`）使用。
+宿主应用中可配合 `ChatReferenceTarget` 组件（`className: chat-reference-target`）使用。
 
 ---
 
@@ -342,7 +395,7 @@ EADAF_frontend 中配合 `ChatReferenceTarget` 组件（`className: chat-referen
 打开 AI 面板并模拟用户发送（与手动点击发送相同流程）：
 
 ```tsx
-import { sendMockUserMessage } from '@EADAF/ai-base';
+import { sendMockUserMessage } from '@eadaf/ai-base';
 
 sendMockUserMessage('请帮我为当前实体自动创建索引');
 ```
@@ -367,11 +420,11 @@ sendMockUserMessage('请帮我为当前实体自动创建索引');
 
 ```tsx
 // 路由层
-import { AIChatDisplay } from '@EADAF/ai-base';
+import { AIChatDisplay } from '@eadaf/ai-base';
 <AIChatDisplay mode="hidden"><LoginPage /></AIChatDisplay>
 
 // 页面内 Hook（卸载后恢复 sidebar）
-import { useAIChatDisplayMode } from '@EADAF/ai-base';
+import { useAIChatDisplayMode } from '@eadaf/ai-base';
 useAIChatDisplayMode('float');
 ```
 
@@ -382,14 +435,14 @@ useAIChatDisplayMode('float');
 开发环境可将 client / server Tool 调用输出到浏览器控制台与 dev 终端：
 
 ```tsx
-import { setToolInvokeLogger, formatToolInvokeError } from '@EADAF/ai-base';
+import { setToolInvokeLogger, formatToolInvokeError } from '@eadaf/ai-base';
 
 setToolInvokeLogger((entry) => {
   console.log(entry.success ? '✅' : '❌', entry.name, entry.error ?? entry.result);
 });
 ```
 
-EADAF_frontend 在 `App.tsx` 中通过 `setupAiToolDevLogger()` 接入。失败时 `entry.error` 已包含 API 返回的 `[HTTP status] message | details`。
+宿主可在应用入口通过 `setToolInvokeLogger` / `setupAiToolDevLogger()` 接入。失败时 `entry.error` 已包含 API 返回的 `[HTTP status] message | details`。
 
 ---
 
@@ -412,6 +465,7 @@ EADAF_frontend 在 `App.tsx` 中通过 `setupAiToolDevLogger()` 接入。失败�
 | `hiddenPaths` | 否 | 匹配路径下隐藏 AI UI |
 | `exposeAllClientTools` | 否 | 调试：向 LLM 暴露全部本地 client Tool（忽略 Skill 关联限制） |
 | `maxToolResultChars` | 否 | 单次 Tool 结果回灌上下文的字符预算上限，默认 `8000` |
+| `enableStructuredTermination` | 否 | 开启后注入 `update_plan` / `task_complete`，并按结构化终止驱动循环（`ask_user` 始终可用，与本开关无关） |
 
 ---
 
@@ -423,45 +477,41 @@ EADAF_frontend 在 `App.tsx` 中通过 `setupAiToolDevLogger()` 接入。失败�
 | Hooks | `useAIChatLayout`, `useAIChatDisplayMode`, `useEffectiveAIChatConfig`, `useChatReference`, `useAIChatPrompts`, `useSetAIChatPrompts`, `useAISurface`, `useAIMutationHandler`, `useFunctionCall` |
 | Tool 注册 | `registerFunctionCall`, `unregisterFunctionCall`, `getFunctionCallDef`, `getAllFunctionCalls`, `invokeFunctionCall`, `clearFunctionCalls`, `subscribeFunctionCalls` |
 | Skill 策略 | `registerSkillCompletionPolicy`, `unregisterSkillCompletionPolicy`, `clearSkillCompletionPolicies`, `getSkillCompletionStrategy` |
+| Harness Tool | `ASK_USER_TOOL`, `ASK_USER_OPENAI_TOOL`, `UPDATE_PLAN_TOOL`, `TASK_COMPLETE_TOOL`, `HARNESS_TOOL_NAMES`, `HARNESS_OPENAI_TOOLS` |
+| 用户选择 | `formatUserChoiceMessage`, `isUserChoiceRequestData`；类型 `AskUserArgs`, `UserChoiceRequest`, `UserChoiceSubmission`, … |
 | 结果预算 | `serializeToolResultForContext`, `resolveToolResultBudget` |
+| 模型能力 | `supportsModelAttachments`, `supportsModelVoiceInput`, `MODEL_CAPABILITY_AUDIO_INPUT` |
 | 消息 / 引用 | `sendMockUserMessage`, `sendAIChatMessage`, `formatMessageWithReferences` |
 | 日志 | `setToolInvokeLogger`, `logToolInvoke`, `formatToolInvokeError` |
 | SDK | `AIBaseClient` |
-| 类型 | `AIChatConfig`, `AIChatPromptItem`, `FunctionCallDef`, `AIBaseSkill`, `AIBaseTool`, `SkillCompletionStrategy`, … |
+| 类型 | `AIChatConfig`, `AIChatPromptItem`, `FunctionCallDef`, `AIBaseSkill`, `AIBaseTool`, `SkillCompletionStrategy`, `ToolResponse`, … |
 
 ---
 
 ## 构建
 
 ```bash
-cd AIBase_with_example/package/ai-base
 pnpm build    # dist/index.js、dist/index.d.ts、dist/style.css
-pnpm dev        # tsup --watch（仅 frontend 联调时需要）
+pnpm dev      # tsup --watch（宿主读 dist 联调时可用）
 ```
 
 ## 常见报错
 
 **找不到某个 export**
 
-EADAF_frontend：确认 dist 已 build 且包含该导出，执行 `pnpm refresh:ai-base`。
-
-AIBase_with_example：清 Vite 预构建缓存后重启：
-
-```bash
-cd AIBase_with_example && rm -rf node_modules/.vite && pnpm dev
-```
+确认 `dist` 已 build 且包含该导出；宿主侧执行 `pnpm refresh:ai-base`（若已配置）并重启 frontend dev。
 
 **`Failed to resolve import "@ant-design/x"`**
 
-本包须位于 `AIBase_with_example/package/ai-base`，以便 peer 依赖向上解析。
+peer 依赖（`antd`、`@ant-design/x` 等）须由宿主安装并可被本包解析。
 
 **`react-is` does not provide an export named 'ForwardRef'`**
 
-清 `node_modules/.vite` 后重启 dev（`vite.config.ts` 已配置 `optimizeDeps.include`）。
+清宿主 `node_modules/.vite` 后重启 dev（Vite 侧可配置 `optimizeDeps.include`）。
 
 **`setToolInvokeLogger 不可用`**
 
-dist 过旧，执行 `pnpm build` + `pnpm refresh:ai-base` 并重启 frontend dev。
+`dist` 过旧，执行 `pnpm build` 并刷新宿主依赖链接后重启 frontend dev。
 
 ---
 
@@ -470,12 +520,13 @@ dist 过旧，执行 `pnpm build` + `pnpm refresh:ai-base` 并重启 frontend de
 ```text
 src/
   provider/     AIChatProvider、AIChatPageScope、AIChatPromptsContext、ChatReferenceContext
-  ui/           AIChatPanel 及样式
-  chat/         流式对话、EADAFChatProvider、useAIBaseChat
-  registry/     client Function Call 注册、Skill 加载、Tool manifest 合并
+  ui/           AIChatPanel、AssistantSegments、UserChoiceCard 及样式
+  a2ui/         下一步建议 A2UI（NextStep）catalog / deck
+  chat/         流式对话、useAIBaseChat、autoContinuePolicy、userChoice
+  registry/     client Function Call、builtin harness Tools、Skill 加载
   hooks/        useSendAIChatMessage（deprecated，请用 sendMockUserMessage）
   utils/        aiChatBridge、formatChatReferences、toolInvokeLogger
   sdk/          AIBaseClient HTTP 封装
   config/       resolveConfig、默认 prompts / welcome
-dist/           构建产物（EADAF_frontend 实际加载此目录）
+dist/           构建产物（宿主运行时加载）
 ```

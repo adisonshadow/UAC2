@@ -45,3 +45,42 @@ export function getSkillCompletionStrategy(
   }
   return skill.completionStrategy;
 }
+
+/** 全局框架 Skill：只提供协议，不参与写操作验收清单 */
+const FRAMEWORK_SKILL_SLUG = 'aibase-chat-framework';
+
+/**
+ * 解析用于 task_complete / 结构化终止的完成策略。
+ *
+ * 不得把多个无关 Skill 的 requiredTools / successCriteria 做并集——
+ * 否则查询页（如 uac-access-control）会被建模/物化/API 等写操作清单误伤，
+ * 出现「task_complete 失败：关键 Tool 未调用：bizdata_validate_model…」。
+ *
+ * 选取规则：
+ * 1. 优先页面 fallbackSkillSlugs 中第一个有策略的 Skill
+ * 2. 否则优先非框架 Skill（排除 aibase-chat-framework）
+ * 3. 否则取第一个有策略的 Skill
+ * 4. 只返回该主 Skill 的策略（不合并 requiredTools / successCriteria）
+ */
+export function resolveTerminationCompletionStrategy(
+  skills: AIBaseSkill[],
+  preferredSlugs?: string[],
+): SkillCompletionStrategy | undefined {
+  if (!skills.length) return undefined;
+
+  const entries = skills
+    .map((skill) => ({ skill, strategy: getSkillCompletionStrategy(skill) }))
+    .filter(
+      (item): item is { skill: AIBaseSkill; strategy: SkillCompletionStrategy } =>
+        Boolean(item.strategy),
+    );
+  if (!entries.length) return undefined;
+
+  const preferred = (preferredSlugs || []).filter(Boolean);
+  const primary =
+    entries.find((item) => preferred.includes(item.skill.slug)) ||
+    entries.find((item) => item.skill.slug !== FRAMEWORK_SKILL_SLUG) ||
+    entries[0];
+
+  return { ...primary.strategy };
+}

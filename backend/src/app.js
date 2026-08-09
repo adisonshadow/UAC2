@@ -104,7 +104,7 @@ app.use(cors());
 
 // 采集 API 须在 bodyParser 之前注册，以保留原始 body
 app.use(collectionIngestRoutes.routes());
-app.use(collectionIngestRoutes.allowedMethods());
+app.use(collectionIngestRoutes.allowedMethods({ throw: true }));
 
 app.use(bodyParser());
 
@@ -161,9 +161,9 @@ app.use(async (ctx, next) => {
   }
 });
 
-// 路由配置
+// 路由配置（throw: true → 405/501 进入 errorHandler，返回 JSON 信封而非纯文本）
 app.use(routes.routes());
-app.use(routes.allowedMethods());
+app.use(routes.allowedMethods({ throw: true }));
 
 // 注册路由
 app.use(healthRoutes.routes());

@@ -1,5 +1,56 @@
 const CODE_SEGMENT_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
 
+/** 主操作 → 服务短名 REST 后缀（首字母大写驼峰） */
+export const API_SERVICE_OPERATION_SUFFIX: Record<string, string> = {
+  find: 'Find',
+  findOne: 'FindOne',
+  findById: 'FindById',
+  create: 'Create',
+  insertOne: 'Create',
+  updateOne: 'Update',
+  updateMany: 'UpdateMany',
+  deleteOne: 'Delete',
+  deleteMany: 'DeleteMany',
+  count: 'Count',
+  aggregate: 'Aggregate',
+};
+
+export function operationToServiceSuffix(operation?: string): string {
+  const op = String(operation || '').trim();
+  if (!op) return 'Api';
+  if (API_SERVICE_OPERATION_SUFFIX[op]) return API_SERVICE_OPERATION_SUFFIX[op];
+  return op.charAt(0).toUpperCase() + op.slice(1);
+}
+
+/** 实体 code 最后一段，如 IPS:analytics:Foo → Foo */
+export function entityCodeLastSegment(entityCode?: string): string {
+  const parts = String(entityCode || '')
+    .split(':')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return parts[parts.length - 1] || '';
+}
+
+/** 实体 code 去掉最后一段作为 Scope，如 IPS:analytics:Foo → IPS:analytics */
+export function scopeCodeFromEntityCode(entityCode?: string): string | undefined {
+  const parts = String(entityCode || '')
+    .split(':')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return parts[0] || undefined;
+  return parts.slice(0, -1).join(':');
+}
+
+/**
+ * 默认服务短名 = 实体最后一段 + REST 动作后缀
+ * 例：entity=IPS:analytics:ActualHoursStats, operation=create → ActualHoursStatsCreate
+ */
+export function suggestServiceSlugFromEntity(entityCode?: string, operation?: string): string {
+  const last = entityCodeLastSegment(entityCode);
+  if (!last || !CODE_SEGMENT_RE.test(last)) return '';
+  return `${last}${operationToServiceSuffix(operation)}`;
+}
+
 /** 与后端 apiServiceDomainUtils.suggestServiceCodeFromEntity 保持一致 */
 export function suggestApiServiceCodeFromEntity(entityCode: string, suffix = 'Api'): string {
   const trimmed = String(entityCode || '').trim();

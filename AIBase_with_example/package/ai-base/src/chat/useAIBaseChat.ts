@@ -3,9 +3,24 @@ import { useXChat } from '@ant-design/x-sdk';
 import { useAIChatLayout } from '../provider/context';
 import { useEffectiveAIChatConfig } from '../provider/AIChatPageScope';
 import { getAllFunctionCalls, getFunctionCallDef, invokeFunctionCall, subscribeFunctionCalls, toOpenAITools } from '../registry/functionRegistry';
-import { buildAutoContinueNudge, shouldAutoContinueAfterTextOnly } from './autoContinuePolicy';
+import {
+  buildAutoContinueNudge,
+  shouldAutoContinueAfterTextOnly,
+  decideStructuredTermination,
+  buildStructuredNudge,
+  reconcilePlan,
+} from './autoContinuePolicy';
 import { buildCombinedSystemPrompt, loadChatSkillContext } from '../registry/skillLoader';
+import { resolveTerminationCompletionStrategy } from '../registry/skillPolicyRegistry';
 import { mergeOpenAITools, toOpenAIToolFromMeta } from '../registry/toolManifest';
+import {
+  ASK_USER_OPENAI_TOOL,
+  HARNESS_OPENAI_TOOLS,
+  TASK_COMPLETE_TOOL,
+  UPDATE_PLAN_TOOL,
+} from '../registry/builtinTools';
+import { isUserChoiceRequestData } from './userChoice';
+import { beginTurn, getPlan, setPlan, recordInvokedTool, recordToolOutcome } from '../registry/agentPlanState';
 import type { AIBaseSkill, AIBaseTool, OpenAIToolDefinition } from '../types';
 import type { ToolResponse } from '../types/toolResponse';
 import { isToolResponse } from '../types/toolResponse';
@@ -17,9 +32,11 @@ import { createEADAFChatProvider, type EADAFChatMessage } from './EADAFChatProvi
 import { streamChatRound } from './streamToolChat';
 import { resolveToolDisplayName } from '../utils/toolDisplayName';
 import { runWithConcurrency } from '../utils/runWithConcurrency';
+import { aggregateToolResults } from '../utils/aggregateToolResults';
 import { sleep } from '../utils/sleep';
 import { serializeToolResultForContext, resolveToolResultBudget } from '../utils/toolResultBudget';
 import { normalizeToolResult } from '../utils/normalizeToolResult';
+import { logToolInvoke } from '../utils/toolInvokeLogger';
 import {
   buildMultimodalUserContent,
   formatUserDisplayWithAttachments,
@@ -74,6 +91,15 @@ const LOADING_PLACEHOLDERS = new Set(['正在思考中...', '正在生成回复.
 
 function isLoadingPlaceholder(text: string): boolean {
   return LOADING_PLACEHOLDERS.has(text);
+}
+
+/** 稳定序列化 Tool 参数为指纹串（用于收敛检测，key 排序保证语义稳定） */
+function stableStringifyArgs(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args, Object.keys(args).sort());
+  } catch {
+    return JSON.stringify(args);
+  }
 }
 
 async function invokeToolByMeta(
@@ -165,13 +191,21 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
   const openaiTools = useMemo(() => {
     const skillTools = allTools.map(toOpenAIToolFromMeta) as OpenAIToolDefinition[];
+    // ask_user 始终注入（mid-task HITL）；update_plan / task_complete 仅在结构化终止开启时注入。
+    // 无视当前激活的 Skill（它们是 Agent 循环的内置机制，非业务能力）。
+    const harnessTools = (
+      config.enableStructuredTermination
+        ? HARNESS_OPENAI_TOOLS
+        : [ASK_USER_OPENAI_TOOL]
+    ) as unknown as OpenAIToolDefinition[];
     // 始终经过 mergeOpenAITools：既保证按 function.name 去重（防御性），
     // 又在开启 exposeAllClientTools 时让本地 client tool 覆盖 DB schema。
+    // harness Tool 放在 localTools 之前，允许同名 local def 覆盖（一般不需要）。
     const localTools = config.exposeAllClientTools
       ? (toOpenAITools(getAllFunctionCalls()) as OpenAIToolDefinition[])
       : [];
-    return mergeOpenAITools(skillTools, localTools);
-  }, [allTools, config.exposeAllClientTools, localToolVersion]);
+    return mergeOpenAITools([...skillTools, ...harnessTools], localTools);
+  }, [allTools, config.exposeAllClientTools, config.enableStructuredTermination, localToolVersion]);
 
   // exposeAllClientTools 逃生舱告警：仅在首次开启时输出一次，提醒不要用于生产。
   const warnedExposeAllRef = useRef(false);
@@ -413,13 +447,114 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         );
       };
 
+      // 结构化终止：本回合 harness 上下文清理句柄。在 try 之前声明，
+      // 保证 finally 能稳定访问（即使 try 体内 beginTurn 前就抛错）。
+      let endTurn: (() => void) | null = null;
+
       try {
+        const structuredTermination = config.enableStructuredTermination;
         let lastRoundHadToolCalls = false;
         let toolsExecutedThisTurn = 0;
         let autoContinueNudges = 0;
         const invokedToolNames = new Set<string>();
         const toolOutcomes: ToolResponse[] = [];
         const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        // 结构化终止：本回合的权威 plan 状态。由 update_plan Tool 维护，
+        // task_complete / 每轮对账 / nudge 读取（经 getPlan() 取最新值）。结构化终止关闭时不用。
+        // 最近一次 task_complete 的返回：verified=true 才允许终止
+        let lastTaskCompleteVerified: boolean | null = null;
+        // 收敛检测：最近若干轮的 (toolName + argsHash) 签名 + 最近若干次错误指纹
+        const recentToolSignatures: string[] = [];
+        const recentErrorFingerprints: string[] = [];
+        const CONVERGENCE_WINDOW = 3;
+        // 当前页主 Skill 的完成策略（禁止跨 Skill 并集 requiredTools，避免查询页被写操作清单误伤）
+        const activeCompletionStrategy = resolveTerminationCompletionStrategy(
+          skills,
+          config.fallbackSkillSlugs,
+        );
+
+        // Planning next moves：结构化执行过程的可视化段（用户可感知的“接下来做什么”）
+        const PLANNING_SEGMENT_ID = 'planning-next-moves-latest';
+        const upsertPlanningSegment = (plan: ReturnType<typeof getPlan>): void => {
+          if (!structuredTermination) return;
+
+          const isQueryTask = Boolean(activeCompletionStrategy?.allowDirectAnswerTermination);
+          const maxItems = isQueryTask ? 1 : 3;
+
+          const inProgress = plan.find((p) => p.status === 'in_progress');
+          const pending = plan.filter((p) => p.status === 'pending');
+          const completed = plan.filter((p) => p.status === 'completed');
+
+          const picked: typeof plan = [];
+          if (inProgress && picked.length < maxItems) picked.push(inProgress);
+          for (const p of pending) {
+            if (picked.length >= maxItems) break;
+            picked.push(p);
+          }
+          if (picked.length === 0 && completed[0]) {
+            picked.push(completed[0]);
+          }
+
+          const items = picked.map((p) => ({
+            id: p.id,
+            label: p.content,
+            status: p.status,
+          }));
+
+          const lead = picked[0];
+          const lastNonHarnessToolOutcome = [...toolOutcomes].reverse().find(
+            (o) => ![UPDATE_PLAN_TOOL, TASK_COMPLETE_TOOL].includes(o.meta.tool),
+          );
+          const shouldShowRetryHint =
+            lastNonHarnessToolOutcome &&
+            (lastNonHarnessToolOutcome.kind !== 'success' ||
+              lastNonHarnessToolOutcome.ok === false ||
+              lastNonHarnessToolOutcome.verified === false);
+
+          assistantSegments = upsertSegment(assistantSegments, {
+            kind: 'planning',
+            id: PLANNING_SEGMENT_ID,
+            title: 'Planning next moves',
+            items,
+            hint: shouldShowRetryHint && lead ? `接下来准备重试：${lead.content}` : undefined,
+          });
+        };
+
+        // 注入本回合上下文给 harness Tool handler（task_complete / update_plan）
+        endTurn = beginTurn({
+          plan: [],
+          toolOutcomes,
+          invokedToolNames,
+          completionStrategy: activeCompletionStrategy,
+          availableToolNames: allowedToolNames,
+        });
+
+        /**
+         * 收敛检测：识别「原地打转」——同一签名连续出现，或同一错误连续重复。
+         * 命中时返回 {kind, detail}，未命中返回 null。
+         */
+        const detectConvergence = ():
+          | { kind: 'repeat-tool' | 'repeat-error'; detail: string }
+          | null => {
+          // 同一签名连续出现 CONVERGENCE_WINDOW 次
+          const sigs = recentToolSignatures;
+          if (sigs.length >= CONVERGENCE_WINDOW) {
+            const tail = sigs.slice(-CONVERGENCE_WINDOW);
+            if (tail.every((s) => s === tail[0])) {
+              return { kind: 'repeat-tool', detail: `连续 ${CONVERGENCE_WINDOW} 次调用 ${tail[0]}` };
+            }
+          }
+          // 同一错误指纹连续出现 CONVERGENCE_WINDOW 次（忽略 __ok__ 哨兵）
+          const errs = recentErrorFingerprints.filter((e) => e !== '__ok__');
+          if (errs.length >= CONVERGENCE_WINDOW) {
+            const tail = errs.slice(-CONVERGENCE_WINDOW);
+            if (tail.every((e) => e === tail[0])) {
+              return { kind: 'repeat-error', detail: `连续 ${CONVERGENCE_WINDOW} 次相同错误 ${tail[0]}` };
+            }
+          }
+          return null;
+        };
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
           currentRoundContent = '';
@@ -482,12 +617,116 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 : accumulatedContent
               : roundText || '（无文本回复）';
 
+            // ── 结构化终止分支：信号反转（默认续命，task_complete verified=true 才停）──
+            if (structuredTermination) {
+              const decision = decideStructuredTermination({
+                lastTaskCompleteVerified,
+                autoContinueNudges,
+                round,
+                finishReason: result.finishReason,
+                latestText: roundText,
+                convergenceDetected: detectConvergence(),
+                plan: getPlan(),
+                completionStrategy: activeCompletionStrategy,
+                toolsExecuted: toolsExecutedThisTurn,
+                toolOutcomes,
+              });
+
+              // 终止原因埋点：terminate / continue / hard-stop 命中路径
+              logToolInvoke({
+                side: 'client',
+                name: `ai_termination_reason:${decision.action}`,
+                args: {
+                  conversationKey,
+                  turnId,
+                  round,
+                  skillSlugs: skills.map((s) => s.slug),
+                  reason: decision.action === 'hard-stop' ? decision.reason : undefined,
+                },
+                success: false, // 复用 tool-invoke 日志落盘链路（失败才持久化）
+                durationMs: 0,
+                error: decision.action === 'hard-stop' ? decision.reason : undefined,
+                conversationKey,
+                turnId,
+                round,
+              });
+
+              if (decision.action === 'terminate') {
+                // task_complete 已通过：正常终止
+                const finalReasoning =
+                  enableThinking && (accumulatedReasoning || roundReasoning)
+                    ? [accumulatedReasoning, roundReasoning].filter(Boolean).join('\n\n')
+                    : undefined;
+                assistantDisplayContent = finalContent;
+                if (roundText) upsertRoundTextSegment(round, roundText);
+                patchAssistantMessage(
+                  {
+                    content: finalContent,
+                    reasoningContent: finalReasoning,
+                    segments: assistantSegments,
+                  },
+                  { status: 'success' },
+                );
+                return finalContent;
+              }
+
+              if (decision.action === 'hard-stop') {
+                // 命中硬停止：终止并附原因
+                const annotated = `${finalContent}\n\n⚠️ ${decision.reason}`;
+                assistantDisplayContent = annotated;
+                if (roundText) upsertRoundTextSegment(round, roundText);
+                patchAssistantMessage(
+                  { content: annotated, segments: assistantSegments },
+                  { status: 'success' },
+                );
+                return annotated;
+              }
+
+              // continue：注入基于剩余 plan 的 nudge，并先做一次 plan 对账
+              autoContinueNudges += 1;
+              const currentPlanSnapshot = getPlan();
+              const reconciled = reconcilePlan(currentPlanSnapshot, toolOutcomes);
+              // 对账结果回写 holder（供 task_complete / 后续 nudge 读取）
+              if (reconciled !== currentPlanSnapshot) {
+                setPlan(reconciled);
+              }
+
+              // 每轮对账后更新 Planning next moves
+              upsertPlanningSegment(getPlan());
+
+              if (finalContent) {
+                accumulatedContent = finalContent;
+                assistantDisplayContent = finalContent;
+                loopMessages.push({ role: 'assistant', content: finalContent });
+              }
+              if (roundText) upsertRoundTextSegment(round, roundText);
+              loopMessages.push({
+                role: 'user',
+                content: buildStructuredNudge(getPlan(), toolOutcomes),
+              });
+              patchAssistantMessage(
+                {
+                  content: finalContent,
+                  reasoningContent:
+                    enableThinking && roundReasoning
+                      ? mergeRoundReasoning(roundReasoning)
+                      : undefined,
+                  segments: assistantSegments,
+                },
+                { status: 'updating' },
+              );
+              continue;
+            }
+
+            // ── 传统 auto-continue 分支（灰度关闭时保持原行为）──
             const autoContinueCtx = {
               skills,
               allowedToolNames,
               invokedToolNames,
               toolsExecuted: toolsExecutedThisTurn,
               text: finalContent,
+              /** 语言模式只看本轮纯文本，避免早期「第N步」毒化收尾汇总 */
+              latestText: roundText,
               toolOutcomes,
             };
 
@@ -586,6 +825,12 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 id: step.id,
                 step,
               });
+
+              // update_plan 成功后展示 Planning next moves（查询/写操作都适用）
+              if (structuredTermination && functionName === UPDATE_PLAN_TOOL && step.status === 'success') {
+                upsertPlanningSegment(getPlan());
+              }
+
               setMessages((ori) =>
                 ori.map((item) => {
                   if (item.id !== assistantId) return item;
@@ -634,6 +879,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
             const startedAt = Date.now();
             invokedToolNames.add(functionName);
+            recordInvokedTool(functionName);
             toolsExecutedThisTurn += 1;
 
             const toolMeta = allTools.find((t) => t.functionName === functionName);
@@ -643,6 +889,10 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               config.maxToolResultChars,
             );
 
+            // 收敛检测：记录本次调用的签名（toolName + 参数指纹）
+            const argsFingerprint = stableStringifyArgs(args).slice(0, 120);
+            recentToolSignatures.push(`${functionName}::${argsFingerprint}`);
+
             try {
               const envelope = await invokeToolByMeta(client, allTools, functionName, args, {
                 conversationKey,
@@ -650,6 +900,24 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 round,
               });
               toolOutcomes.push(envelope);
+              recordToolOutcome(envelope);
+
+              // 结构化终止：跟踪 task_complete 的校验结果
+              if (structuredTermination && functionName === TASK_COMPLETE_TOOL) {
+                lastTaskCompleteVerified = envelope.verified === true;
+              }
+              // 收敛检测：记录错误指纹（成功则推入哨兵，打断「连续相同错误」计数）
+              // user_choice_request 是合法挂起，不当作错误
+              if (
+                envelope.kind === 'user_choice_request' ||
+                (envelope.kind === 'success' && envelope.verified !== false)
+              ) {
+                recentErrorFingerprints.push('__ok__');
+              } else {
+                recentErrorFingerprints.push(
+                  `${functionName}::${envelope.error?.message?.slice(0, 80) ?? envelope.kind}`,
+                );
+              }
 
               const stepOutcome = resolveToolStepFromEnvelope(envelope);
               appendToolStep({
@@ -660,6 +928,26 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 durationMs: Date.now() - startedAt,
                 error: stepOutcome.error,
               });
+
+              // ask_user：写入 Choice Card segment（挂起在工具轮结束后统一 hard-stop）
+              if (
+                envelope.kind === 'user_choice_request' &&
+                isUserChoiceRequestData(envelope.data)
+              ) {
+                const req = envelope.data;
+                assistantSegments = upsertSegment(assistantSegments, {
+                  kind: 'user_choice',
+                  id: `user-choice-${req.requestId}`,
+                  requestId: req.requestId,
+                  question: req.question,
+                  mode: req.mode,
+                  options: req.options,
+                  allowCustom: req.allowCustom,
+                  minSelect: req.minSelect,
+                  ...(req.maxSelect != null ? { maxSelect: req.maxSelect } : {}),
+                });
+              }
+
               return {
                 role: 'tool',
                 content: serializeToolResultForContext(envelope, budget),
@@ -675,6 +963,9 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 durationMs: Date.now() - startedAt,
               });
               toolOutcomes.push(envelope);
+              recordToolOutcome(envelope);
+              recentErrorFingerprints.push(`${functionName}::${errorMessage.slice(0, 80)}`);
+
               appendToolStep({
                 id: stepId,
                 functionName,
@@ -697,7 +988,63 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             TOOLS_CONCURRENCY,
             executeOneToolCall,
           );
-          loopMessages.push(...toolMessages);
+          // 阶段 E：同性质批量结果聚合——把同名 Tool 的批量结果压缩成摘要，
+          // 只压缩回灌 LLM 的上下文（UI 段 assistantSegments 不变，用户仍看到每步）。
+          // 合并所有 Skill 声明的 resultAggregation.tools，按 name 触发。
+          const aggregationTools = new Set<string>();
+          let aggregationMinBatch: number | undefined;
+          for (const s of skills) {
+            const ra = s.completionStrategy?.resultAggregation;
+            if (ra?.tools) for (const t of ra.tools) aggregationTools.add(t);
+            if (ra?.minBatchSize) aggregationMinBatch = ra.minBatchSize;
+          }
+          const aggregated =
+            aggregationTools.size > 0
+              ? aggregateToolResults(toolMessages, {
+                  resultAggregation: {
+                    tools: Array.from(aggregationTools),
+                    ...(aggregationMinBatch ? { minBatchSize: aggregationMinBatch } : {}),
+                  },
+                })
+              : toolMessages;
+          loopMessages.push(...aggregated);
+
+          // ask_user 已登记 Choice Card → hard-stop，等用户提交后再续跑
+          const pendingChoice = toolOutcomes.find(
+            (item) =>
+              item.kind === 'user_choice_request' && isUserChoiceRequestData(item.data),
+          );
+          if (pendingChoice) {
+            logToolInvoke({
+              side: 'client',
+              name: 'ai_termination_reason:hard-stop',
+              args: {
+                conversationKey,
+                turnId,
+                round,
+                skillSlugs: skills.map((s) => s.slug),
+                reason: 'waiting_user_choice',
+              },
+              success: false,
+              durationMs: 0,
+              error: 'waiting_user_choice',
+              conversationKey,
+              turnId,
+              round,
+            });
+            const pausedContent = accumulatedContent || assistantDisplayContent || '';
+            assistantDisplayContent = pausedContent;
+            patchAssistantMessage(
+              {
+                content: pausedContent,
+                reasoningContent:
+                  enableThinking && accumulatedReasoning ? accumulatedReasoning : undefined,
+                segments: assistantSegments,
+              },
+              { status: 'success' },
+            );
+            return pausedContent;
+          }
         }
 
         const roundLimitNote = lastRoundHadToolCalls
@@ -723,6 +1070,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         if (!isAbort) throw error;
         return '';
       } finally {
+        endTurn?.();
         setStreaming(false);
         abortRef.current = null;
       }

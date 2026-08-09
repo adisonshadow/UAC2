@@ -1,4 +1,4 @@
-import { registerFunctionCall, unregisterFunctionCall } from '@EADAF/ai-base';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { history } from '@/utils/navigation';
 import {
@@ -23,13 +23,14 @@ import {
 } from '@/services/UAC/api/exceptionResponses';
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 import { formatApiServiceTestError, extractApiServiceValidationErrors, isApiServiceTestFailure, describeApiServiceTestFailure } from './apiServiceTestError';
-import { normalizeApiServiceCode } from './apiServiceCodeUtils';
+import { normalizeApiServiceCode, scopeCodeFromEntityCode, suggestServiceSlugFromEntity } from './apiServiceCodeUtils';
 import { executeBatchCreateServices, DEFAULT_CRUD_OPERATIONS, type BatchCreateArgs } from './apiServiceBatchCreate';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
 import { resolveApiServiceId } from './apiServiceResolve';
 import { resolveApiServiceNavigateTarget } from './apiServiceWorkflowNavigation';
 import {
   assessRequestParameterInterface,
+  assessFindPaginationResponseDocs,
   verifyApiServiceById,
   verifyApiServiceListed,
   verifyApiServicePublished,
@@ -37,8 +38,10 @@ import {
 import { queryApiServicesForTool } from './apiServiceListQuery';
 import {
   ensureRequestParameterInterface,
+  resolveEntityForRequestInterface,
   shouldAutoSuggestRequestExample,
 } from './buildRequestParameterInterface';
+import { ensureResponseOverridesForOperation } from '../utils/responseOverrides';
 
 const API_SERVICE_DOMAIN = 'bizdata';
 const LIST_SURFACE = 'api-services.list';
@@ -219,14 +222,14 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_resolve_connection',
     description:
-      '自动推断 API 服务应使用的数据库连接：仅一个连接时直接返回；多个连接时根据 Scope/Entity 物化记录选择，禁止向用户索要 connectionId',
+      '自动推断 API 服务应使用的数据库连接与 targetSchema：优先按主实体物化记录；多个连接时选物化匹配最多的连接；禁止向用户索要 connectionId。返回含 targetSchema，写 SQL 时须使用该 schema',
     parameters: {
       type: 'object',
       properties: {
         connectionId: { type: 'string', description: '通常无需传入，仅在用户明确指定时使用' },
-        scopeCode: { type: 'string', description: 'Scope 引用 code，如 equipment' },
-        entityCodes: { type: 'array', items: { type: 'string' }, description: '实体 code 列表' },
-        entityIds: { type: 'array', items: { type: 'string' }, description: '实体 ID 列表' },
+        scopeCode: { type: 'string', description: 'Scope 引用 code，如 equipment；主实体已选时可省略' },
+        entityCodes: { type: 'array', items: { type: 'string' }, description: '实体 code 列表（推荐）' },
+        entityIds: { type: 'array', items: { type: 'string' }, description: '实体 ID 列表（推荐，优先于 Scope）' },
       },
     },
     handler: async (args) => resolveApiServiceConnection({
@@ -240,21 +243,24 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_create_service',
     description:
-      '创建单个 API 服务（draft，一次一个主 operation）。code 可基于 entityCode 自动补全；connectionId 可省略',
+      '创建单个 API 服务（draft，一次一个主 operation）。主实体 entityId 必填；serviceSlug 默认=实体末段+Create/Find 等；connectionId 可省略',
     requiresVerification: true,
     parameters: {
       type: 'object',
       properties: {
-        code: { type: 'string', description: '域:服务名；可省略，优先使用 scopeCode+serviceSlug' },
+        code: { type: 'string', description: '域:服务名；可省略，优先实体前缀+serviceSlug' },
         name: { type: 'string' },
         description: { type: 'string' },
         tags: { type: 'array', items: { type: 'string' } },
-        connectionId: { type: 'string', description: '禁止向用户索要；省略时按 Scope 物化记录自动推断' },
-        scopeCode: { type: 'string', description: 'Scope 编码（单选）' },
-        serviceSlug: { type: 'string', description: '服务短名，与 scopeCode 组合生成 code' },
-        entityCodes: { type: 'array', items: { type: 'string' }, description: '实体 code，用于推断连接' },
+        connectionId: { type: 'string', description: '禁止向用户索要；省略时按主实体物化记录自动推断' },
+        scopeCode: { type: 'string', description: '可由实体 code 前缀自动得到，通常不必传' },
+        serviceSlug: {
+          type: 'string',
+          description: '默认=实体末段+操作后缀（如 ActualHoursStatsCreate）；可改',
+        },
+        entityCodes: { type: 'array', items: { type: 'string' }, description: '实体 code' },
         entityIds: { type: 'array', items: { type: 'string' } },
-        entityId: { type: 'string' },
+        entityId: { type: 'string', description: '主实体 ID（必填）' },
         definitionScript: { type: 'string', description: 'scriptMode=sql' },
         handlerScript: { type: 'string', description: 'scriptMode=typescript' },
         scriptMode: { type: 'string', enum: ['sql', 'typescript'] },
@@ -302,58 +308,93 @@ export function registerApiServiceTools() {
           ? String(args.entityCodes[0] || '').trim() || undefined
           : undefined;
 
-        const serviceCode = args.scopeCode && args.serviceSlug
-          ? `${String(args.scopeCode).trim()}:${String(args.serviceSlug).trim()}`
-          : normalizeApiServiceCode(args.code as string | undefined, {
-              entityCode: primaryEntityCode,
-              scopeCode: args.scopeCode as string | undefined,
-              fallbackName: args.name as string | undefined,
-            });
-
         const enabledOperations = Array.isArray(args.enabledOperations)
           ? (args.enabledOperations as string[]).slice(0, 1)
           : ['find'];
+        const primaryOperation = enabledOperations[0] || 'find';
+
+        const entityIdForIface = args.entityId ? String(args.entityId) : undefined;
+        const entityIdsFromArgs = [
+          ...(entityIdForIface ? [entityIdForIface] : []),
+          ...(Array.isArray(args.entityIds) ? (args.entityIds as string[]) : []),
+        ];
+        if (!entityIdForIface && !primaryEntityCode && !entityIdsFromArgs.length) {
+          throw new Error('主实体必选：请传 entityId 或 entityCodes');
+        }
+
+        let entityCode = primaryEntityCode;
+        if (!entityCode) {
+          const entity = await resolveEntityForRequestInterface({
+            entityId: entityIdForIface || entityIdsFromArgs[0],
+            entityCodes: primaryEntityCode ? [primaryEntityCode] : undefined,
+          });
+          entityCode = entity?.code || undefined;
+        }
+
+        const derivedScope =
+          (args.scopeCode ? String(args.scopeCode).trim() : '')
+          || scopeCodeFromEntityCode(entityCode)
+          || undefined;
+        const derivedSlug =
+          (args.serviceSlug ? String(args.serviceSlug).trim() : '')
+          || suggestServiceSlugFromEntity(entityCode, primaryOperation)
+          || undefined;
+
+        const serviceCode = derivedScope && derivedSlug
+          ? `${derivedScope}:${derivedSlug}`
+          : normalizeApiServiceCode(args.code as string | undefined, {
+              entityCode,
+              scopeCode: derivedScope,
+              fallbackName: args.name as string | undefined,
+            });
 
         const resolved = await resolveApiServiceConnection({
           connectionId: args.connectionId as string | undefined,
-          scopeCode: args.scopeCode as string | undefined,
-          entityCodes: Array.isArray(args.entityCodes) ? (args.entityCodes as string[]) : undefined,
-          entityIds: (() => {
-            const ids = [
-              ...(args.entityId ? [String(args.entityId)] : []),
-              ...(Array.isArray(args.entityIds) ? (args.entityIds as string[]) : []),
-            ];
-            return ids.length ? ids : undefined;
-          })(),
+          scopeCode: derivedScope,
+          entityCodes: entityCode
+            ? [entityCode]
+            : Array.isArray(args.entityCodes) ? (args.entityCodes as string[]) : undefined,
+          entityIds: entityIdsFromArgs.length ? entityIdsFromArgs : undefined,
         });
 
         const accessRestriction = args.accessRestriction as API.ApiServiceAccessRestriction | undefined;
         const scriptMode = args.scriptMode === 'typescript' ? 'typescript' : 'sql';
 
-        const entityIdForIface = args.entityId ? String(args.entityId) : undefined;
         const entityCodesForIface = Array.isArray(args.entityCodes)
           ? (args.entityCodes as string[])
-          : primaryEntityCode
-            ? [primaryEntityCode]
+          : entityCode
+            ? [entityCode]
             : undefined;
         const { interfaceText, autoGenerated } = await ensureRequestParameterInterface({
           requestParameterInterface: args.requestParameterInterface
             ? String(args.requestParameterInterface)
             : undefined,
-          operation: enabledOperations[0] || 'find',
-          entityId: entityIdForIface,
+          operation: primaryOperation,
+          entityId: entityIdForIface || entityIdsFromArgs[0],
           entityCodes: entityCodesForIface,
         });
 
+        const { overrides: ensuredResponseOverrides, autoGenerated: responseOverridesAutoGenerated } =
+          ensureResponseOverridesForOperation({
+            operation: primaryOperation,
+            entityCode,
+            requestParameterInterface: interfaceText,
+            responseOverrides: args.responseOverrides as Record<
+              string,
+              { responsesSchema?: Record<string, unknown>; responseExample?: unknown }
+            > | undefined,
+          });
+
         const createRes = await postApiService({
-          scopeCode: args.scopeCode ? String(args.scopeCode) : undefined,
-          serviceSlug: args.serviceSlug ? String(args.serviceSlug) : undefined,
-          code: args.scopeCode && args.serviceSlug ? undefined : serviceCode,
+          scopeCode: derivedScope,
+          serviceSlug: derivedSlug,
+          code: derivedScope && derivedSlug ? undefined : serviceCode,
           name: args.name ? String(args.name) : undefined,
           description: args.description ? String(args.description) : undefined,
           tags: Array.isArray(args.tags) ? (args.tags as string[]) : undefined,
           connectionId: resolved.connectionId,
-          entityId: args.entityId ? String(args.entityId) : undefined,
+          entityId: entityIdForIface || entityIdsFromArgs[0],
+          targetSchema: resolved.targetSchema,
           scriptMode,
           definitionScript:
             scriptMode === 'sql' && args.definitionScript ? String(args.definitionScript) : undefined,
@@ -365,13 +406,12 @@ export function registerApiServiceTools() {
           transportProtocols: Array.isArray(args.transportProtocols)
             ? (args.transportProtocols as string[])
             : undefined,
-          responseOverrides: args.responseOverrides as API.ApiServiceCreateInput['responseOverrides'],
+          responseOverrides: ensuredResponseOverrides as API.ApiServiceCreateInput['responseOverrides'],
           requestOverrides: args.requestOverrides as API.ApiServiceCreateInput['requestOverrides'],
         });
         const created = getApiData<API.ApiService>(createRes);
         if (!created?.id) throw new Error('创建 API 服务失败');
 
-        const primaryOperation = enabledOperations[0];
         if (primaryOperation && shouldAutoSuggestRequestExample(args.requestOverrides)) {
           try {
             const suggestRes = await postApiServiceSuggestTestParams(created.id, {
@@ -397,12 +437,15 @@ export function registerApiServiceTools() {
           _resolvedConnection: resolved,
           _enabledOperations: enabledOperations,
           _requestInterfaceAutoGenerated: autoGenerated,
+          _responseOverridesAutoGenerated: responseOverridesAutoGenerated,
         };
 
         const hasEntityRef = Boolean(entityIdForIface || entityCodesForIface?.length);
+        const requireFindPagination = primaryOperation === 'find';
         const verifyOpts = {
           expectedCode: undefined as string | undefined,
           requireRequestParameterInterface: hasEntityRef,
+          requireFindPaginationDocs: requireFindPagination,
         };
 
         if (args.publish === true) {
@@ -413,23 +456,33 @@ export function registerApiServiceTools() {
             expectedCode: serviceCode,
             expectedStatus: 'published',
             requireRequestParameterInterface: hasEntityRef,
+            requireFindPaginationDocs: requireFindPagination,
           });
           const listed = await verifyApiServiceListed(verified.code, { expectedStatus: 'published' });
           const docs = assessRequestParameterInterface(published);
-          const allVerified = verified.verified && listed.verified && docs.requestDocsComplete;
+          const paginationDocs = assessFindPaginationResponseDocs(published, primaryOperation);
+          const allVerified =
+            verified.verified
+            && listed.verified
+            && docs.requestDocsComplete
+            && paginationDocs.hasPaginationDocs;
           return {
             ...published,
             _resolvedConnection: resolved,
             _requestInterfaceAutoGenerated: autoGenerated,
+            _responseOverridesAutoGenerated: responseOverridesAutoGenerated,
             _verification: {
               ...verified,
               listedInApiList: listed.verified,
               hasRequestParameterInterface: docs.hasRequestParameterInterface,
               requestDocsComplete: docs.requestDocsComplete,
+              hasPaginationDocs: paginationDocs.hasPaginationDocs,
               verified: allVerified,
               message: allVerified
                 ? verified.message
-                : [listed.message, verified.message, docs.message].filter(Boolean).join('；'),
+                : [listed.message, verified.message, docs.message, paginationDocs.message]
+                    .filter(Boolean)
+                    .join('；'),
             },
           };
         }
@@ -446,8 +499,21 @@ export function registerApiServiceTools() {
             ? undefined
             : 'requestParameterInterface 为空；编辑页「请求参数结构」将显示为空',
         };
+        const paginationDocs = assessFindPaginationResponseDocs(
+          {
+            ...created,
+            securityConfig: {
+              ...(created.securityConfig || {}),
+              responseOverrides: ensuredResponseOverrides,
+            },
+          },
+          primaryOperation,
+        );
         const allVerified =
-          verified.verified && listed.verified && (!hasEntityRef || Boolean(docs.requestDocsComplete));
+          verified.verified
+          && listed.verified
+          && (!hasEntityRef || Boolean(docs.requestDocsComplete))
+          && (!requireFindPagination || paginationDocs.hasPaginationDocs);
         return {
           ...result,
           code: verified.code,
@@ -457,15 +523,19 @@ export function registerApiServiceTools() {
             listedInApiList: listed.verified,
             hasRequestParameterInterface: docs.hasRequestParameterInterface,
             requestDocsComplete: Boolean(docs.requestDocsComplete),
+            hasPaginationDocs: paginationDocs.hasPaginationDocs,
             verified: allVerified,
             message: allVerified
               ? `已创建 draft 服务「${verified.code}」（未发布；发布须 apiservice_publish_service）${
-                  autoGenerated ? '；已自动生成 requestParameterInterface' : ''
+                  autoGenerated || responseOverridesAutoGenerated
+                    ? '；已自动补全请求/响应文档'
+                    : ''
                 }`
               : [
-                  `已创建 draft「${verified.code}」但请求文档不完整`,
+                  `已创建 draft「${verified.code}」但文档不完整`,
                   docs.message,
-                  '请用 apiservice_update_service 补全 requestParameterInterface（优先传 serviceId 或返回的 code）',
+                  paginationDocs.message,
+                  '请用 apiservice_update_service 补全 requestParameterInterface / responseOverrides（含 pagination）',
                 ]
                   .filter(Boolean)
                   .join('；'),
@@ -613,6 +683,8 @@ export function registerApiServiceTools() {
       buildResourceId: (_args, data) => (data as API.ApiService)?.id,
       handler: async (args) => {
         const serviceId = await resolveApiServiceId(args as Record<string, unknown>);
+        const beforeRes = await getApiService(serviceId);
+        const before = getApiData<API.ApiService>(beforeRes);
         const body: Partial<API.ApiServiceCreateInput> = {};
         if (args.name !== undefined) body.name = String(args.name);
         if (args.description !== undefined) body.description = String(args.description);
@@ -644,9 +716,34 @@ export function registerApiServiceTools() {
         if (args.transportProtocols !== undefined) {
           body.transportProtocols = args.transportProtocols as string[];
         }
-        if (args.responseOverrides !== undefined) {
-          body.responseOverrides = args.responseOverrides as API.ApiServiceCreateInput['responseOverrides'];
+
+        const primaryOp = String(
+          (Array.isArray(args.enabledOperations) ? (args.enabledOperations as string[])[0] : undefined)
+            || before?.enabledOperations?.[0]
+            || '',
+        ).trim();
+        const existingOverrides = (before?.securityConfig as Record<string, unknown> | undefined)
+          ?.responseOverrides as Record<
+            string,
+            { responsesSchema?: Record<string, unknown>; responseExample?: unknown }
+          > | undefined;
+        const shouldEnsureResponse =
+          args.responseOverrides !== undefined
+          || primaryOp === 'find';
+        if (shouldEnsureResponse) {
+          const { overrides } = ensureResponseOverridesForOperation({
+            operation: primaryOp || 'find',
+            entityCode: before?.entityCode,
+            requestParameterInterface:
+              body.requestParameterInterface
+              || before?.requestParameterInterface
+              || undefined,
+            responseOverrides: (args.responseOverrides as typeof existingOverrides)
+              || existingOverrides,
+          });
+          body.responseOverrides = overrides as API.ApiServiceCreateInput['responseOverrides'];
         }
+
         if (args.requestOverrides !== undefined) {
           body.requestOverrides = args.requestOverrides as API.ApiServiceCreateInput['requestOverrides'];
         }
@@ -655,20 +752,25 @@ export function registerApiServiceTools() {
         if (!data) throw new Error('更新 API 服务失败');
 
         const docs = assessRequestParameterInterface(data);
+        const paginationDocs = assessFindPaginationResponseDocs(data, data.enabledOperations?.[0]);
         const touchedIface = args.requestParameterInterface !== undefined;
+        const requirePagination = (data.enabledOperations?.[0] || primaryOp) === 'find';
+        const verifiedOk =
+          (!touchedIface || docs.requestDocsComplete)
+          && (!requirePagination || paginationDocs.hasPaginationDocs);
         return {
           ...data,
           _verification: {
-            verified: !touchedIface || docs.requestDocsComplete,
+            verified: verifiedOk,
             id: data.id,
             code: data.code,
             hasRequestParameterInterface: docs.hasRequestParameterInterface,
             requestDocsComplete: docs.requestDocsComplete,
-            message: touchedIface
-              ? docs.requestDocsComplete
-                ? `已更新并确认 requestParameterInterface 非空（${data.code}）`
-                : `更新成功但 requestParameterInterface 仍为空：${docs.message}`
-              : `已更新服务「${data.code}」`,
+            hasPaginationDocs: paginationDocs.hasPaginationDocs,
+            message: verifiedOk
+              ? `已更新服务「${data.code}」`
+              : [docs.message, paginationDocs.message].filter(Boolean).join('；')
+                || `已更新服务「${data.code}」但文档不完整`,
           },
         };
       },

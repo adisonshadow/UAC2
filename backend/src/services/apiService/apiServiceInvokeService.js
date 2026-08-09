@@ -1,9 +1,12 @@
 const { PassThrough } = require('stream');
-const apiServiceService = require('./apiServiceService');
 const apiServiceExecutionService = require('./apiServiceExecutionService');
 const { assertTransportAllowed } = require('./apiServiceTransport');
 const { isReadOperation } = require('./operationParameterSchemas');
 const { assertAccessAllowed } = require('./apiServicePermissionService');
+const {
+  resolvePublishedInvokeTarget,
+  resolveOperationByHttpMethod,
+} = require('./apiServiceRouteResolve');
 const logger = require('../../utils/logger');
 
 let _triggerByApiService = null;
@@ -39,44 +42,43 @@ function gatherInvokeParameters(ctx) {
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const { operation: _op, ...rest } = body;
     if (rest.parameters && typeof rest.parameters === 'object') {
-      return rest.parameters;
+      return { ...query, ...rest.parameters };
     }
     return { ...query, ...rest };
   }
   return query;
 }
 
-function resolveOperation(ctx, service) {
+function resolveExplicitOperation(ctx) {
   const fromQuery = ctx.query?.operation;
   const fromBody = ctx.request.body?.operation;
-  const operation = String(fromQuery || fromBody || '').trim();
-  if (operation) return operation;
-  const enabled = service.enabledOperations || [];
-  return enabled[0] || null;
+  return String(fromQuery || fromBody || '').trim() || null;
 }
 
 async function resolvePublishedService(routePath) {
-  const service = await apiServiceService.getServiceByRoutePath(routePath, {
-    includeOperations: true,
-    includePermissions: true,
-  });
-  if (!service) {
-    throw Object.assign(new Error('API 服务不存在'), { status: 404 });
-  }
-  if (service.status !== 'published') {
-    throw Object.assign(new Error('API 服务未发布'), { status: 403 });
-  }
+  const { service } = await resolvePublishedInvokeTarget(routePath, 'GET');
   return service;
 }
 
 async function invokePublished(routePath, ctx, transport) {
-  const service = await resolvePublishedService(routePath);
+  const target = await resolvePublishedInvokeTarget(routePath, ctx.method);
+  const { service, pathParams, operationHint } = target;
   assertTransportAllowed(service, transport);
-  const operation = resolveOperation(ctx, service);
+
+  const operation = resolveOperationByHttpMethod(
+    service,
+    ctx.method,
+    operationHint || resolveExplicitOperation(ctx),
+  );
   if (!operation) {
     throw Object.assign(new Error('须指定 operation 参数'), { status: 400 });
   }
-  const parameters = gatherInvokeParameters(ctx);
+
+  // path 参数优先于 query/body（REST :id）；仍支持 POST body 传 id 的兼容写法
+  const parameters = {
+    ...gatherInvokeParameters(ctx),
+    ...pathParams,
+  };
   const authContext = buildAuthContext(ctx);
   assertAccessAllowed(service, authContext, { bypass: false });
 
@@ -87,7 +89,6 @@ async function invokePublished(routePath, ctx, transport) {
     authContext,
   });
 
-  // 业务 API 成功后，同步触发绑定的外部 API 提交（仅 HTTP 传输，不影响主流程）
   if (transport === 'http' && result) {
     try {
       const triggerFn = getTriggerFn();
@@ -99,13 +100,19 @@ async function invokePublished(routePath, ctx, transport) {
     }
   }
 
-  return result;
+  return result?.preview ?? null;
 }
 
 async function streamPublishedSse(routePath, ctx) {
-  const service = await resolvePublishedService(routePath);
+  const target = await resolvePublishedInvokeTarget(routePath, ctx.method);
+  const { service, pathParams, operationHint } = target;
   assertTransportAllowed(service, 'sse');
-  const operation = resolveOperation(ctx, service);
+
+  const operation = resolveOperationByHttpMethod(
+    service,
+    ctx.method,
+    operationHint || resolveExplicitOperation(ctx),
+  );
   if (!operation) {
     throw Object.assign(new Error('须指定 operation 参数'), { status: 400 });
   }
@@ -113,7 +120,10 @@ async function streamPublishedSse(routePath, ctx) {
     throw Object.assign(new Error('SSE 仅支持读类 operation'), { status: 400 });
   }
 
-  const parameters = gatherInvokeParameters(ctx);
+  const parameters = {
+    ...gatherInvokeParameters(ctx),
+    ...pathParams,
+  };
   const authContext = buildAuthContext(ctx);
   assertAccessAllowed(service, authContext, { bypass: false });
 
@@ -154,7 +164,14 @@ async function streamPublishedSse(routePath, ctx) {
       preview.items.forEach((item, index) => {
         writeEvent('item', { index, item });
       });
-      writeEvent('done', { total: preview.items.length, count: preview.count });
+      writeEvent('done', {
+        total: preview.pagination?.total ?? preview.items.length,
+        page: preview.pagination?.page,
+        pageSize: preview.pagination?.pageSize,
+        totalPages: preview.pagination?.totalPages,
+        hasNext: preview.pagination?.hasNext,
+        count: preview.items.length,
+      });
     } else {
       writeEvent('result', preview ?? null);
       writeEvent('done', { total: 1 });

@@ -146,19 +146,31 @@ export function buildOperationResponsePreview(
       dataSchema = {
         type: 'object',
         properties: {
-          total: { type: 'integer', example: 100 },
-          page: { type: 'integer', example: 1 },
-          size: { type: 'integer', example: 10 },
           items: { type: 'array', items: entityCode ? entityRef : { type: 'object' } },
+          pagination: {
+            type: 'object',
+            properties: {
+              total: { type: 'integer', example: 100 },
+              page: { type: 'integer', example: 1 },
+              pageSize: { type: 'integer', example: 10 },
+              totalPages: { type: 'integer', example: 10 },
+              hasNext: { type: 'boolean', example: true },
+            },
+            required: ['total', 'page', 'pageSize', 'totalPages', 'hasNext'],
+          },
         },
-        required: ['total', 'page', 'size', 'items'],
+        required: ['items', 'pagination'],
       };
-      responseInterface = `interface Response {\n  code: number;\n  message: string;\n  data: {\n    total: number;\n    page: number;\n    size: number;\n    items: ${item}[];\n  };\n}`;
+      responseInterface = `interface Response {\n  code: number;\n  message: string;\n  data: {\n    items: ${item}[];\n    pagination: {\n      total: number;\n      page: number;\n      pageSize: number;\n      totalPages: number;\n      hasNext: boolean;\n    };\n  };\n}`;
       responseExample = envelopeExample({
-        total: 1,
-        page: 1,
-        size: 10,
         items: [sampleItem],
+        pagination: {
+          total: 1,
+          page: 1,
+          pageSize: 10,
+          totalPages: 1,
+          hasNext: false,
+        },
       });
       break;
     case 'count':

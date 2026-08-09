@@ -17,7 +17,7 @@ export async function getAuthCaptcha(options?: { [key: string]: any }) {
 /** 检查用户登录状态 [需要认证] 检查当前用户的登录状态，支持两种使用方式：
 
 1. **标准模式**：不传任何参数，使用默认JWT密钥验证token
-2. **SSO模式**：通过query参数app传递应用ID，使用对应应用的salt验证token
+2. **SSO模式**：通过query参数app传递应用ID，使用应用统一密钥（client_secret / app_secret，兼容旧 salt）验证token
 
 **使用场景**：
 - 前端应用验证用户登录状态
@@ -82,7 +82,7 @@ export async function postAuthLogin(
     dev?: boolean;
     /** 应用ID，用于SSO登录模式
 - 如果提供且应用启用了SSO，将返回该应用的SSO配置信息
-- 系统将使用应用的SSO salt作为JWT签名密钥
+- 系统将使用应用统一密钥（client_secret / app_secret，兼容旧 salt）作为JWT签名密钥
  */
     application_id?: string;
     /** 验证码数据，用于普通登录模式的验证码验证步骤

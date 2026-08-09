@@ -691,6 +691,23 @@ declare namespace API {
     relations?: BusinessDataRelation[];
   };
 
+  type BusinessDataScopeDocSummary = {
+    code: string;
+    hasContent?: boolean;
+    updatedAt?: string | null;
+  };
+
+  type BusinessDataScopeDoc = {
+    code: string;
+    contentMarkdown?: string;
+    hasContent?: boolean;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+    deleted?: boolean;
+    /** includeAncestors=1 时返回的祖先有内容文档 */
+    ancestors?: BusinessDataScopeDoc[];
+  };
+
   type EntityDeletionReferencingRelation = {
     relationId?: string;
     relationType?: string;
@@ -1330,6 +1347,7 @@ declare namespace API {
     tags?: string[];
     connectionId?: string;
     entityId?: string;
+    targetSchema?: string;
     definitionScript?: string;
     handlerScript?: string;
     scriptMode?: 'sql' | 'typescript';

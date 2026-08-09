@@ -38,7 +38,6 @@ const router = new Router();
  *       required:
  *         - protocol
  *         - redirect_uri
- *         - salt
  *       properties:
  *         protocol:
  *           type: string
@@ -48,15 +47,15 @@ const router = new Router();
  *         redirect_uri:
  *           type: string
  *           format: uri
- *           description: SSO回调地址
+ *           description: SSO回调地址（应为业务 BFF，勿填纯前端页）
  *           example: "https://hrms.example.com/auth/callback"
  *         salt:
  *           type: string
- *           description: SSO签名盐值，用于JWT签名
- *           example: "sso-salt-123"
+ *           description: 旧版SSO签名盐（仅兼容历史数据；新接入使用密钥管理生成的统一密钥）
+ *           example: "legacy-sso-salt"
  *         secret:
  *           type: string
- *           description: 基于currenttime、salt，使用 bcrypt 生成的Hash值
+ *           description: 基于 currentTimestamp 与应用统一密钥，使用 bcrypt 生成的Hash值（回调校验用）
  *           example: "$2a$10$xxxxx"
  *         currentTimestamp:
  *           type: integer
@@ -82,7 +81,7 @@ const router = new Router();
  *           example: "your-client-id"
  *         client_secret:
  *           type: string
- *           description: OIDC客户端密钥
+ *           description: 应用统一密钥（与 api_connect_config.app_secret 同步，用于SSO JWT签名）
  *           example: "your-client-secret"
  *         issuer:
  *           type: string
@@ -105,16 +104,14 @@ const router = new Router();
  *           }
  *     APIConnectConfig:
  *       type: object
- *       required:
- *         - salt
  *       properties:
  *         app_secret:
  *           type: string
- *           description: 应用API私钥（由服务端根据 application_id 和 salt 生成）
- *           example: "wLTAwMDAtMDAwMDAwMDAwMDAxIiwidXNlcm5hbWUiOiJhZG1pbiIsImlhdCI6MTc0OTE4MTAyMCwiZXhwIjoxNzQ5MjY3NDIwfQ.VOfXDBi5DeWGTsAMzRmBNfP4AikJhT6WevpupizBrm4"
+ *           description: 应用统一密钥（密钥管理生成；用于换取应用Token，并作为SSO JWT签名密钥）
+ *           example: "a1b2c3d4e5f6..."
  *         salt:
  *           type: string
- *           description: 签名盐值
+ *           description: 历史字段（可选，已不再作为签发依据）
  *           example: "random-salt-456"
  *     APIDataScope:
  *       type: object

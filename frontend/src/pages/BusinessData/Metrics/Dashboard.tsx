@@ -6,7 +6,7 @@ import type { MenuProps } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAIChatPrompts, useAISurface } from '@EADAF/ai-base';
+import { useAIChatPrompts, useAISurface } from '@eadaf/ai-base';
 import { buildMetricDashboardPrompts } from '@/ai/pageChatPrompts';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import {

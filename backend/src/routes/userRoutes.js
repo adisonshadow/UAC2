@@ -385,10 +385,10 @@ router.post('/', authWithBuiltinApiGuard, UserController.create);
  *         name: size
  *         schema:
  *           type: integer
- *           default: 10
+ *           default: 30
  *           minimum: 1
- *           maximum: 100
- *         description: 每页数量
+ *           maximum: 500
+ *         description: 每页数量（1–500；size≤0 或 -1 会按 500 处理，避免 Sequelize limit 异常）
  *       - in: query
  *         name: username
  *         schema:

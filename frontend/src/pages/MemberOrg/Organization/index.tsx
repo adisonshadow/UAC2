@@ -13,7 +13,7 @@ import { useSetState } from "ahooks";
 import { Button } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildDepartmentPrompts } from '@/ai/pageChatPrompts';
 import { tableColumns } from "./Schemas";
 import { getDepartmentsTree, deleteDepartmentsDepartmentId } from "@/services/UAC/api/departments";

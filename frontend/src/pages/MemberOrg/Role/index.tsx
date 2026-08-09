@@ -9,7 +9,7 @@ import { Button, Space, Modal, Drawer, Spin, Typography } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from "@ant-design/icons";
 import React, { useRef, useState, useEffect, useMemo } from "react";
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildRolePrompts } from '@/ai/pageChatPrompts';
 import { 
   getRoles, 

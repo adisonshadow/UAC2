@@ -1,4 +1,4 @@
-import type { AIMutation } from '@EADAF/ai-base';
+import type { AIMutation } from '@eadaf/ai-base';
 
 /** ModelDesigner 增量应用 bizdata mutation */
 export function applyBizdataModelMutation(

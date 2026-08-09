@@ -8,26 +8,18 @@ import {
   getApiErrorMessage,
   isApiSuccess,
 } from '@/utils/apiResponse';
-import { normalizeApiServiceCode, suggestApiServiceCodeFromEntity } from './apiServiceCodeUtils';
+import {
+  API_SERVICE_OPERATION_SUFFIX,
+  normalizeApiServiceCode,
+  suggestApiServiceCodeFromEntity,
+} from './apiServiceCodeUtils';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
 import { verifyApiServiceListed, verifyApiServicePublished } from './apiServiceVerify';
 import { buildRequestParameterInterface } from './buildRequestParameterInterface';
 
 export const DEFAULT_CRUD_OPERATIONS = ['find', 'create', 'updateOne', 'deleteOne'] as const;
 
-const OPERATION_SUFFIX: Record<string, string> = {
-  find: 'Find',
-  findOne: 'FindOne',
-  findById: 'FindById',
-  create: 'Create',
-  insertOne: 'Create',
-  updateOne: 'Update',
-  updateMany: 'UpdateMany',
-  deleteOne: 'Delete',
-  deleteMany: 'DeleteMany',
-  count: 'Count',
-  aggregate: 'Aggregate',
-};
+const OPERATION_SUFFIX: Record<string, string> = API_SERVICE_OPERATION_SUFFIX;
 
 const OPERATION_LABEL: Record<string, string> = {
   find: '列表查询',
@@ -162,7 +154,7 @@ function buildDefaultSql(
   const qualified = `"${targetSchema}"."${tableName}"`;
   switch (operation) {
     case 'find':
-      return `SELECT *\nFROM ${qualified}\nWHERE 1 = 1\n-- 过滤条件示例: AND status = :status\nORDER BY id DESC\nLIMIT :limit OFFSET :skip`;
+      return `SELECT *\nFROM ${qualified}\nWHERE 1 = 1\n-- 业务字段等值过滤由网关 filter / 顶层参数自动施加（勿在注释中写 :param）\nORDER BY id DESC\n-- 分页由网关施加 limit/skip，勿在 SQL 内写 LIMIT/OFFSET`;
     case 'findOne':
     case 'findById':
       return `SELECT *\nFROM ${qualified}\nWHERE id = :id\nLIMIT 1`;
@@ -170,7 +162,7 @@ function buildDefaultSql(
     case 'insertOne':
       return `-- create 操作：Gateway 将基于请求体生成 INSERT\n-- 以下为结构参考\nSELECT *\nFROM ${qualified}\nWHERE 1 = 0`;
     case 'updateOne':
-      return `UPDATE ${qualified}\nSET updated_at = NOW()\n--  SET field = :field\nWHERE id = :id\nRETURNING *`;
+      return `UPDATE ${qualified}\nSET updated_at = NOW()\n--  SET col = value（写操作字段来自 body/set，勿在注释中写 :param）\nWHERE id = :id\nRETURNING *`;
     case 'deleteOne':
       return `DELETE FROM ${qualified}\nWHERE id = :id\nRETURNING id`;
     case 'count':
@@ -182,13 +174,23 @@ function buildDefaultSql(
   }
 }
 
+function requireTargetSchema(targetSchema: string | undefined, context: string): string {
+  const schema = targetSchema?.trim();
+  if (!schema) {
+    throw new Error(
+      `${context}：无法从实体物化记录得到 targetSchema，禁止回落到系统默认 bizdata_mat。请先完成物化或调用 apiservice_resolve_connection。`,
+    );
+  }
+  return schema;
+}
+
 export function buildCrudServiceDrafts(
   entity: API.BusinessDataEntity,
   operations: string[],
   options?: { namePrefix?: string; targetSchema?: string },
 ): BatchServiceDraft[] {
   const tableName = entity.tableName || entity.code?.split(':').pop() || 'Entity';
-  const targetSchema = options?.targetSchema || 'bizdata_mat';
+  const targetSchema = requireTargetSchema(options?.targetSchema, `实体 ${entity.code || entity.id}`);
   const label = options?.namePrefix || entity.label || entity.code || 'API';
 
   return operations.map((operation) => {
@@ -223,7 +225,10 @@ export function normalizeBatchDrafts(
         scopeCode: args.scopeCode,
         fallbackName: item.name,
       });
-      const schema = targetSchema || 'bizdata_mat';
+      const schema = requireTargetSchema(
+        targetSchema,
+        `批量创建 ${code || operation}`,
+      );
       const tableName = entity?.tableName || entity?.code?.split(':').pop() || 'Entity';
       return {
         code,
@@ -271,7 +276,11 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
     ],
   });
 
-  const drafts = normalizeBatchDrafts(args, entities, resolved.targetSchema);
+  const targetSchema = requireTargetSchema(
+    resolved.targetSchema,
+    `连接推断（${resolved.reason}）`,
+  );
+  const drafts = normalizeBatchDrafts(args, entities, targetSchema);
   const created: API.ApiService[] = [];
   const skipped: BatchCreateResult['skipped'] = [];
   const failed: BatchCreateResult['failed'] = [];
@@ -291,6 +300,7 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
         tags: args.tags,
         connectionId: resolved.connectionId,
         entityId: draft.entityId,
+        targetSchema,
         definitionScript: draft.definitionScript,
         enabledOperations: draft.enabledOperations,
         requestParameterInterface: requestParameterInterface || undefined,
@@ -395,7 +405,7 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
     publishFailed,
     connectionId: resolved.connectionId,
     connectionName: resolved.connectionName,
-    targetSchema: resolved.targetSchema,
+    targetSchema,
     total: drafts.length,
     successCount: created.length,
     skippedCount: skipped.length,

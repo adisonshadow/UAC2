@@ -30,12 +30,14 @@ import {
   getModelAttachmentAccept,
   isFileAllowedForModel,
   supportsModelAttachments,
+  supportsModelVoiceInput,
 } from '../utils/modelAttachmentConfig';
 import type { AssistantSegment } from '../chat/chatToolSteps';
 import AssistantBubbleContent from './AssistantBubbleContent';
 import { scrollBubbleListToBottom } from './bubbleListScroll';
 import './AIChatPanel.css';
 import '../a2ui/NextStepA2uiDeck.css';
+import './UserChoiceCard.css';
 
 const DEFAULT_CONVERSATIONS: ConversationItemType[] = [
   { key: 'default', label: '新会话', group: '今天' },
@@ -133,6 +135,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
   );
   const attachmentEnabled = supportsModelAttachments(selectedModel?.inputTags);
   const attachmentAccept = getModelAttachmentAccept(selectedModel?.inputTags);
+  const voiceInputEnabled = supportsModelVoiceInput(selectedModel?.capabilities);
 
   useEffect(() => {
     modelsLoadDoneRef.current = false;
@@ -494,6 +497,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
             onSubmit={handleSubmit}
             onCancel={abort}
             placeholder="输入消息，Enter 发送"
+            allowSpeech={voiceInputEnabled}
             header={
               attachmentEnabled ? (
                 <Sender.Header open={attachments.length > 0} forceRender>

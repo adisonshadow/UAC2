@@ -1,0 +1,11 @@
+-- 占位说明（本文件不再承载业务种子）
+--
+-- AI Skill/Tool 权威数据已收敛到：
+--   aibase-ai-seed.sql   （scopes / tools / skills / 关联 / 顶层 Skill）
+--   aibase-seed.sql      （providers / models 示例）
+--
+-- 刷新权威种子：
+--   cd backend && node scripts/export-aibase-ai-seed.js > scripts/aibase-ai-seed.sql
+--
+-- 历史 AI 内容增量脚本见：
+--   archive/ai-content-seeds/

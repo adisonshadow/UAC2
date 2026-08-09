@@ -7,7 +7,7 @@ const {
   discoverHandlerParams,
   guessParamJsonSchema,
 } = require('./handlerParamDiscovery');
-
+const { stripSqlComments } = require('./sqlTextUtils');
 const SAMPLE_UUID = '00000000-0000-4000-8000-000000000001';
 const FILE_FIELD_MARKERS = /@file|@storage|objectId|storage|文件引用|文件字段|StorageObjectId|FileReference/i;
 const ADB_ENUM_TAG_RE = /@adb-enum\s+([A-Za-z_][A-Za-z0-9_:]*)/i;
@@ -68,13 +68,40 @@ function parseAdbEnumTypeAliases(interfaceText) {
   return map;
 }
 
-function extractInterfaceBody(text) {
-  const matches = [...String(text || '').matchAll(/\binterface\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\{([\s\S]*?)\}/g)];
-  if (matches.length) {
-    return matches[matches.length - 1][1] || '';
+/** 从 `startIdx`（指向 `{`）起做括号配对，返回闭合 `}` 下标；失败返回 -1 */
+function findMatchingBrace(text, startIdx) {
+  if (startIdx < 0 || startIdx >= text.length || text[startIdx] !== '{') return -1;
+  let depth = 0;
+  for (let i = startIdx; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
   }
-  const brace = String(text || '').match(/\{([\s\S]*)\}/);
-  return brace ? brace[1] : text;
+  return -1;
+}
+
+function extractInterfaceBody(text) {
+  const source = String(text || '');
+  const re = /\binterface\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\{/g;
+  let match;
+  let lastOpen = -1;
+  while ((match = re.exec(source)) !== null) {
+    lastOpen = match.index + match[0].length - 1;
+  }
+  if (lastOpen >= 0) {
+    const close = findMatchingBrace(source, lastOpen);
+    if (close > lastOpen) return source.slice(lastOpen + 1, close);
+    return source.slice(lastOpen + 1);
+  }
+  const firstBrace = source.indexOf('{');
+  if (firstBrace >= 0) {
+    const close = findMatchingBrace(source, firstBrace);
+    if (close > firstBrace) return source.slice(firstBrace + 1, close);
+  }
+  return source;
 }
 
 function resolveInterfaceFieldType(typeRaw, aliasMap) {
@@ -109,30 +136,65 @@ function resolveInterfaceFieldType(typeRaw, aliasMap) {
   };
 }
 
+function buildInterfaceFieldMeta({
+  name,
+  optional,
+  typePart,
+  description,
+  inlineComment,
+  line,
+  aliasMap,
+}) {
+  const resolved = resolveInterfaceFieldType(typePart, aliasMap);
+  const commentEnum = extractInterfaceEnumCode(description, inlineComment, line);
+  const commentText = `${description || ''} ${line} ${typePart}`;
+  const isFile = FILE_FIELD_MARKERS.test(commentText);
+  return {
+    description: description || undefined,
+    isFile,
+    required: !optional,
+    tsType: resolved.tsType,
+    typeLabel: resolved.typeLabel,
+    isArray: Boolean(resolved.isArray),
+    enumCode: resolved.enumCode || commentEnum || undefined,
+  };
+}
+
+/**
+ * 解析 RequestParams interface。
+ * - 顶层字段写入 fields
+ * - `body: { ... }` / `set: { ... }` 内联对象：fields 记为 Record，嵌套字段写入 nestedFields[name]
+ * 避免把 `body: {` 误解析成 tsType=`{` → string，进而把内部字段抬到顶层必填。
+ */
 function parseRequestParameterInterface(interfaceText) {
   const fields = {};
+  const nestedFields = {};
   const fileFields = new Set();
   const text = String(interfaceText || '').trim();
-  if (!text) return { fields, fileFields };
+  if (!text) return { fields, nestedFields, fileFields };
 
   const aliasMap = parseAdbEnumTypeAliases(text);
   const body = extractInterfaceBody(text);
+  const lines = body.split('\n');
 
   let pendingComment = '';
-  body.split('\n').forEach((rawLine) => {
+  let i = 0;
+  while (i < lines.length) {
+    const rawLine = lines[i];
     const line = rawLine.trim();
-    if (!line) return;
+    i += 1;
+    if (!line) continue;
 
     const singleLineBlock = line.match(/^\/\*\*\s*(.*?)\s*\*\/$/);
     if (singleLineBlock) {
       pendingComment = singleLineBlock[1]?.replace(/\*/g, ' ').trim() || '';
-      return;
+      continue;
     }
 
     const inlineBlockStart = line.match(/^\/\*\*\s*(.*)$/);
     if (inlineBlockStart) {
       pendingComment = inlineBlockStart[1]?.trim() || '';
-      return;
+      continue;
     }
     const leadingStar = line.match(/^\*\s?(.*)$/);
     if (leadingStar && !line.startsWith('*/')) {
@@ -140,16 +202,67 @@ function parseRequestParameterInterface(interfaceText) {
       if (content && content !== '/') {
         pendingComment = pendingComment ? `${pendingComment} ${content}` : content;
       }
-      return;
+      continue;
     }
     if (line === '*/' || line.startsWith('*/')) {
-      return;
+      continue;
+    }
+
+      const nestedObjMatch = line.match(
+      /^([A-Za-z_$][A-Za-z0-9_$]*)\s*(\?)?\s*:\s*\{(.*)$/,
+    );
+    if (nestedObjMatch) {
+      const name = nestedObjMatch[1];
+      const optional = nestedObjMatch[2] === '?';
+      const afterBrace = nestedObjMatch[3] || '';
+      const description = pendingComment || undefined;
+      let depth = 1;
+      const collected = [];
+      const consume = (chunk) => {
+        for (let c = 0; c < chunk.length; c += 1) {
+          const ch = chunk[c];
+          if (ch === '{') depth += 1;
+          else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              collected.push(chunk.slice(0, c));
+              return true;
+            }
+          }
+        }
+        collected.push(chunk);
+        return false;
+      };
+      let closed = consume(afterBrace);
+      while (!closed && i < lines.length) {
+        closed = consume(lines[i]);
+        i += 1;
+      }
+      const inner = collected.join('\n');
+
+      const nestedParsed = parseRequestParameterInterface(
+        `interface __Nested {\n${inner}\n}`,
+      );
+      nestedFields[name] = nestedParsed.fields;
+      nestedParsed.fileFields.forEach((f) => fileFields.add(f));
+
+      fields[name] = {
+        description,
+        isFile: false,
+        required: !optional,
+        tsType: 'Record<string, unknown>',
+        typeLabel: 'object',
+        isArray: false,
+        enumCode: undefined,
+      };
+      pendingComment = '';
+      continue;
     }
 
     const propMatch = line.match(
       /^([A-Za-z_$][A-Za-z0-9_$]*)\s*(\?)?\s*:\s*([^;\/]+?)\s*;?\s*(?:\/\/(.*))?$/,
     );
-    if (!propMatch) return;
+    if (!propMatch) continue;
 
     const name = propMatch[1];
     const optional = propMatch[2] === '?';
@@ -161,24 +274,36 @@ function parseRequestParameterInterface(interfaceText) {
         ? `${description} ${inlineComment}`
         : inlineComment;
     }
-    const resolved = resolveInterfaceFieldType(typePart, aliasMap);
-    const commentEnum = extractInterfaceEnumCode(pendingComment, inlineComment, line);
-    const commentText = `${description || ''} ${line} ${typePart}`;
-    const isFile = FILE_FIELD_MARKERS.test(commentText);
-    fields[name] = {
-      description: description || undefined,
-      isFile,
-      required: !optional,
-      tsType: resolved.tsType,
-      typeLabel: resolved.typeLabel,
-      isArray: Boolean(resolved.isArray),
-      enumCode: resolved.enumCode || commentEnum || undefined,
-    };
-    if (isFile) fileFields.add(name);
-    pendingComment = '';
-  });
+    // 裸 `{` 已被上面分支处理；此处再兜底避免 tsType=`{`
+    if (typePart === '{' || typePart.startsWith('{')) {
+      fields[name] = {
+        description: description || undefined,
+        isFile: false,
+        required: !optional,
+        tsType: 'Record<string, unknown>',
+        typeLabel: 'object',
+        isArray: false,
+        enumCode: undefined,
+      };
+      pendingComment = '';
+      continue;
+    }
 
-  return { fields, fileFields };
+    const meta = buildInterfaceFieldMeta({
+      name,
+      optional,
+      typePart,
+      description,
+      inlineComment,
+      line,
+      aliasMap,
+    });
+    fields[name] = meta;
+    if (meta.isFile) fileFields.add(name);
+    pendingComment = '';
+  }
+
+  return { fields, nestedFields, fileFields };
 }
 
 function mapInterfaceTypeToZod(tsType, { required = false, isFile = false } = {}) {
@@ -191,7 +316,7 @@ function mapInterfaceTypeToZod(tsType, { required = false, isFile = false } = {}
       base = z.enum(unionEnum);
     } else {
       const normalized = String(tsType || '').toLowerCase();
-      if (normalized.includes('number')) base = z.coerce.number();
+      if (normalized.includes('number')) base = zodCoerceNumber();
       else if (normalized.includes('boolean')) base = z.coerce.boolean();
       else if (normalized.includes('object') || normalized.includes('record')) {
         base = z.record(z.unknown());
@@ -205,30 +330,204 @@ function mapInterfaceTypeToZod(tsType, { required = false, isFile = false } = {}
   return required ? base : base.optional();
 }
 
-function mergeInterfaceIntoZod(zodSchema, service, jsonSchema) {
-  const interfaceText = service?.requestParameterInterface
-    || service?.request_parameter_interface
-    || '';
-  const { fields } = parseRequestParameterInterface(interfaceText);
-  if (!Object.keys(fields).length) return zodSchema;
+/** 避免 z.coerce.number() 把 undefined 变成 NaN（误报 body.xxx received nan） */
+function zodCoerceNumber() {
+  return z.preprocess((val) => {
+    if (val === undefined || val === null) return undefined;
+    if (typeof val === 'string' && val.trim() === '') return undefined;
+    if (typeof val === 'number' && Number.isNaN(val)) return undefined;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string' || typeof val === 'boolean') {
+      const n = Number(val);
+      return Number.isFinite(n) ? n : val;
+    }
+    return val;
+  }, z.number());
+}
 
-  const targetKey = resolveInterfaceMergeTarget(jsonSchema || { properties: {} });
+function mapInterfaceFieldsToZodShape(fields) {
   const shape = {};
-  Object.entries(fields).forEach(([name, meta]) => {
+  Object.entries(fields || {}).forEach(([name, meta]) => {
     shape[name] = mapInterfaceTypeToZod(meta.tsType, {
       required: Boolean(meta.required),
       isFile: Boolean(meta.isFile),
     });
   });
+  return shape;
+}
 
-  if (!Object.keys(shape).length) return zodSchema;
+function unwrapZodOptional(schema) {
+  let current = schema;
+  let wasOptional = false;
+  // Zod 3: _def.typeName === 'ZodOptional'；Zod 4: type/def.type === 'optional' 或 .unwrap()
+  while (current) {
+    const typeName = current._def?.typeName || current.def?.type || current.type;
+    const isOptional = typeName === 'ZodOptional' || typeName === 'optional'
+      || typeof current.unwrap === 'function';
+    if (!isOptional) break;
+    // 避免把非 optional 但碰巧有 unwrap 的类型误拆（Zod 4 optional 才有 unwrap）
+    if (typeName !== 'ZodOptional' && typeName !== 'optional' && !current.def?.innerType) {
+      break;
+    }
+    wasOptional = true;
+    current = typeof current.unwrap === 'function'
+      ? current.unwrap()
+      : (current._def?.innerType || current.def?.innerType);
+  }
+  return { inner: current, wasOptional };
+}
 
-  if (targetKey === 'root') {
-    return zodSchema.extend(shape);
+/** updateOne：interface 合并后强制 body/set 内层字段全部可选（PATCH 部分更新） */
+function forcePartialUpdateContainers(jsonSchema, zodSchema, operation) {
+  if (!['updateOne', 'findOneAndUpdate'].includes(operation)) {
+    return { jsonSchema, zodSchema };
   }
 
-  // body / set 容器：扩展容器内字段较复杂，顶层也挂一份便于 query/body 扁平入参
-  return zodSchema.extend(shape);
+  let nextJson = jsonSchema;
+  if (jsonSchema?.properties) {
+    nextJson = {
+      ...jsonSchema,
+      properties: { ...jsonSchema.properties },
+    };
+    ['body', 'set'].forEach((key) => {
+      const container = nextJson.properties[key];
+      if (!container || typeof container !== 'object') return;
+      const nextContainer = { ...container };
+      delete nextContainer.required;
+      nextJson.properties[key] = nextContainer;
+    });
+  }
+
+  let nextZod = zodSchema;
+  try {
+    const shape = typeof zodSchema?.shape === 'object'
+      ? zodSchema.shape
+      : (typeof zodSchema?._def?.shape === 'function' ? zodSchema._def.shape() : null);
+    if (shape && typeof shape === 'object') {
+      const nextShape = { ...shape };
+      let changed = false;
+      ['body', 'set'].forEach((key) => {
+        if (!nextShape[key]) return;
+        const { inner, wasOptional } = unwrapZodOptional(nextShape[key]);
+        if (inner && typeof inner.partial === 'function') {
+          let partialObj = inner.partial();
+          if (typeof partialObj.passthrough === 'function') {
+            partialObj = partialObj.passthrough();
+          }
+          nextShape[key] = wasOptional ? partialObj.optional() : partialObj;
+          changed = true;
+        }
+      });
+      if (changed) {
+        nextZod = z.object(nextShape).passthrough();
+      }
+    }
+  } catch {
+    // 保持原 zod
+  }
+
+  return { jsonSchema: nextJson, zodSchema: nextZod };
+}
+
+/**
+ * GET query 兼容 + 写 body 规范化：
+ * - filter JSON 字符串 / filter[k]
+ * - body/set：拒绝实体未建模字段（须与 fieldKey / 物化表列一致）
+ */
+function getEntityWritableFieldKeys(entity) {
+  const set = new Set();
+  (entity?.fields || []).forEach((field) => {
+    const key = field.fieldKey || field.field_key;
+    if (!key || key === 'id') return;
+    if (['created_at', 'updated_at', 'createdAt', 'updatedAt'].includes(key)) return;
+    set.add(key);
+  });
+  return set;
+}
+
+function assertBodyFieldsAllowed(body, entity, pathLabel = 'body') {
+  const allowed = getEntityWritableFieldKeys(entity);
+  if (!allowed.size || !body || typeof body !== 'object' || Array.isArray(body)) {
+    return body;
+  }
+  const unknown = Object.keys(body).filter((key) => !allowed.has(key));
+  if (!unknown.length) return body;
+  throw Object.assign(
+    new Error(
+      `${pathLabel} 含未建模字段: ${unknown.join(', ')}。`
+      + '字段名须与实体 fieldKey / 物化表列一致；'
+      + '勿传入表中不存在的列',
+    ),
+    { status: 400, unknownFields: unknown },
+  );
+}
+
+function normalizeWriteBody(body, entity, pathLabel = 'body') {
+  if (body == null) return body;
+  return assertBodyFieldsAllowed(body, entity, pathLabel);
+}
+
+function coerceInvokeParameters(parameters = {}, entity = null) {
+  const next = { ...(parameters || {}) };
+
+  Object.keys(parameters || {}).forEach((key) => {
+    const match = /^filter\[([A-Za-z_][A-Za-z0-9_]*)\]$/.exec(key);
+    if (!match) return;
+    if (!next.filter || typeof next.filter !== 'object' || Array.isArray(next.filter)) {
+      next.filter = {};
+    }
+    next.filter[match[1]] = parameters[key];
+    delete next[key];
+  });
+
+  if (typeof next.filter === 'string') {
+    const trimmed = next.filter.trim();
+    if (!trimmed) {
+      delete next.filter;
+    } else {
+      try {
+        next.filter = JSON.parse(trimmed);
+      } catch {
+        // 留给 zod 报错
+      }
+    }
+  }
+
+  if (next.body !== undefined) {
+    next.body = normalizeWriteBody(next.body, entity, 'body');
+  }
+  if (next.set !== undefined) {
+    next.set = normalizeWriteBody(next.set, entity, 'set');
+  }
+
+  return next;
+}
+
+function mergeInterfaceIntoZod(zodSchema, service, jsonSchema) {
+  const interfaceText = service?.requestParameterInterface
+    || service?.request_parameter_interface
+    || '';
+  const { fields, nestedFields } = parseRequestParameterInterface(interfaceText);
+  if (!Object.keys(fields).length) return zodSchema;
+
+  const targetKey = resolveInterfaceMergeTarget(jsonSchema || { properties: {} });
+
+  if (targetKey === 'root') {
+    const shape = mapInterfaceFieldsToZodShape(fields);
+    return Object.keys(shape).length ? zodSchema.extend(shape) : zodSchema;
+  }
+
+  // body / set：用嵌套字段强化容器 schema，禁止把内部字段抬到顶层必填
+  const containerMeta = fields[targetKey];
+  const nested = nestedFields?.[targetKey] || {};
+  const nestedShape = mapInterfaceFieldsToZodShape(nested);
+  let containerZod = Object.keys(nestedShape).length
+    ? z.object(nestedShape).passthrough()
+    : z.record(z.unknown());
+  if (!containerMeta || !containerMeta.required) {
+    containerZod = containerZod.optional();
+  }
+  return zodSchema.extend({ [targetKey]: containerZod });
 }
 
 function mergeDiscoveredHandlerParams(jsonSchema, zodSchema, service) {
@@ -489,11 +788,12 @@ function mergeInterfaceFieldsIntoProperties(properties, fields, requiredSet) {
     } else {
       properties[name] = {
         ...properties[name],
+        ...baseSchema,
         ...(meta.description ? { description: meta.description } : {}),
         ...(meta.isFile ? { format: 'uuid', type: 'string' } : {}),
         ...(meta.typeLabel ? { 'x-type-label': meta.typeLabel } : {}),
         ...(meta.enumCode ? { 'x-adb-enum-code': meta.enumCode } : {}),
-        ...(meta.isArray ? { type: 'array', items: properties[name].items || { type: 'string' } } : {}),
+        ...(meta.isArray ? { type: 'array', items: properties[name].items || baseSchema.items || { type: 'string' } } : {}),
       };
     }
 
@@ -506,7 +806,7 @@ function mergeInterfaceMetadata(jsonSchema, service) {
   const interfaceText = service?.requestParameterInterface
     || service?.request_parameter_interface
     || '';
-  const { fields } = parseRequestParameterInterface(interfaceText);
+  const { fields, nestedFields } = parseRequestParameterInterface(interfaceText);
   if (!jsonSchema?.properties || !Object.keys(fields).length) return jsonSchema;
 
   const next = {
@@ -519,17 +819,38 @@ function mergeInterfaceMetadata(jsonSchema, service) {
     const requiredSet = new Set(next.required || []);
     mergeInterfaceFieldsIntoProperties(next.properties, fields, requiredSet);
     if (requiredSet.size) next.required = [...requiredSet];
+    else delete next.required;
     return next;
   }
 
   const container = {
     ...next.properties[targetKey],
+    type: 'object',
     properties: { ...(next.properties[targetKey].properties || {}) },
   };
   const requiredSet = new Set(container.required || []);
-  mergeInterfaceFieldsIntoProperties(container.properties, fields, requiredSet);
+  // 优先合并嵌套字段；跳过容器自身，避免 body.properties.body
+  const toMerge = nestedFields?.[targetKey] && Object.keys(nestedFields[targetKey]).length
+    ? nestedFields[targetKey]
+    : Object.fromEntries(Object.entries(fields).filter(([name]) => name !== targetKey));
+  mergeInterfaceFieldsIntoProperties(container.properties, toMerge, requiredSet);
   if (requiredSet.size) container.required = [...requiredSet];
+  else delete container.required;
   next.properties[targetKey] = container;
+
+  // interface 要求 body/set 必填时，同步到根 required
+  if (fields[targetKey]?.required) {
+    const rootRequired = new Set(next.required || []);
+    rootRequired.add(targetKey);
+    next.required = [...rootRequired];
+  }
+
+  if (next.properties[targetKey] && typeof next.properties[targetKey] === 'object') {
+    next.properties[targetKey] = {
+      ...next.properties[targetKey],
+      additionalProperties: false,
+    };
+  }
 
   return next;
 }
@@ -563,7 +884,8 @@ function validateFileObjectIds(parameters, fileFields) {
 
 function extractSqlNamedParams(script) {
   if (!script) return [];
-  const matches = script.match(/(?<!:):(\w+)/g) || [];
+  // 忽略注释中的 :name（如「-- 过滤条件示例: AND status = :status」），避免吞掉业务 filter
+  const matches = stripSqlComments(script).match(/(?<!:):(\w+)/g) || [];
   const reserved = new Set(['limit', 'skip']);
   return [...new Set(matches.map((m) => m.slice(1)).filter((name) => !reserved.has(name.toLowerCase())))];
 }
@@ -636,7 +958,7 @@ function mockValueForField(field) {
   return `sample_${key}`;
 }
 
-function buildEntityBodySchema(fields, enumMap) {
+function buildEntityBodySchema(fields, enumMap, { partial = false } = {}) {
   const properties = {};
   const required = [];
   fields.forEach((field) => {
@@ -648,18 +970,19 @@ function buildEntityBodySchema(fields, enumMap) {
       ...schema,
       description: field.columnInfo?.label || field.column_info?.label || key,
     };
-    if (typeorm.nullable === false) {
+    if (!partial && typeorm.nullable === false) {
       required.push(key);
     }
   });
   return {
     type: 'object',
     properties,
-    ...(required.length ? { required } : {}),
+    additionalProperties: false,
+    ...(!partial && required.length ? { required } : {}),
   };
 }
 
-function buildEntityBodyZod(fields, enumMap) {
+function buildEntityBodyZod(fields, enumMap, { partial = false } = {}) {
   const shape = {};
   fields.forEach((field) => {
     const key = field.fieldKey || field.field_key;
@@ -671,20 +994,21 @@ function buildEntityBodyZod(fields, enumMap) {
     if (enumValues?.length) {
       schema = z.enum(enumValues);
     } else if (['int', 'integer', 'bigint', 'smallint', 'numeric', 'decimal', 'float', 'double', 'real'].some((t) => pgType.includes(t))) {
-      schema = z.number();
+      schema = zodCoerceNumber();
     } else if (pgType.includes('bool')) {
-      schema = z.boolean();
+      schema = z.coerce.boolean();
     } else if (pgType.includes('json')) {
       schema = z.record(z.unknown());
     } else {
       schema = z.string();
     }
-    if (typeorm.nullable !== false) {
+    if (partial || typeorm.nullable !== false) {
       schema = schema.optional();
     }
     shape[key] = schema;
   });
-  return z.object(shape).passthrough();
+  // strict：拒绝未建模字段进入 INSERT（避免 SQL 缺列）
+  return z.object(shape).strict();
 }
 
 function buildSqlParamSchemas(script, fields, enumMap) {
@@ -746,9 +1070,24 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
   const filterSchema = {
     type: 'object',
     additionalProperties: true,
-    description: '查询过滤条件（字段名 → 等值匹配；null 表示 IS NULL）。同名字段以顶层参数（含 SQL 命名参数）为准，filter 次之。',
+    description:
+      '查询过滤条件（字段名 → 等值匹配；null 表示 IS NULL）。'
+      + ' GET 可将 JSON 对象序列化为字符串：filter={"stationNo":"D01"}；'
+      + '亦支持顶层同名字段（如 stationNo=D01）与 filter[stationNo]=D01。'
+      + ' 同名字段：顶层参数（含 SQL :param）优先于 filter。',
     example: { status: 'active' },
   };
+
+  const filterZod = z.preprocess((val) => {
+    if (typeof val !== 'string') return val;
+    const trimmed = val.trim();
+    if (!trimmed) return undefined;
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return val;
+    }
+  }, z.record(z.unknown()).optional());
 
   if (operation === 'find') {
     jsonSchema = {
@@ -763,7 +1102,7 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
     zodSchema = z.object({
       limit: z.coerce.number().int().min(1).max(maxLimit).optional(),
       skip: z.coerce.number().int().min(0).optional(),
-      filter: z.record(z.unknown()).optional(),
+      filter: filterZod,
     }).merge(sqlZod);
   } else if (operation === 'count' || operation === 'countDocuments') {
     jsonSchema = {
@@ -774,7 +1113,7 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
       },
     };
     zodSchema = z.object({
-      filter: z.record(z.unknown()).optional(),
+      filter: filterZod,
     }).merge(sqlZod);
   } else if (operation === 'findOne' || operation === 'exists') {
     jsonSchema = {
@@ -785,7 +1124,7 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
       },
     };
     zodSchema = z.object({
-      filter: z.record(z.unknown()).optional(),
+      filter: filterZod,
     }).merge(sqlZod);
   } else if (operation === 'findById' || operation === 'deleteOne' || operation === 'save' || operation === 'replaceOne') {
     jsonSchema = {
@@ -815,20 +1154,28 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
       body: bodyZod.optional(),
     }).merge(sqlZod);
   } else if (operation === 'updateOne' || operation === 'findOneAndUpdate') {
+    const partialBodyJson = buildEntityBodySchema(fields, enumMap, { partial: true });
+    const partialBodyZod = buildEntityBodyZod(fields, enumMap, { partial: true });
     jsonSchema = {
       type: 'object',
       required: ['id'],
       properties: {
         id: { type: 'string', format: 'uuid', description: '资源 ID（路径参数）', example: SAMPLE_UUID },
-        body: { ...bodyJson, description: '更新字段的请求体' },
-        set: { ...bodyJson, description: '与 body 等效的更新字段（别名）' },
+        body: {
+          ...partialBodyJson,
+          description: '部分更新字段（PATCH 语义：仅传需修改的字段）',
+        },
+        set: {
+          ...partialBodyJson,
+          description: '与 body 等效的更新字段（别名）；部分更新',
+        },
         ...sqlProps,
       },
     };
     zodSchema = z.object({
       id: z.string().min(1),
-      body: bodyZod.optional(),
-      set: bodyZod.optional(),
+      body: partialBodyZod.optional(),
+      set: partialBodyZod.optional(),
     }).merge(sqlZod);
   } else if (operation === 'aggregate') {
     jsonSchema = {
@@ -858,7 +1205,7 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
     };
     zodSchema = z.object({
       field: z.string().min(1),
-      filter: z.record(z.unknown()).optional(),
+      filter: filterZod,
     }).merge(sqlZod);
   } else {
     jsonSchema = {
@@ -870,6 +1217,10 @@ function buildBaseSchemas(service, operation, entity, enumMap = null) {
 
   jsonSchema = mergeInterfaceMetadata(jsonSchema, service);
   zodSchema = mergeInterfaceIntoZod(zodSchema, service, jsonSchema);
+
+  const partialForced = forcePartialUpdateContainers(jsonSchema, zodSchema, operation);
+  jsonSchema = partialForced.jsonSchema;
+  zodSchema = partialForced.zodSchema;
 
   const mergedHandler = mergeDiscoveredHandlerParams(jsonSchema, zodSchema, service);
   jsonSchema = mergedHandler.jsonSchema;
@@ -984,7 +1335,8 @@ function buildMockParameters(service, operation, entity, enumMap = null) {
 
 function validateParameters(service, operation, parameters, entity, enumMap = null) {
   const { zodSchema } = buildBaseSchemas(service, operation, entity, enumMap);
-  const parsed = zodSchema.safeParse(parameters || {});
+  const coerced = coerceInvokeParameters(parameters || {}, entity);
+  const parsed = zodSchema.safeParse(coerced);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => ({
       path: issue.path.join('.'),
@@ -1240,12 +1592,20 @@ function buildDefaultResponsesSchema(operation, entityCode) {
     dataSchema = {
       type: 'object',
       properties: {
-        total: { type: 'integer', example: 100 },
-        page: { type: 'integer', example: 1 },
-        size: { type: 'integer', example: 10 },
         items: { type: 'array', items: entityCode ? entityRef : { type: 'object' } },
+        pagination: {
+          type: 'object',
+          properties: {
+            total: { type: 'integer', example: 100 },
+            page: { type: 'integer', example: 1 },
+            pageSize: { type: 'integer', example: 10 },
+            totalPages: { type: 'integer', example: 10 },
+            hasNext: { type: 'boolean', example: true },
+          },
+          required: ['total', 'page', 'pageSize', 'totalPages', 'hasNext'],
+        },
       },
-      required: ['total', 'page', 'size', 'items'],
+      required: ['items', 'pagination'],
     };
   } else if (operation === 'count' || operation === 'countDocuments') {
     dataSchema = {
@@ -1328,7 +1688,7 @@ function buildResponseInterfaceText(service, operation, entity, securityConfig) 
 
   let responseWrapper;
   if (operation === 'find') {
-    responseWrapper = `interface Response {\n  code: number;\n  message: string;\n  data: {\n    total: number;\n    page: number;\n    size: number;\n    items: ${itemRecordType}[];\n  };\n}`;
+    responseWrapper = `interface Response {\n  code: number;\n  message: string;\n  data: {\n    items: ${itemRecordType}[];\n    pagination: {\n      total: number;\n      page: number;\n      pageSize: number;\n      totalPages: number;\n      hasNext: boolean;\n    };\n  };\n}`;
   } else if (operation === 'count' || operation === 'countDocuments') {
     responseWrapper = 'interface Response {\n  code: number;\n  message: string;\n  data: { count: number };\n}';
   } else if (operation === 'distinct') {
@@ -1457,10 +1817,14 @@ function buildResponseExample(operation, mockParameters, entityCode, entity, ser
   switch (operation) {
     case 'find':
       return envelope({
-        total: sampleItem ? 1 : 0,
-        page: 1,
-        size: mockParameters?.limit ?? 10,
         items: sampleItem ? [sampleItem] : [],
+        pagination: {
+          total: sampleItem ? 1 : 0,
+          page: 1,
+          pageSize: mockParameters?.limit ?? mockParameters?.pageSize ?? 10,
+          totalPages: sampleItem ? 1 : 0,
+          hasNext: false,
+        },
       });
     case 'count':
     case 'countDocuments':
@@ -1575,6 +1939,9 @@ module.exports = {
   buildEntitySchemaForEntity,
   buildEntitySchemaResolver,
   validateParameters,
+  coerceInvokeParameters,
+  forcePartialUpdateContainers,
+  normalizeWriteBody,
   buildMockParameters,
   buildRequestPreview,
   isWriteOperation,

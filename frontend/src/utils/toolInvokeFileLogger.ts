@@ -1,4 +1,4 @@
-import type { ToolInvokeLogEntry } from '@EADAF/ai-base';
+import type { ToolInvokeLogEntry } from '@eadaf/ai-base';
 
 const LOG_ENABLED =
   process.env.AI_TOOL_LOG_ENABLED === 'true' ||
@@ -48,7 +48,7 @@ export function postToolInvokeLog(entry: ToolInvokeLogEntry) {
 export function setupAiToolInvokeFileLogger() {
   if (!LOG_ENABLED || process.env.NODE_ENV === 'development') return;
 
-  import('@EADAF/ai-base').then(({ setToolInvokeLogger }) => {
+  import('@eadaf/ai-base').then(({ setToolInvokeLogger }) => {
     if (typeof setToolInvokeLogger !== 'function') return;
     setToolInvokeLogger((entry) => {
       postToolInvokeLog(entry);

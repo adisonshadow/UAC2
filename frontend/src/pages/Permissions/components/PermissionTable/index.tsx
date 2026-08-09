@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildPermissionPrompts } from '@/ai/pageChatPrompts';
 import {
   ActionType as ProActionType,

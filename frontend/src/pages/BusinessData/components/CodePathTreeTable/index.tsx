@@ -1,6 +1,6 @@
 import { LineChartOutlined, PartitionOutlined } from '@ant-design/icons';
-import type { AddReferenceParams } from '@EADAF/ai-base';
-import { useChatReference } from '@EADAF/ai-base';
+import type { AddReferenceParams } from '@eadaf/ai-base';
+import { useChatReference } from '@eadaf/ai-base';
 import { Empty, Table, Typography } from 'antd';
 import type { ColumnType, ColumnsType } from 'antd/es/table';
 import React, { useMemo } from 'react';
@@ -135,7 +135,7 @@ const CodePathTreeTable = <T extends CodePathItem>({
 
   return (
     <div>
-      {toolbar && <div style={{ marginBottom: 8 }}>{toolbar}</div>}
+      {toolbar && <div style={{ marginBottom: 0 }}>{toolbar}</div>}
       <Table<FlatCodePathRow<T>>
         size="small"
         rowKey="code"

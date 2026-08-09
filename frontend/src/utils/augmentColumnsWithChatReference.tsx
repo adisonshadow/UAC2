@@ -1,5 +1,5 @@
 import type { ProColumns } from '@ant-design/pro-components';
-import type { AddReferenceParams } from '@EADAF/ai-base';
+import type { AddReferenceParams } from '@eadaf/ai-base';
 import type { ReactNode } from 'react';
 import ChatReferenceCell from '@/components/ChatReferenceCell';
 

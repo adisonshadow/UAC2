@@ -10,7 +10,7 @@ import { useSetState } from "ahooks";
 import { Button } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useMemo, useRef } from "react";
-import { useAIChatPrompts, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildMemberPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { tableColumns, useDepartmentOptions } from "./Schemas";

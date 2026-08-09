@@ -1,4 +1,4 @@
-import { AIChatPageScope, useAIChatDisplayMode } from '@EADAF/ai-base';
+import { AIChatPageScope, useAIChatDisplayMode } from '@eadaf/ai-base';
 import { useMemo } from 'react';
 import { Outlet } from 'react-router-dom';
 

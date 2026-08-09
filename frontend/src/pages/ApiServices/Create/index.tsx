@@ -1,5 +1,5 @@
 import { ProForm } from '@ant-design/pro-components';
-import { useAIChatPrompts, useAISurface, useChatReference } from '@EADAF/ai-base';
+import { useAIChatPrompts, useAISurface, useChatReference } from '@eadaf/ai-base';
 import { Button, Form, Space } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -22,6 +22,7 @@ import ApiServiceForm, {
   buildDefaultRequestExample,
   type ApiServiceFormValues,
 } from '../components/ApiServiceForm';
+import { scopeCodeFromEntityCode, suggestServiceSlugFromEntity } from '@/pages/ApiServices/ai/apiServiceCodeUtils';
 import { buildApiServiceCreatePrompts } from '@/pages/ApiServices/ai/buildApiServiceCreatePrompts';
 import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
 import { buildResponseOverridesPayload, resolveResponseExample } from '../utils/responseOverrides';
@@ -68,17 +69,39 @@ const ApiServiceCreatePage: React.FC = () => {
     return (entityRef?.content as { code?: string } | undefined)?.code;
   }, [references]);
 
+  const formEntityCode = Form.useWatch('entityCode', form);
+  const entityCodeForPreview = formEntityCode || entityCodeFromRefs;
+
+  // Chat 引用实体时预填主实体 + Scope + 默认短名
+  useEffect(() => {
+    const entityRef = references.find((r: { type?: string }) => r.type === 'entity');
+    if (!entityRef) return;
+    const content = entityRef.content as { code?: string; label?: string; id?: string } | undefined;
+    if (!content?.id || form.getFieldValue('entityId')) return;
+    const op = String(form.getFieldValue('primaryOperation') || DEFAULT_OPERATION);
+    const autoSlug = content.code ? suggestServiceSlugFromEntity(content.code, op) : '';
+    form.setFieldsValue({
+      entityId: content.id,
+      entityCode: content.code,
+      entityLabel: content.label,
+      ...(content.code
+        ? { scopeCode: scopeCodeFromEntityCode(content.code) }
+        : {}),
+      ...(autoSlug ? { serviceSlug: autoSlug } : {}),
+    });
+  }, [references, form]);
+
   useEffect(() => {
     const preview = buildOperationResponsePreview(
       primaryOperation,
-      entityCodeFromRefs,
+      entityCodeForPreview,
       requestParameterInterface,
     );
     if (!preview) return;
     setResponsesSchemaText(JSON.stringify(preview.responsesSchema, null, 2));
     setResponseExampleText(JSON.stringify(preview.responseExample, null, 2));
     setRequestExampleText(JSON.stringify(buildDefaultRequestExample(requestParameterInterface), null, 2));
-  }, [primaryOperation, entityCodeFromRefs, requestParameterInterface]);
+  }, [primaryOperation, entityCodeForPreview, requestParameterInterface]);
 
   const previewCode = useMemo(() => {
     const scope = String(scopeCode || '').trim();
@@ -125,6 +148,18 @@ const ApiServiceCreatePage: React.FC = () => {
         tags: values.tags,
         primaryOperation: values.primaryOperation,
         scriptMode: values.scriptMode,
+        entityId: values.entityId,
+        entityCode: values.entityCode,
+        entityLabel: values.entityLabel,
+        resolvedConnection: values.resolvedConnectionId
+          ? {
+              connectionId: values.resolvedConnectionId,
+              connectionName: values.resolvedConnectionName,
+              dbType: values.resolvedDbType,
+              targetSchema: values.resolvedTargetSchema,
+            }
+          : undefined,
+        targetSchema: values.resolvedTargetSchema,
         definitionScript: definitionScriptRef.current,
         handlerScript: handlerScriptRef.current,
         requestParameterInterface: requestParameterInterfaceRef.current,
@@ -184,7 +219,7 @@ const ApiServiceCreatePage: React.FC = () => {
     const sanitizedResponseExample = resolveResponseExample(
       exampleParsed.value,
       operation,
-      entityCodeFromRefs,
+      entityCodeForPreview,
       requestParameterInterface,
     );
     if (!requestExampleParsed.ok) {
@@ -205,12 +240,20 @@ const ApiServiceCreatePage: React.FC = () => {
 
     setSubmitting(true);
     try {
+      if (!values.entityId) {
+        message.error('请选择主实体');
+        setSubmitting(false);
+        return;
+      }
       const createRes = await postApiService({
-        scopeCode: values.scopeCode,
+        scopeCode: values.scopeCode || scopeCodeFromEntityCode(values.entityCode),
         serviceSlug: values.serviceSlug,
         name: String(values.name || '').trim(),
         tags: values.tags || [],
         scriptMode: values.scriptMode || 'sql',
+        entityId: values.entityId,
+        connectionId: values.resolvedConnectionId,
+        targetSchema: values.resolvedTargetSchema,
         definitionScript: values.scriptMode === 'typescript' ? undefined : definitionScript.trim() || undefined,
         handlerScript: values.scriptMode === 'typescript'
           ? normalizeHandlerBody(handlerScript).trim() || undefined
@@ -292,7 +335,6 @@ const ApiServiceCreatePage: React.FC = () => {
           onRequestParameterInterfaceChange={setRequestParameterInterface}
           requestExampleText={requestExampleText}
           onRequestExampleTextChange={setRequestExampleText}
-          entityCode={entityCodeFromRefs}
           responsesSchemaText={responsesSchemaText}
           onResponsesSchemaTextChange={setResponsesSchemaText}
           responseExampleText={responseExampleText}

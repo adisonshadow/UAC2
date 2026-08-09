@@ -12,8 +12,14 @@ import OperationParameterPanel, {
   type ParameterRow,
 } from '@/components/OperationParameterPanel';
 import ResponseDocumentEditor, { tryParseJson } from '@/components/ResponseDocumentPanel';
-import ApiServiceScopeLookup from './ApiServiceScopeLookup';
+import ApiServiceEntityLookup, {
+  type ApiServiceEntityLookupValue,
+} from './ApiServiceEntityLookup';
 import DepartmentLookup from './DepartmentLookup';
+import {
+  scopeCodeFromEntityCode,
+  suggestServiceSlugFromEntity,
+} from '../ai/apiServiceCodeUtils';
 import { useRoleOptions } from '@/hooks/useRoleOptions';
 import { postApiServiceResolveConnection } from '@/services/UAC/api/apiServices';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
@@ -35,7 +41,7 @@ import {
   loadEnumOptionsByCodes,
   type EnumOptionsByCode,
 } from '../utils/buildParameterRowsFromInterface';
-import { parseInterfaceFields } from '../utils/parseInterfaceFields';
+import { parseInterfaceFields, parseNestedInterfaceFields } from '../utils/parseInterfaceFields';
 import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
 import {
   buildParamsAmbientDts,
@@ -150,30 +156,36 @@ function buildPreviewCode(scopeCode?: string, serviceSlug?: string) {
   return `${scope}:${slug}`;
 }
 
+function sampleValueForInterfaceField(field: { name: string; type?: string; isArray?: boolean }) {
+  const type = String(field.type || '').toLowerCase();
+  const name = field.name;
+  if (name === 'id') return '00000000-0000-4000-8000-000000000001';
+  if (name === 'limit') return 10;
+  if (name === 'skip' || name === 'offset') return 0;
+  if (type.includes('number')) return 0;
+  if (type.includes('boolean')) return false;
+  if (field.isArray || type.includes('[]') || type.includes('array')) return [];
+  if (type.includes('object') || type.includes('record')) return {};
+  return name ? `sample_${name}` : '';
+}
+
 export function buildDefaultRequestExample(interfaceText?: string) {
   const fields = parseInterfaceFields(interfaceText);
   if (!fields.length) return {};
   const result: Record<string, unknown> = {};
   fields.forEach((field) => {
-    const type = String(field.type || '').toLowerCase();
-    const name = field.name;
-    if (name === 'id') {
-      result[name] = '00000000-0000-4000-8000-000000000001';
-    } else if (name === 'limit') {
-      result[name] = 10;
-    } else if (name === 'skip' || name === 'offset') {
-      result[name] = 0;
-    } else if (type.includes('number')) {
-      result[name] = 0;
-    } else if (type.includes('boolean')) {
-      result[name] = false;
-    } else if (type.includes('[]')) {
-      result[name] = [];
-    } else if (type.includes('object') || type.includes('record')) {
-      result[name] = {};
-    } else {
-      result[name] = name ? `sample_${name}` : '';
-    }
+    result[field.name] = sampleValueForInterfaceField(field);
+  });
+  // create/update 的 body/set 内联对象：填充嵌套示例，避免 body: {}
+  (['body', 'set'] as const).forEach((container) => {
+    if (!(container in result)) return;
+    const nested = parseNestedInterfaceFields(interfaceText, container);
+    if (!nested.length) return;
+    const nestedExample: Record<string, unknown> = {};
+    nested.forEach((field) => {
+      nestedExample[field.name] = sampleValueForInterfaceField(field);
+    });
+    result[container] = nestedExample;
   });
   return result;
 }
@@ -191,6 +203,15 @@ export type ApiServiceFormValues = {
   roleIds?: string[];
   departmentIds?: string[];
   scriptMode?: 'sql' | 'typescript';
+  /** 主实体（驱动连接 / Schema 推断） */
+  entityId?: string;
+  entityCode?: string;
+  entityLabel?: string;
+  /** 推断结果（只读展示 / 提交用） */
+  resolvedConnectionId?: string;
+  resolvedConnectionName?: string;
+  resolvedDbType?: string;
+  resolvedTargetSchema?: string;
 };
 
 export type ApiServiceFormProps = {
@@ -206,6 +227,7 @@ export type ApiServiceFormProps = {
   requestExampleText: string;
   onRequestExampleTextChange: (value: string) => void;
   readonlyCode?: string;
+  /** @deprecated 主实体已改为表单字段 entityId；保留作初始回填兼容 */
   entityId?: string;
   entityCode?: string;
   responsesSchemaText: string;
@@ -227,8 +249,8 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
   requestExampleText,
   onRequestExampleTextChange,
   readonlyCode,
-  entityId,
-  entityCode,
+  entityId: entityIdProp,
+  entityCode: entityCodeProp,
   responsesSchemaText,
   onResponsesSchemaTextChange,
   responseExampleText,
@@ -237,14 +259,31 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
   const { roleOptions, roleOptionsLoading } = useRoleOptions();
   const scopeCode = Form.useWatch('scopeCode', form);
   const serviceSlug = Form.useWatch('serviceSlug', form);
+  const formEntityId = Form.useWatch('entityId', form);
+  const formEntityCode = Form.useWatch('entityCode', form);
+  const formEntityLabel = Form.useWatch('entityLabel', form);
   const accessRestrictionMode = Form.useWatch('accessRestrictionMode', form);
   const scriptMode = Form.useWatch('scriptMode', form) || 'sql';
   const transportProtocols = Form.useWatch('transportProtocols', form) as ApiServiceTransportProtocol[] | undefined;
   const primaryOperation = Form.useWatch('primaryOperation', form);
 
+  const entityId = formEntityId || entityIdProp;
+  const entityCode = formEntityCode || entityCodeProp;
+
+  const entityLookupValue = useMemo<ApiServiceEntityLookupValue | null>(() => {
+    if (!entityId) return null;
+    return {
+      entityId,
+      entityCode: entityCode || entityId,
+      entityLabel: formEntityLabel,
+    };
+  }, [entityId, entityCode, formEntityLabel]);
+
   const [resolvedConnection, setResolvedConnection] = useState<API.ApiServiceResolvedConnection | null>(null);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  /** 用户是否手动改过服务短名；未改时随主实体/主操作自动填充 */
+  const [serviceSlugDirty, setServiceSlugDirty] = useState(mode === 'edit');
   const [handlerDiagnosticsText, setHandlerDiagnosticsText] = useState<string | null>(null);
   /** enumCode → options（interface 声明的 getADBEnumByCode） */
   const [enumOptionsByCode, setEnumOptionsByCode] = useState<EnumOptionsByCode>({});
@@ -397,9 +436,15 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
   }, [mode, readonlyCode, scopeCode, serviceSlug]);
 
   useEffect(() => {
-    if (!scopeCode) {
+    if (!scopeCode && !entityId) {
       setResolvedConnection(null);
       setResolveError(null);
+      form.setFieldsValue({
+        resolvedConnectionId: undefined,
+        resolvedConnectionName: undefined,
+        resolvedDbType: undefined,
+        resolvedTargetSchema: undefined,
+      });
       return;
     }
 
@@ -409,19 +454,38 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
       setResolveError(null);
       try {
         const res = await postApiServiceResolveConnection({
-          scopeCode,
-          entityId,
+          scopeCode: scopeCode || undefined,
+          entityId: entityId || undefined,
         });
         if (cancelled) return;
         if (!isApiSuccess(res)) {
           setResolvedConnection(null);
+          form.setFieldsValue({
+            resolvedConnectionId: undefined,
+            resolvedConnectionName: undefined,
+            resolvedDbType: undefined,
+            resolvedTargetSchema: undefined,
+          });
           setResolveError(getApiErrorMessage(res, '无法推断数据库连接'));
           return;
         }
-        setResolvedConnection(getApiData<API.ApiServiceResolvedConnection>(res) || null);
+        const data = getApiData<API.ApiServiceResolvedConnection>(res) || null;
+        setResolvedConnection(data);
+        form.setFieldsValue({
+          resolvedConnectionId: data?.connectionId,
+          resolvedConnectionName: data?.connectionName,
+          resolvedDbType: data?.dbType,
+          resolvedTargetSchema: data?.targetSchema,
+        });
       } catch (error) {
         if (!cancelled) {
           setResolvedConnection(null);
+          form.setFieldsValue({
+            resolvedConnectionId: undefined,
+            resolvedConnectionName: undefined,
+            resolvedDbType: undefined,
+            resolvedTargetSchema: undefined,
+          });
           setResolveError(getApiErrorMessage(error, '无法推断数据库连接'));
         }
       } finally {
@@ -432,7 +496,43 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [scopeCode, entityId]);
+  }, [scopeCode, entityId, form]);
+
+  const handlePrimaryEntityChange = useCallback(
+    (next?: ApiServiceEntityLookupValue) => {
+      if (!next?.entityId) {
+        form.setFieldsValue({
+          entityId: undefined,
+          entityCode: undefined,
+          entityLabel: undefined,
+          scopeCode: undefined,
+        });
+        return;
+      }
+      const derivedScope = scopeCodeFromEntityCode(next.entityCode);
+      const op = String(form.getFieldValue('primaryOperation') || 'find');
+      const autoSlug = suggestServiceSlugFromEntity(next.entityCode, op);
+      setServiceSlugDirty(false);
+      form.setFieldsValue({
+        entityId: next.entityId,
+        entityCode: next.entityCode,
+        entityLabel: next.entityLabel,
+        scopeCode: derivedScope,
+        ...(autoSlug ? { serviceSlug: autoSlug } : {}),
+      });
+    },
+    [form],
+  );
+
+  // 主操作变化且短名未手动改过时，按「实体末段 + Create/Find…」重填
+  useEffect(() => {
+    if (serviceSlugDirty) return;
+    if (!entityCode || !primaryOperation) return;
+    const autoSlug = suggestServiceSlugFromEntity(entityCode, primaryOperation);
+    if (!autoSlug) return;
+    if (form.getFieldValue('serviceSlug') === autoSlug) return;
+    form.setFieldsValue({ serviceSlug: autoSlug });
+  }, [entityCode, primaryOperation, serviceSlugDirty, form]);
 
   const scriptHelp = scriptMode === 'typescript' ? HANDLER_SCRIPT_HELP : SQL_SCRIPT_HELP;
 
@@ -569,7 +669,7 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
 
         <Card style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-            <Col span={24}>
+            <Col span={12}>
               <Form.Item label="主操作类型" required>
                 <div className="api-service-form__operation-row">
                   <Form.Item
@@ -607,11 +707,30 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
             </Col>
             <Col span={12}>
               <Form.Item
-                label="数据模型 Scope"
-                name="scopeCode"
-                rules={[{ required: mode === 'create', message: '请选择 Scope' }]}
+                label="主实体"
+                required
+                tooltip="必选。按该实体物化记录推断连接与 Schema；服务短名/code 默认由其推导"
               >
-                <ApiServiceScopeLookup />
+                <ApiServiceEntityLookup
+                  value={entityLookupValue}
+                  onChange={handlePrimaryEntityChange}
+                />
+              </Form.Item>
+              <Form.Item
+                name="entityId"
+                hidden
+                rules={[{ required: true, message: '请选择主实体' }]}
+              >
+                <input />
+              </Form.Item>
+              <Form.Item name="entityCode" hidden>
+                <input />
+              </Form.Item>
+              <Form.Item name="entityLabel" hidden>
+                <input />
+              </Form.Item>
+              <Form.Item name="scopeCode" hidden>
+                <input />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -646,20 +765,12 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
                     message: '须为字母开头且仅含字母数字下划线',
                   },
                 ]}
-                fieldProps={{ placeholder: 'OrderSummary' }}
-                tooltip="与 Scope 组合生成 code，如 sales:OrderSummary"
+                fieldProps={{
+                  placeholder: 'ActualHoursStatsCreate',
+                  onChange: () => setServiceSlugDirty(true),
+                }}
+                tooltip="默认=实体末段+主操作（如 Create/Find，首字母大写驼峰）；可改。code = Scope前缀:短名"
               />
-            </Col>
-            <Col span={24} style={{ marginTop: 8 }}>
-              {resolveLoading && <Spin size="small" description="正在推断数据库连接…" />}
-              {!resolveLoading && scopeCode && resolvedConnection && (
-                <Text type="secondary">
-                  将使用连接：{resolvedConnection.connectionName}（{resolvedConnection.dbType}，自动推断）
-                </Text>
-              )}
-              {!resolveLoading && resolveError && (
-                <Text type="danger">{resolveError}</Text>
-              )}
             </Col>
             <Col span={12}>
               <ProFormText
@@ -670,9 +781,31 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
               />
             </Col>
             <Col span={12}>
-              <Form.Item label="标签" name="tags">
+              <Form.Item label="标签" name="tags" tooltip="可输入多个标签，按回车确认">
                 <AntdTagInput placeholder="report, readonly" />
               </Form.Item>
+            </Col>
+            <Col span={24} style={{ marginTop: 8 }}>
+              {resolveLoading && <Spin size="small" description="正在推断数据库连接…" />}
+              {!resolveLoading && entityId && resolvedConnection && (
+                <Text type="secondary">
+                  将使用连接：{resolvedConnection.connectionName}
+                  （{resolvedConnection.dbType}
+                  {resolvedConnection.targetSchema
+                    ? `，Schema：${resolvedConnection.targetSchema}`
+                    : ''}
+                  ，由主实体物化推断）
+                  {scopeCode ? (
+                    <>
+                      {' · 域 '}
+                      <Text code>{scopeCode}</Text>
+                    </>
+                  ) : null}
+                </Text>
+              )}
+              {!resolveLoading && resolveError && (
+                <Text type="danger">{resolveError}</Text>
+              )}
             </Col>
             {endpointPreview.length > 0 ? (
               <Col span={24}>

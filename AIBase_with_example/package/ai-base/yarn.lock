@@ -5,9 +5,9 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
-"@EADAF/ai-base@workspace:.":
+ "@eadaf/ai-base@workspace:.": 
   version: 0.0.0-use.local
-  resolution: "@EADAF/ai-base@workspace:."
+  resolution: "@eadaf/ai-base@workspace:."
   dependencies:
     "@ant-design/icons": "npm:^6.2.5"
     "@ant-design/x": "npm:^2.8.0"

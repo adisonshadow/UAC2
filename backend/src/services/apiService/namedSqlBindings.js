@@ -3,6 +3,8 @@
  * 用于 TypeScript Handler 的 queryPg，避免字符串插值。
  */
 
+const { stripSqlComments } = require('./sqlTextUtils');
+
 const NAMED_PARAM_RE = /(?<!:):(\w+)\b/g;
 
 /**
@@ -53,7 +55,8 @@ function bindNamedSqlParams(sql, values = {}, options = {}) {
     );
   }
 
-  const remaining = nextSql.match(NAMED_PARAM_RE);
+  // 剩余检查忽略注释中的 :name（与 extractSqlNamedParams 一致）
+  const remaining = stripSqlComments(nextSql).match(NAMED_PARAM_RE);
   if (remaining?.length) {
     throw Object.assign(
       new Error(`queryPg SQL 仍含未绑定命名参数: ${[...new Set(remaining)].join(', ')}`),
@@ -65,7 +68,7 @@ function bindNamedSqlParams(sql, values = {}, options = {}) {
 }
 
 function sqlHasNamedParams(sql) {
-  return /(?<!:):\w+\b/.test(String(sql || ''));
+  return /(?<!:):\w+\b/.test(stripSqlComments(sql));
 }
 
 module.exports = {

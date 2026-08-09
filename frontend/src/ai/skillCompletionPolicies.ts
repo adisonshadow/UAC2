@@ -1,16 +1,61 @@
-import { registerSkillCompletionPolicy } from '@EADAF/ai-base';
+import { registerSkillCompletionPolicy } from '@eadaf/ai-base';
 
 /**
- * EADAF 业务 Skill 的声明式 auto-continue 策略注册。
+ * EADAF 业务 Skill 的声明式完成策略覆盖。
  *
- * 取代历史版本中 SDK 内部硬编码的 bizdata/apiservice 正则与工具名集合。
- * 仅声明「哪些 Tool 必须调用、什么文本算任务完成、什么文本禁止续调」，
- * 具体的「模型是否只说不做、是否需要续调」判定由 SDK 通用框架执行。
+ * DB `completion_strategy` 为权威源（见 aibase-ai-seed.sql）；
+ * 此处仅注册前端仍需覆盖的关键词 / claimRules / continuousExecution 等。
+ * 覆盖与 DB 浅合并，覆盖字段优先。
  *
  * 在 AIChatClientToolsRegistrar 启动时调用一次即可。
  */
+
+/** 通用：收尾建议句，禁止 auto-continue 当成任务完成 */
+const BLOCK_SUGGEST_NEXT = [
+  '接下来您可以',
+  '建议您',
+  '可选操作',
+  '确认后',
+  '请确认',
+  '是否继续',
+] as const;
+
+/** 不含「请确认」类（管理页常用「发布结果/下一步建议」） */
+const BLOCK_SUGGEST_SOFT = ['接下来您可以', '建议您', '可选操作'] as const;
+
+/** 写操作常见「等用户确认」话术 */
+const BLOCK_WAIT_CONFIRM = [
+  '等您确认',
+  '等待确认',
+  '需要您确认',
+] as const;
+
+/** 建模：禁止 delete+create 改 Scope */
+const BLOCK_MODEL_RECREATE = [
+  '删除重建',
+  'delete + create',
+  'delete+create',
+] as const;
+
 export function registerEadafSkillCompletionPolicies(): void {
-  // 业务建模：完成前必须跑过 bizdata_validate_model；Scope 调整须用 rename 而非 delete+create
+  registerSkillCompletionPolicy('uac-access-control', {
+    terminationStrictness: 'plan-only',
+    allowDirectAnswerTermination: true,
+    blockKeywords: [...BLOCK_SUGGEST_NEXT],
+  });
+
+  registerSkillCompletionPolicy('bizdata-data-standards', {
+    terminationStrictness: 'plan-only',
+    allowDirectAnswerTermination: true,
+    blockKeywords: [...BLOCK_SUGGEST_NEXT],
+  });
+
+  registerSkillCompletionPolicy('bizdata-metadata-catalog', {
+    terminationStrictness: 'plan-only',
+    allowDirectAnswerTermination: true,
+    blockKeywords: [...BLOCK_SUGGEST_NEXT],
+  });
+
   registerSkillCompletionPolicy('bizdata-model-design', {
     requiredTools: ['bizdata_validate_model'],
     completionKeywords: [
@@ -22,17 +67,9 @@ export function registerEadafSkillCompletionPolicies(): void {
       '本阶段',
       '当前阶段',
     ],
-    blockKeywords: [
-      '删除重建',
-      'delete + create',
-      'delete+create',
-      '接下来您可以',
-      '建议您',
-      '可选操作',
-    ],
+    blockKeywords: [...BLOCK_MODEL_RECREATE, ...BLOCK_SUGGEST_NEXT, ...BLOCK_WAIT_CONFIRM],
   });
 
-  // 物化：完成前必须执行过 bizdata_execute_materialization
   registerSkillCompletionPolicy('bizdata-materialization', {
     requiredTools: ['bizdata_execute_materialization'],
     completionKeywords: [
@@ -43,21 +80,16 @@ export function registerEadafSkillCompletionPolicies(): void {
       '本阶段',
       '当前阶段',
     ],
+    blockKeywords: [...BLOCK_WAIT_CONFIRM, ...BLOCK_SUGGEST_NEXT],
   });
 
-  // MOCK 数据：仅当这是主 Skill 时，"提到 MOCK 但未调用" 才续调。
-  // 这里仅声明 requiredTools；是否触发续调由 SDK 在"模型只输出文本"时统一判定。
-  registerSkillCompletionPolicy('bizdata-mock-data', {
-    requiredTools: ['bizdata_insert_mock_data'],
-  });
-
-  // API 服务 - 创建：关键写操作必须真正调用过
   registerSkillCompletionPolicy('bizdata-api-service-create', {
     requiredTools: ['apiservice_create_service', 'apiservice_create_services_batch'],
+    requiredToolsMode: 'any',
     completionKeywords: ['已发布', '发布成功', '创建成功', '已成功创建'],
+    blockKeywords: [...BLOCK_SUGGEST_NEXT],
   });
 
-  // API 服务 - 管理：测试/发布等关键操作须有调用证据（按声称内容匹配，非全局强制 run_test）
   registerSkillCompletionPolicy('bizdata-api-service-manage', {
     completionKeywords: [
       '测试通过',
@@ -71,7 +103,7 @@ export function registerEadafSkillCompletionPolicies(): void {
       'draft 已处理',
       'draft已处理',
     ],
-    blockKeywords: ['发布结果', '下一步建议', '接下来您可以', '建议您', '可选操作'],
+    blockKeywords: ['发布结果', '下一步建议', ...BLOCK_SUGGEST_SOFT],
     claimRules: [
       {
         keywords: ['测试通过', '测试成功'],
@@ -98,10 +130,9 @@ export function registerEadafSkillCompletionPolicies(): void {
     ],
   });
 
-  // API 服务 - test-form 循环：连续执行型，不受「一次一事」限制
-  registerSkillCompletionPolicy('bizdata-api-service-test-form', {
+  registerSkillCompletionPolicy('bizdata-api-service-test-fix', {
     continuousExecution: true,
-    blockKeywords: ['接下来您可以', '建议您', '可选操作', '如需继续'],
+    blockKeywords: [...BLOCK_SUGGEST_SOFT, '如需继续'],
   });
 
   registerSkillCompletionPolicy('api-services-collection-pipeline', {
@@ -122,7 +153,6 @@ export function registerEadafSkillCompletionPolicies(): void {
     ],
   });
 
-  // 业务指标：声称创建/看板就绪时必须真正调用过对应写 Tool
   registerSkillCompletionPolicy('bizdata-metrics', {
     completionKeywords: [
       '创建成功',

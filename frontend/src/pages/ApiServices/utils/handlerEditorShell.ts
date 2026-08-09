@@ -10,7 +10,7 @@ export const HANDLER_EDITOR_HEADER = [
   ' * EADAF TypeScript Handler',
   ' * 灰色区域只读；仅函数体内可编辑。',
   ' * params：已校验只读；经 db().where/paginate 使用时参数化防注入。',
-  ' * 推荐：.paginate({ limit, skip }) / .count() / .leftJoin(...)；禁止 queryPg/SQL。',
+  ' * 推荐：.paginate({ limit, skip }) → { items, pagination }；禁止 queryPg/SQL。',
   ' */',
   'export async function handler(_ctx?: HandlerContext): Promise<unknown> {',
 ].join('\n') + '\n';

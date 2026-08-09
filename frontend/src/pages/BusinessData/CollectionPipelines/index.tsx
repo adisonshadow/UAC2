@@ -8,7 +8,7 @@ import {
 } from '@ant-design/icons';
 import { ActionType } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
-import { useAISurface } from '@EADAF/ai-base';
+import { useAISurface } from '@eadaf/ai-base';
 import { Button, Popconfirm, Splitter, Tag } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';

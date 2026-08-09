@@ -175,7 +175,7 @@ function formatStatusItem(entity, latest, conn) {
     connectionId: conn?.id || latest?.run?.connection_id || null,
     connectionName: conn?.name || latest?.run?.connection?.name || null,
     dbType: conn?.db_type || latest?.run?.connection?.db_type || null,
-    targetSchema: latest?.run?.target_schema || conn?.target_schema || null
+    targetSchema: latest?.run?.target_schema || null
   };
 }
 

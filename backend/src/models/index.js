@@ -35,6 +35,7 @@ const BizdataMaterializationRun = require('./bizdata_materialization_run');
 const BizdataMaterializationEntity = require('./bizdata_materialization_entity');
 const BizdataDatabaseConnection = require('./bizdata_database_connection');
 const BizdataSetting = require('./bizdata_setting');
+const BizdataScopeDoc = require('./bizdata_scope_doc');
 const BizdataApiService = require('./bizdata_api_service');
 const BizdataApiServiceOperation = require('./bizdata_api_service_operation');
 const BizdataApiServicePermission = require('./bizdata_api_service_permission');
@@ -219,6 +220,7 @@ module.exports = {
   BizdataMaterializationEntity,
   BizdataDatabaseConnection,
   BizdataSetting,
+  BizdataScopeDoc,
   BizdataApiService,
   BizdataApiServiceOperation,
   BizdataApiServicePermission,
