@@ -8,6 +8,7 @@ import { Button, Input, Modal, Space, Spin } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useReturnToList } from '@/hooks/useReturnToList';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import { getDepartmentPathFromTree } from '@/utils/department';
@@ -45,6 +46,7 @@ interface MemberFormPageProps {
 
 const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
+  const navigateToList = useReturnToList();
   const { id } = useParams<{ id: string }>();
   const formRef = useRef<ProFormInstance>(null);
   const { initialState } = useInitialState();
@@ -122,7 +124,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
       const response = await getUsersUserId({ user_id: id });
       if (response.code !== 200 || !response.data) {
         message.error('获取成员详情失败');
-        navigate(LIST_PATH, { replace: true });
+        navigateToList(LIST_PATH, { replace: true });
         return;
       }
       const processedData: Record<string, unknown> = {
@@ -136,7 +138,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
       applyDetailToForm(processedData);
     } catch {
       message.error('获取成员详情失败');
-      navigate(LIST_PATH, { replace: true });
+      navigateToList(LIST_PATH, { replace: true });
     } finally {
       setLoading(false);
     }
@@ -231,7 +233,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
       await putUsersUserIdRoles({ user_id: id }, { role_ids: roleIds });
 
       message.success('更新成功');
-      navigate(LIST_PATH);
+      navigateToList(LIST_PATH);
       return true;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : '保存失败';
@@ -263,7 +265,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
       return;
     }
     if (mode === 'create') {
-      navigate(LIST_PATH);
+      navigateToList(LIST_PATH);
     }
   };
 
@@ -300,7 +302,7 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
           setDeleteLoading(true);
           await deleteUsersUserId({ user_id: id });
           message.success('删除成功');
-          navigate(LIST_PATH);
+          navigateToList(LIST_PATH);
         } catch {
           message.error('删除失败');
         } finally {

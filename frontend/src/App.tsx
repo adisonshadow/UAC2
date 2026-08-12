@@ -4,6 +4,7 @@ import zhCN from 'antd/locale/zh_CN';
 import { AIChatProvider } from '@eadaf/ai-base';
 import '@eadaf/ai-base/style.css';
 import { BrowserRouter } from 'react-router-dom';
+import { NuqsAdapter } from 'nuqs/adapters/react-router/v7';
 import AIChatClientToolsRegistrar from '@/components/AIChatClientToolsRegistrar';
 import { ChatSessionGroupProvider } from '@/ai/ChatSessionGroupProvider';
 import { createAIChatConfig } from '@/config/aiChat';
@@ -52,7 +53,8 @@ export default function App() {
         <AntdAppApiBridge>
           <InitialStateProvider>
             <BrowserRouter>
-              <ChatSessionGroupProvider>
+              <NuqsAdapter>
+                <ChatSessionGroupProvider>
                 <AIChatProvider config={aiChatConfig}>
                   <AIChatClientToolsRegistrar />
                   <Suspense
@@ -72,7 +74,8 @@ export default function App() {
                     <AppRoutes />
                   </Suspense>
                 </AIChatProvider>
-              </ChatSessionGroupProvider>
+                </ChatSessionGroupProvider>
+              </NuqsAdapter>
             </BrowserRouter>
           </InitialStateProvider>
         </AntdAppApiBridge>

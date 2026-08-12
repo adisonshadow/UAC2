@@ -13,6 +13,7 @@ import React, { useCallback, useMemo, useRef } from "react";
 import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildMemberPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
+import { useOpenDetail } from '@/hooks/useReturnToList';
 import { tableColumns, useDepartmentOptions } from "./Schemas";
 import { getUsers, deleteUsersUserId } from "@/services/UAC/api/users";
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
@@ -40,6 +41,7 @@ interface UserRecord {
 
 const Page: React.FC = () => {
   const navigate = useNavigate();
+  const openDetail = useOpenDetail();
   const departmentOptions = useDepartmentOptions();
   const { roleOptions } = useRoleOptions();
   const actionRef = useRef<ActionType | undefined>(undefined);
@@ -62,7 +64,7 @@ const Page: React.FC = () => {
                 title="编辑"
                 key="edit"
                 icon={<EditOutlined />}
-                onClick={() => navigate(`/member_org/member/${record.user_id}/edit`)}
+                onClick={() => openDetail(`/member_org/member/${record.user_id}/edit`)}
               />
               <TableActionButton
                 title="删除"
@@ -159,6 +161,8 @@ const Page: React.FC = () => {
     <>
       <PageContainer pageHeaderRender={() => <></>}>
         <UrlSyncedProTable<UserRecord>
+          engine="nuqs"
+          urlFilterKeys={['username', 'name', 'status']}
           defaultPageSize={PAGE_SIZE}
           headerTitle="成员列表"
           actionRef={actionRef}

@@ -333,6 +333,7 @@ const ApiServiceListPage: React.FC = () => {
           <Splitter.Panel>
             <div style={{ height: '100%', overflow: 'auto', paddingLeft: 4 }}>
               <UrlSyncedProTable<ApiServiceListItem>
+                engine="nuqs"
                 {...DEFAULT_PRO_TABLE_OPTIONS}
                 rowKey="id"
                 headerTitle={

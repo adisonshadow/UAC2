@@ -4,6 +4,7 @@ Thumbs.db
 
 # --- Dependencies ---
 node_modules/
+.pnpm-store/
 
 # --- Environment & secrets ---
 .env

@@ -1,17 +1,24 @@
 import { ProTable } from '@ant-design/pro-components';
-import type { ActionType, ParamsType, ProFormInstance, ProTableProps } from '@ant-design/pro-components';
+import type {
+  ActionType,
+  ParamsType,
+  ProColumns,
+  ProFormInstance,
+  ProTableProps,
+} from '@ant-design/pro-components';
+import type { SingleParserBuilder } from 'nuqs';
 import type { TablePaginationPlacement } from 'antd/es/table/interface';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  URL_PAGE_KEY,
-  URL_PAGE_SIZE_KEY,
-} from '@/hooks/useUrlQueryState';
+import { useProTableUrlState } from '@/hooks/useProTableUrlState';
+import { URL_PAGE_KEY, URL_PAGE_SIZE_KEY } from '@/hooks/useUrlQueryState';
 import {
   DEFAULT_RESERVED_URL_KEYS,
   applyTableStateToSearchParams,
   searchParamsToTableState,
 } from '@/utils/tableUrlHelper';
+import type { TableUrlKeys } from '@/utils/tableUrlState/keys';
+import { stringArrayParser } from '@/utils/tableUrlState/parsers';
 
 export type UrlSyncedProTableProps<
   T extends Record<string, any>,
@@ -30,6 +37,23 @@ export type UrlSyncedProTableProps<
   urlFilterKeys?: string[];
   /** 需要从 URL 按逗号还原为数组的字段 */
   urlArrayKeys?: string[];
+  /**
+   * 引擎选择（方案 6.8 灰度策略）：
+   * - 'legacy'（默认）：现有基于 useSearchParams + ref 守卫的实现；
+   * - 'nuqs'：新引擎，URL 驱动（useProTableUrlState），无 5-ref 守卫。
+   * 批量切换前请逐页验证。
+   */
+  engine?: 'legacy' | 'nuqs';
+  /** [nuqs] 显式筛选 parser 覆盖（键 → parser），优先级高于 columns 推断 */
+  urlParsers?: Record<string, SingleParserBuilder<any>>;
+  /** [nuqs] 分页/排序键名覆盖（多实例） */
+  urlKeys?: TableUrlKeys;
+  /** [nuqs] 多实例前缀（ASCII），与 urlKeys 二选一 */
+  prefix?: string;
+  /** [nuqs] 是否启用 URL 排序（opt-in，仅对声明了排序需求的表格开启） */
+  sortable?: boolean;
+  /** [nuqs] 树表等无分页场景传 false：只同步筛选 */
+  syncPagination?: boolean;
 };
 
 const DEFAULT_PAGINATION_PLACEMENT: TablePaginationPlacement[] = ['bottomStart'];
@@ -43,7 +67,9 @@ function assignRef<T>(
   else target.current = instance;
 }
 
-export function UrlSyncedProTable<
+/* ============================== legacy 引擎（保留） ============================== */
+
+function LegacyUrlSyncedProTable<
   T extends Record<string, any>,
   U extends ParamsType = ParamsType,
   ValueType = 'text',
@@ -325,6 +351,323 @@ export function UrlSyncedProTable<
       onChange={handleTableChange}
     />
   );
+}
+
+/* ============================== nuqs 引擎（v2） ============================== */
+
+/** 过滤空值后的筛选值（与 useProTableUrlState 的 filterValues 口径一致） */
+function pickNonEmpty(values: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  keys.forEach((key) => {
+    const value = values[key];
+    const empty =
+      value === undefined ||
+      value === null ||
+      value === '' ||
+      (Array.isArray(value) && value.length === 0);
+    if (!empty) result[key] = value;
+  });
+  return result;
+}
+
+/** 稳定签名：dayjs 等对象转为可比较字符串（避免对象引用抖动） */
+function stableSignature(value: unknown): string {
+  if (value && typeof value === 'object' && 'toISOString' in value && typeof (value as any).toISOString === 'function') {
+    return (value as any).toISOString();
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSignature).join(',')}]`;
+  }
+  return JSON.stringify(value);
+}
+
+function filtersSignature(values: Record<string, unknown>): string {
+  return Object.keys(values)
+    .sort()
+    .map((key) => `${key}=${stableSignature(values[key])}`)
+    .join('&');
+}
+
+function NuqsUrlSyncedProTable<
+  T extends Record<string, any>,
+  U extends ParamsType = ParamsType,
+  ValueType = 'text',
+>(props: UrlSyncedProTableProps<T, U, ValueType>) {
+  const {
+    defaultPageSize = 10,
+    syncUrl = true,
+    urlFilterKeys,
+    urlArrayKeys,
+    urlParsers,
+    urlKeys,
+    prefix,
+    sortable = false,
+    syncPagination = true,
+    pagination,
+    request,
+    actionRef,
+    params,
+    form,
+    formRef: formRefProp,
+    onSubmit,
+    onReset,
+    onChange,
+    manualRequest: userManualRequest,
+    columns,
+    search,
+    ...rest
+  } = props;
+
+  const resolvedDefaultPageSize =
+    typeof pagination === 'object' && pagination?.pageSize
+      ? Number(pagination.pageSize)
+      : defaultPageSize;
+
+  const effectiveSyncPagination = syncPagination && pagination !== false;
+
+  /** urlArrayKeys 兼容：强制按逗号数组解析（优先级高于 columns 推断，低于 urlParsers） */
+  const mergedParsers = useMemo(() => {
+    if (!urlArrayKeys?.length) return urlParsers;
+    const extra: Record<string, SingleParserBuilder<any>> = { ...urlParsers };
+    urlArrayKeys.forEach((key) => {
+      if (!extra[key]) extra[key] = stringArrayParser;
+    });
+    return extra;
+  }, [urlArrayKeys, urlParsers]);
+
+  const urlState = useProTableUrlState({
+    filterKeys: urlFilterKeys,
+    parsers: mergedParsers,
+    columns: columns as ProColumns<any>[] | undefined,
+    urlKeys,
+    prefix,
+    defaultPageSize: resolvedDefaultPageSize,
+    syncPagination: effectiveSyncPagination,
+    sortable,
+    syncUrl,
+  });
+
+  const {
+    page,
+    pageSize,
+    filterValues,
+    sort,
+    setPagination,
+    setFilters,
+    resetFilters,
+    setSort,
+    clearSort,
+  } = urlState;
+
+  const internalActionRef = useRef<ActionType | undefined>(undefined);
+  const internalFormRef = useRef<ProFormInstance | undefined>(undefined);
+  /** 页面显式传 manualRequest：完全手动，胶水层不编排请求 */
+  const manualMode = userManualRequest !== undefined;
+  /** 权威页码：用户点击时立即更新，供 request 读取（不等 URL 写入） */
+  const pageRef = useRef(page);
+  const pageSizeRef = useRef(pageSize);
+  pageRef.current = page;
+  pageSizeRef.current = pageSize;
+
+  const requestSeqRef = useRef(0);
+
+  const filterKey = filtersSignature(filterValues);
+  const sortKey = sort ? `${sort.field}:${sort.order}` : '';
+
+  // 表单就绪：立即回填 URL 筛选（URL 直达/前进后退恢复）
+  const setFormRef = useCallback(
+    (instance: ProFormInstance | undefined) => {
+      internalFormRef.current = instance;
+      assignRef(formRefProp as any, instance);
+      if (instance?.setFieldsValue && syncUrl && Object.keys(filterValues).length) {
+        instance.setFieldsValue(filterValues);
+      }
+    },
+    [filterValues, formRefProp, syncUrl],
+  );
+
+  // 回填：筛选值变化时（URL 变化 → 表单同步）
+  useEffect(() => {
+    if (!syncUrl) return;
+    const formInst = internalFormRef.current;
+    if (formInst?.setFieldsValue && Object.keys(filterValues).length) {
+      formInst.setFieldsValue(filterValues);
+    }
+  }, [filterValues, syncUrl]);
+
+  /**
+   * 请求编排（URL 驱动一切）：
+   * - 挂载：reload 一次（URL 有状态 → 正确参数首屏；URL 空 → 默认首屏；
+   *   search=false 时靠 internal manualRequest 抑制 ProTable 挂载默认请求）；
+   * - page/pageSize/filterKey/sortKey 任一变化（提交/翻页/排序/前进后退/URL 直达）→ reload。
+   * 说明：ProTable 表单提交时内部先发请求，但此时 pageRef 尚未同步（onSubmit 在
+   * 内部处理之后调用）且受控分页下 pageInfo 非受控，请求参数不可靠；统一由本 effect
+   * 以 URL 权威状态 reload（内部先发请求会被 abort，竞态由 request 序号防护）。
+   */
+  useEffect(() => {
+    if (!syncUrl || !request || manualMode) return;
+    internalActionRef.current?.reload?.();
+  }, [filterKey, page, pageSize, request, sortKey, syncUrl, manualMode]);
+
+  const mergedPagination = useMemo(() => {
+    if (pagination === false) return false;
+    const base = typeof pagination === 'object' ? pagination : {};
+    if (!syncUrl || !effectiveSyncPagination) {
+      return {
+        defaultPageSize: resolvedDefaultPageSize,
+        showSizeChanger: true,
+        placement: DEFAULT_PAGINATION_PLACEMENT,
+        ...base,
+      };
+    }
+    // 受控：current / pageSize 来自 URL；翻页 onChange 写 URL，由 URL effect 驱动 reload
+    return {
+      showSizeChanger: true,
+      placement: DEFAULT_PAGINATION_PLACEMENT,
+      ...base,
+      current: page,
+      pageSize,
+      onChange: (nextPage: number, nextPageSize: number) => {
+        pageRef.current = nextPage;
+        pageSizeRef.current = nextPageSize;
+        setPagination(nextPage, nextPageSize);
+        base.onChange?.(nextPage, nextPageSize);
+      },
+    };
+  }, [
+    effectiveSyncPagination,
+    page,
+    pageSize,
+    pagination,
+    resolvedDefaultPageSize,
+    setPagination,
+    syncUrl,
+  ]);
+
+  // params 原样透传：**禁止**把动态 URL 状态塞进 params（params 变化 → 重置第 1 页）
+  const mergedParams = useMemo(() => params, [params]);
+
+  const wrappedRequest = useMemo(() => {
+    if (!request) return undefined;
+    if (!syncUrl) return request;
+    return async (requestParams: U, sortParams: Record<string, any>, filterParams: Record<string, any>) => {
+      const seq = ++requestSeqRef.current;
+      // URL 筛选为权威：合并进请求参数（表单提交的内部请求可能晚于 URL 更新）
+      // 页码以 URL 权威 pageRef 为准（避免 reload 时 ProTable 传旧值）
+      const result = await request(
+        {
+          ...(requestParams as Record<string, unknown>),
+          ...filterValues,
+          current: pageRef.current,
+          pageSize: pageSizeRef.current,
+        } as unknown as U,
+        sortParams,
+        filterParams,
+      );
+      if (seq !== requestSeqRef.current) {
+        // 过期响应（快速连点/前进后退竞态）：丢弃
+        return { data: [], success: false } as unknown as ReturnType<typeof request>;
+      }
+      return result;
+    };
+  }, [filterValues, request, syncUrl]);
+
+  const handleSubmit = useCallback(
+    (values: U) => {
+      pageRef.current = 1;
+      setFilters(values as Record<string, unknown>, { resetPage: true });
+      onSubmit?.(values);
+    },
+    [onSubmit, setFilters],
+  );
+
+  const handleReset = useCallback(() => {
+    pageRef.current = 1;
+    resetFilters();
+    onReset?.();
+  }, [onReset, resetFilters]);
+
+  const handleTableChange = useCallback(
+    (pag: any, filters: any, sorter: any, extra: any) => {
+      if (sortable && extra?.action === 'sort') {
+        const s = Array.isArray(sorter) ? sorter[0] : sorter;
+        if (s?.field && s.order) {
+          setSort(String(s.field), s.order === 'ascend' ? 'asc' : 'desc');
+        } else {
+          clearSort();
+        }
+      }
+      onChange?.(pag, filters, sorter, extra);
+    },
+    [clearSort, onChange, setSort, sortable],
+  );
+
+  const mergedForm = useMemo(() => {
+    if (!syncUrl) return form;
+    return {
+      ...form,
+      initialValues: {
+        ...filterValues,
+        ...(typeof form === 'object' ? form?.initialValues : undefined),
+      },
+    };
+  }, [filterValues, form, syncUrl]);
+
+  // 受控排序恢复（opt-in）：仅为启用 URL 排序的列注入 sortOrder
+  const mergedColumns = useMemo(() => {
+    if (!sortable || !sort || !columns) return columns;
+    return columns.map((col) =>
+      typeof col.dataIndex === 'string' && col.dataIndex === sort.field
+        ? { ...col, sortOrder: sort.order === 'asc' ? ('ascend' as const) : ('descend' as const) }
+        : col,
+    );
+  }, [columns, sort, sortable]);
+
+  const setActionRef = useCallback(
+    (instance: ActionType | undefined) => {
+      internalActionRef.current = instance;
+      assignRef(actionRef as any, instance);
+    },
+    [actionRef],
+  );
+
+  // search=false 时抑制 ProTable 挂载默认请求（由首轮 reload 统一控制）
+  const internalManualRequest =
+    manualMode
+      ? userManualRequest
+      : Boolean(request && syncUrl && search === false) || undefined;
+
+  return (
+    <ProTable<T, U, ValueType>
+      {...rest}
+      columns={mergedColumns}
+      search={search}
+      actionRef={setActionRef as any}
+      formRef={setFormRef as any}
+      form={mergedForm}
+      request={wrappedRequest}
+      pagination={mergedPagination}
+      params={mergedParams}
+      manualRequest={internalManualRequest}
+      onSubmit={handleSubmit}
+      onReset={handleReset}
+      onChange={handleTableChange}
+    />
+  );
+}
+
+/* ============================== 主分发组件 ============================== */
+
+export function UrlSyncedProTable<
+  T extends Record<string, any>,
+  U extends ParamsType = ParamsType,
+  ValueType = 'text',
+>(props: UrlSyncedProTableProps<T, U, ValueType>) {
+  const { engine = 'legacy', ...rest } = props;
+  if (engine === 'nuqs') {
+    return <NuqsUrlSyncedProTable<T, U, ValueType> {...rest} />;
+  }
+  return <LegacyUrlSyncedProTable<T, U, ValueType> {...rest} />;
 }
 
 export default UrlSyncedProTable;

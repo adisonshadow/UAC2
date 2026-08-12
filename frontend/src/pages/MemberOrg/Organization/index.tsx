@@ -6,9 +6,9 @@ import {
 import {
   ActionType,
   PageContainer,
-  ProTable,
 } from '@ant-design/pro-components';
 import type { ProColumns } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useSetState } from "ahooks";
 import { Button } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
@@ -22,6 +22,7 @@ import { TableActionButton, TableActions, TABLE_ACTION_COLUMN_BASE } from '@/com
 import { augmentColumnsWithChatReference } from '@/utils/augmentColumnsWithChatReference';
 import { buildDepartmentReference } from '@/ai/chatReferenceBuilders';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useOpenDetail } from '@/hooks/useReturnToList';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 
 interface DepartmentRecord {
@@ -46,6 +47,7 @@ const getAllDepartmentIds = (departments: DepartmentWithChildren[]): string[] =>
 
 const Page: React.FC = () => {
   const navigate = useNavigate();
+  const openDetail = useOpenDetail();
   const location = useLocation();
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
@@ -72,7 +74,7 @@ const Page: React.FC = () => {
                 key="edit"
                 icon={<EditOutlined />}
                 onClick={() =>
-                  navigate(`/member_org/organization/${record.department_id}/edit`)
+                  openDetail(`/member_org/organization/${record.department_id}/edit`)
                 }
               />
               <TableActionButton
@@ -221,7 +223,10 @@ const Page: React.FC = () => {
   return (
     <>
       <PageContainer pageHeaderRender={() => <></>}>
-        <ProTable<DepartmentWithChildren>
+        <UrlSyncedProTable<DepartmentWithChildren>
+          engine="nuqs"
+          urlFilterKeys={['name']}
+          syncPagination={false}
           defaultSize="small"
           actionRef={actionRef}
           rowKey="department_id"

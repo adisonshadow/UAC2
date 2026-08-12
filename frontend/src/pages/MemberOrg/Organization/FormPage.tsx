@@ -8,6 +8,7 @@ import { Button, Space, Spin } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useReturnToList } from '@/hooks/useReturnToList';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 import { useRoleOptions } from '@/hooks/useRoleOptions';
@@ -36,6 +37,7 @@ interface OrganizationFormPageProps {
 
 const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => {
   const navigate = useNavigate();
+  const navigateToList = useReturnToList();
   const { id } = useParams<{ id: string }>();
   const formRef = useRef<ProFormInstance>(null);
   const { roleOptions } = useRoleOptions();
@@ -110,7 +112,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
       const response = await getDepartmentsDepartmentId({ department_id: id });
       if (response.code !== 200 || !response.data) {
         message.error('获取部门详情失败');
-        navigate(LIST_PATH, { replace: true });
+        navigateToList(LIST_PATH, { replace: true });
         return;
       }
       const processedData = {
@@ -123,7 +125,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
       formRef.current?.setFieldsValue(processedData);
     } catch {
       message.error('获取部门详情失败');
-      navigate(LIST_PATH, { replace: true });
+      navigateToList(LIST_PATH, { replace: true });
     } finally {
       setLoading(false);
     }
@@ -165,7 +167,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
         }
 
         message.success('创建成功');
-        navigate(`${LIST_PATH}?highlight=${departmentId || ''}`);
+        navigateToList(LIST_PATH, { extraSearch: `highlight=${departmentId || ''}` });
         return true;
       }
 
@@ -188,7 +190,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
       await putDepartmentsDepartmentIdRoles({ department_id: id }, { role_ids: roleIds });
 
       message.success('更新成功');
-      navigate(LIST_PATH);
+      navigateToList(LIST_PATH);
       return true;
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : '保存失败';
@@ -210,7 +212,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
           const response = await deleteDepartmentsDepartmentId({ department_id: id });
           if (response.code && response.code >= 200 && response.code < 300) {
             message.success('删除成功');
-            navigate(LIST_PATH);
+            navigateToList(LIST_PATH);
           } else {
             message.error(response.message || '删除失败');
           }

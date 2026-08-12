@@ -4,9 +4,9 @@ import { buildPermissionPrompts } from '@/ai/pageChatPrompts';
 import {
   ActionType as ProActionType,
   PageContainer,
-  ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Space, Modal, Drawer, Spin, Tag, Typography } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined, ControlOutlined } from "@ant-design/icons";
@@ -332,7 +332,10 @@ const PermissionTable: React.FC<PermissionTableProps> = ({
           return <></>;
         }}
       >
-        <ProTable
+        <UrlSyncedProTable
+          engine="nuqs"
+          urlFilterKeys={['code', 'status']}
+          syncPagination={false}
           defaultSize="small"
           actionRef={actionRef}
           rowKey="permission_id"

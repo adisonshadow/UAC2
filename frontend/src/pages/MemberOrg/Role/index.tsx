@@ -2,9 +2,9 @@ import {
   ActionType,
   BetaSchemaForm,
   PageContainer,
-  ProTable,
   type ProColumns,
 } from '@ant-design/pro-components';
+import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Space, Modal, Drawer, Spin, Typography } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import { EyeOutlined, PlusOutlined, EditOutlined, DeleteOutlined, SaveOutlined, CloseOutlined } from "@ant-design/icons";
@@ -343,7 +343,10 @@ const Page: React.FC = () => {
           return <></>;
         }}
       >
-        <ProTable
+        <UrlSyncedProTable
+          engine="nuqs"
+          urlFilterKeys={['role_name', 'status']}
+          syncPagination={false}
           defaultSize="small"
           actionRef={actionRef}
           rowKey="role_id"
