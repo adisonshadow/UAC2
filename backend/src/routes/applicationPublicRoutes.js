@@ -17,6 +17,7 @@ const router = new Router({
  *       `key` 可为应用 code 或 application_id（UUID）。
  *       返回业务 API、内置 API、采集 API（已发布且对本应用开放的采集管道）各 Operation / 接口明细，
  *       以及服务级请求参数 TypeScript interface（若有）。
+ *       另含 `outboundWebhooks` / `outboundWebhookTree`（应用关联的提交外部 API，仅文档页；不进入 apis.json）。
  *     parameters:
  *       - in: path
  *         name: key
@@ -45,6 +46,7 @@ router.get('/:key/api-catalog', ApplicationController.getPublicApiCatalog);
  *       供 AI / 第三方工具直接读取机器可读的接口契约（替代抓取 api-docs HTML）。
  *       返回标准 OpenAPI 3.0 对象（不套 { code, message, data } 外壳）。
  *       覆盖业务 API、内置 API、采集 API（POST /api/v1/ingest/...，text/plain 或 octet-stream）。
+ *       不含「提交外部 API / outbound webhook」（出站配置仅出现在公开文档独立页，不进入本 OpenAPI）。
  *       GET 类 operation 在 parameters[].example 中附带请求参数 Example；POST/PUT/PATCH 在 requestBody 中附带。
  *       `key` 可为应用 code 或 application_id（UUID）。
  *     parameters:

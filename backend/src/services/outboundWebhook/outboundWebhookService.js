@@ -1,14 +1,61 @@
 const { Op } = require('sequelize');
-const { OutboundWebhook, OutboundWebhookRun, sequelize } = require('../../models');
+const { OutboundWebhook, OutboundWebhookRun } = require('../../models');
 const { executeTransformScript, buildWebhookScriptContext } = require('./outboundScriptRuntime');
-const { postJson } = require('./outboundHttpClient');
+const { requestJson, ALLOWED_METHODS } = require('./outboundHttpClient');
+const { evaluateResponse } = require('./outboundResponseRules');
+const { encryptApiKey, decryptApiKey } = require('../../utils/encryption');
 const logger = require('../../utils/logger');
+
+const AUTH_TYPES = new Set(['none', 'bearer', 'api_key']);
+const AUTH_SEND_MODES = new Set(['header', 'query']);
+
+function normalizeHttpMethod(method) {
+  const m = String(method || 'POST').toUpperCase();
+  return ALLOWED_METHODS.has(m) ? m : 'POST';
+}
+
+function normalizeAuthType(type) {
+  const t = String(type || 'none').toLowerCase();
+  return AUTH_TYPES.has(t) ? t : 'none';
+}
+
+function normalizeAuthSendMode(mode) {
+  if (mode == null || mode === '') return null;
+  const m = String(mode).toLowerCase();
+  return AUTH_SEND_MODES.has(m) ? m : 'header';
+}
+
+function normalizeResponseConfig(cfg) {
+  if (cfg == null) return null;
+  if (typeof cfg === 'string') {
+    try {
+      return JSON.parse(cfg);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof cfg !== 'object') return null;
+  return cfg;
+}
+
+function maskSecret(enc) {
+  if (!enc) return null;
+  try {
+    const plain = decryptApiKey(enc);
+    if (!plain) return '****';
+    if (plain.length <= 4) return '****';
+    return `${'*'.repeat(Math.min(8, plain.length - 4))}${plain.slice(-4)}`;
+  } catch {
+    return '****';
+  }
+}
 
 /* ========== 格式化 ========== */
 
-function formatWebhook(row, { includeRuns = false } = {}) {
+function formatWebhook(row) {
   if (!row) return null;
   const data = row.toJSON ? row.toJSON() : row;
+  const authType = normalizeAuthType(data.auth_type);
   return {
     id: data.id,
     code: data.code,
@@ -19,14 +66,152 @@ function formatWebhook(row, { includeRuns = false } = {}) {
     triggerApiServiceId: data.trigger_api_service_id,
     triggerApiServiceCode: data.trigger_api_service_code,
     targetUrl: data.target_url,
+    httpMethod: normalizeHttpMethod(data.http_method),
+    authType,
+    authSendMode: data.auth_send_mode || null,
+    authKeyName: data.auth_key_name || null,
+    authSecretSet: Boolean(data.auth_secret_enc),
+    authSecretMasked: maskSecret(data.auth_secret_enc),
     requestStructure: data.request_structure,
+    requestExample: data.request_example,
     transformScript: data.transform_script,
     mockData: data.mock_data,
+    responseConfig: data.response_config || null,
     version: data.version,
     publishedAt: data.published_at,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
+}
+
+/**
+ * 根据 webhook 行构建外呼鉴权 headers / query
+ */
+function buildAuthOptions(row) {
+  const authType = normalizeAuthType(row.auth_type);
+  const headers = {};
+  const query = {};
+  if (authType === 'none' || !row.auth_secret_enc) {
+    return { headers, query };
+  }
+
+  let secret;
+  try {
+    secret = decryptApiKey(row.auth_secret_enc);
+  } catch (err) {
+    throw Object.assign(new Error(`鉴权密钥解密失败: ${err.message}`), { status: 500 });
+  }
+  if (!secret) return { headers, query };
+
+  if (authType === 'bearer') {
+    const keyName = row.auth_key_name || 'Authorization';
+    const value = secret.startsWith('Bearer ') ? secret : `Bearer ${secret}`;
+    headers[keyName] = value;
+    return { headers, query };
+  }
+
+  if (authType === 'api_key') {
+    const sendMode = normalizeAuthSendMode(row.auth_send_mode) || 'header';
+    const keyName = row.auth_key_name || (sendMode === 'query' ? 'api_key' : 'X-API-Key');
+    if (sendMode === 'query') {
+      query[keyName] = secret;
+    } else {
+      headers[keyName] = secret;
+    }
+  }
+
+  return { headers, query };
+}
+
+async function dispatchOutbound(row, transformedBody) {
+  const { headers, query } = buildAuthOptions(row);
+  const resp = await requestJson(row.target_url, transformedBody, {
+    method: normalizeHttpMethod(row.http_method),
+    headers,
+    query,
+  });
+
+  const evaluation = evaluateResponse({
+    httpStatus: resp.status,
+    responseBody: resp.body,
+    responseConfig: row.response_config,
+  });
+
+  // 网络层错误优先
+  if (resp.error && !resp.status) {
+    return {
+      resp,
+      status: 'failed',
+      errorMessage: resp.error,
+      evaluation: {
+        ok: false,
+        matchedRules: [],
+        httpFailed: true,
+        errorMessage: resp.error,
+      },
+    };
+  }
+
+  return {
+    resp,
+    status: evaluation.ok ? 'success' : 'failed',
+    errorMessage: evaluation.ok ? null : (evaluation.errorMessage || resp.error || null),
+    evaluation,
+  };
+}
+
+function applyAuthSecretUpdate(updates, body) {
+  // authSecret 未传或空字符串：保留原密钥；有非空值才覆盖加密
+  // 清除密钥：将 authType 设为 none（见下方）
+  if (body.authSecret === undefined && body.auth_secret === undefined) return;
+  const secret = body.authSecret !== undefined ? body.authSecret : body.auth_secret;
+  if (typeof secret === 'string' && secret.length > 0) {
+    updates.auth_secret_enc = encryptApiKey(secret);
+  }
+}
+
+function pickWritableFields(body) {
+  const updates = {};
+  const fieldMap = {
+    name: 'name',
+    description: 'description',
+    targetUrl: 'target_url',
+    httpMethod: 'http_method',
+    authType: 'auth_type',
+    authSendMode: 'auth_send_mode',
+    authKeyName: 'auth_key_name',
+    requestStructure: 'request_structure',
+    requestExample: 'request_example',
+    transformScript: 'transform_script',
+    mockData: 'mock_data',
+    triggerApiServiceId: 'trigger_api_service_id',
+    triggerApiServiceCode: 'trigger_api_service_code',
+  };
+
+  Object.keys(fieldMap).forEach((f) => {
+    if (body[f] !== undefined) {
+      let val = body[f];
+      if (f === 'httpMethod') val = normalizeHttpMethod(val);
+      if (f === 'authType') val = normalizeAuthType(val);
+      if (f === 'authSendMode') val = normalizeAuthSendMode(val);
+      updates[fieldMap[f]] = val;
+    }
+  });
+
+  if (body.responseConfig !== undefined) {
+    updates.response_config = normalizeResponseConfig(body.responseConfig);
+  }
+
+  applyAuthSecretUpdate(updates, body);
+
+  // 鉴权关闭时清除密钥与发送配置
+  if (updates.auth_type === 'none') {
+    updates.auth_secret_enc = null;
+    updates.auth_send_mode = null;
+    updates.auth_key_name = null;
+  }
+
+  return updates;
 }
 
 /* ========== CRUD ========== */
@@ -56,13 +241,11 @@ async function getWebhookById(id, { includeRuns = false } = {}) {
       order: [['created_at', 'DESC']],
     });
   }
-  const row = await OutboundWebhook.findByPk(id, { include });
-  return row;
+  return OutboundWebhook.findByPk(id, { include });
 }
 
 async function createWebhook(body) {
-  const { code, name, description, triggerApiServiceId, triggerApiServiceCode, targetUrl,
-    requestStructure, transformScript, mockData } = body;
+  const { code, name, targetUrl } = body;
 
   if (!code || !name || !targetUrl) {
     throw Object.assign(new Error('code、name、targetUrl 为必填项'), { status: 400 });
@@ -73,18 +256,26 @@ async function createWebhook(body) {
     throw Object.assign(new Error('code 已存在'), { status: 409 });
   }
 
+  const writable = pickWritableFields(body);
   const row = await OutboundWebhook.create({
     code,
     name,
-    description,
+    description: body.description || null,
     status: 'draft',
     trigger_type: 'api_hook',
-    trigger_api_service_id: triggerApiServiceId || null,
-    trigger_api_service_code: triggerApiServiceCode || null,
+    trigger_api_service_id: body.triggerApiServiceId || null,
+    trigger_api_service_code: body.triggerApiServiceCode || null,
     target_url: targetUrl,
-    request_structure: requestStructure || null,
-    transform_script: transformScript || null,
-    mock_data: mockData || null,
+    http_method: normalizeHttpMethod(body.httpMethod),
+    auth_type: normalizeAuthType(body.authType),
+    auth_send_mode: normalizeAuthSendMode(body.authSendMode),
+    auth_key_name: body.authKeyName || null,
+    request_structure: body.requestStructure || null,
+    request_example: body.requestExample || null,
+    transform_script: body.transformScript || null,
+    mock_data: body.mockData || null,
+    response_config: normalizeResponseConfig(body.responseConfig),
+    ...writable,
   });
   return formatWebhook(row);
 }
@@ -95,19 +286,7 @@ async function updateWebhook(id, body) {
     throw Object.assign(new Error('Webhook 不存在'), { status: 404 });
   }
 
-  const updates = {};
-  const fields = ['name', 'description', 'targetUrl', 'requestStructure', 'transformScript', 'mockData',
-    'triggerApiServiceId', 'triggerApiServiceCode'];
-  const fieldMap = {
-    name: 'name', description: 'description', targetUrl: 'target_url',
-    requestStructure: 'request_structure', transformScript: 'transform_script',
-    mockData: 'mock_data', triggerApiServiceId: 'trigger_api_service_id',
-    triggerApiServiceCode: 'trigger_api_service_code',
-  };
-  fields.forEach((f) => {
-    if (body[f] !== undefined) updates[fieldMap[f]] = body[f];
-  });
-
+  const updates = pickWritableFields(body);
   if (Object.keys(updates).length) {
     await row.update(updates);
   }
@@ -151,11 +330,11 @@ async function getTestProfile(id) {
   const w = formatWebhook(row);
   return {
     ...w,
-    hint: '测试将用 Mock Data 运行处置脚本，然后真实 POST 到目标 URL。请确保目标 URL 可达。',
+    hint: '测试将用 Mock Data 运行处置脚本，然后真实调用目标 URL。请确保目标可达。',
   };
 }
 
-async function testWebhook(id, { mockData, executedBy } = {}) {
+async function testWebhook(id, { mockData } = {}) {
   const row = await getWebhookById(id);
   if (!row) {
     throw Object.assign(new Error('Webhook 不存在'), { status: 404 });
@@ -167,9 +346,9 @@ async function testWebhook(id, { mockData, executedBy } = {}) {
   let transformedBody = null;
   let respStatus = null;
   let respBody = null;
+  let evaluation = null;
 
   try {
-    // 解析输入数据
     const rawMock = mockData || row.mock_data || '{}';
     let inputData;
     try {
@@ -178,7 +357,6 @@ async function testWebhook(id, { mockData, executedBy } = {}) {
       inputData = rawMock;
     }
 
-    // 运行处置脚本
     if (row.transform_script) {
       const ctx = buildWebhookScriptContext({ webhook: row });
       transformedBody = await executeTransformScript(row.transform_script, inputData, ctx);
@@ -186,14 +364,12 @@ async function testWebhook(id, { mockData, executedBy } = {}) {
       transformedBody = inputData;
     }
 
-    // 真实 POST 到外部 API
-    const resp = await postJson(row.target_url, transformedBody);
-    respStatus = resp.status;
-    respBody = resp.body;
-    if (!resp.ok) {
-      status = 'failed';
-      errorMessage = resp.error || `外部 API 返回非 2xx: ${resp.status}`;
-    }
+    const dispatched = await dispatchOutbound(row, transformedBody);
+    respStatus = dispatched.resp.status;
+    respBody = dispatched.resp.body;
+    status = dispatched.status;
+    errorMessage = dispatched.errorMessage;
+    evaluation = dispatched.evaluation;
   } catch (err) {
     status = 'failed';
     errorMessage = err.message;
@@ -201,11 +377,12 @@ async function testWebhook(id, { mockData, executedBy } = {}) {
 
   const durationMs = Date.now() - start;
 
-  // 记录 run
   const run = await OutboundWebhookRun.create({
     webhook_id: id,
     run_type: 'test',
-    trigger_data: typeof mockData === 'string' ? (() => { try { return JSON.parse(mockData); } catch { return mockData; } })() : mockData,
+    trigger_data: typeof mockData === 'string'
+      ? (() => { try { return JSON.parse(mockData); } catch { return mockData; } })()
+      : mockData,
     transformed_body: transformedBody,
     response_status: respStatus,
     response_body: respBody,
@@ -224,13 +401,14 @@ async function testWebhook(id, { mockData, executedBy } = {}) {
     status,
     errorMessage,
     durationMs,
+    evaluation,
   };
 }
 
 /* ========== 触发（被业务 API Hook 调用） ========== */
 
 /**
- * 业务 API 成功后触发：查找绑定的 webhook，运行处置脚本，POST 外部 API。
+ * 业务 API 成功后触发：查找绑定的 webhook，运行处置脚本，调用外部 API。
  * 同步触发但用 catch 吞错，不影响业务 API 主流程。
  */
 async function triggerByApiService(apiServiceId, apiServiceResult) {
@@ -263,13 +441,11 @@ async function triggerByApiService(apiServiceId, apiServiceResult) {
         transformedBody = apiServiceResult;
       }
 
-      const resp = await postJson(webhook.target_url, transformedBody);
-      respStatus = resp.status;
-      respBody = resp.body;
-      if (!resp.ok) {
-        status = 'failed';
-        errorMessage = resp.error || `外部 API 返回非 2xx: ${resp.status}`;
-      }
+      const dispatched = await dispatchOutbound(webhook, transformedBody);
+      respStatus = dispatched.resp.status;
+      respBody = dispatched.resp.body;
+      status = dispatched.status;
+      errorMessage = dispatched.errorMessage;
     } catch (err) {
       status = 'failed';
       errorMessage = err.message;
@@ -338,4 +514,6 @@ module.exports = {
   testWebhook,
   triggerByApiService,
   listRuns,
+  evaluateResponse,
+  buildAuthOptions,
 };

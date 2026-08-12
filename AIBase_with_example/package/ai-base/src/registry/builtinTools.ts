@@ -1,5 +1,5 @@
 import { readAllAISurfaces } from './aiSurfaceRegistry';
-import { registerFunctionCall, unregisterFunctionCall } from './functionRegistry';
+import { registerFunctionCalls, unregisterFunctionCalls } from './functionRegistry';
 import { getCurrent, getPlan, setPlan } from './agentPlanState';
 import type { PlanItem } from '../types';
 import type { ToolResponse } from '../types/toolResponse';
@@ -434,66 +434,64 @@ export const HARNESS_OPENAI_TOOLS = [
 ];
 
 export function registerBuiltinTools(): void {
-  registerFunctionCall({
-    name: BUILTIN_TOOL_NAME,
-    description: '读取当前页面已注册的 AI Surface 快照（选中实体、表单状态等页面上下文）',
-    parameters: {
-      type: 'object',
-      properties: {
-        domain: {
-          type: 'string',
-          description: '可选，按 domain 过滤，如 bizdata、aibase',
-        },
-        surfaceId: {
-          type: 'string',
-          description: '可选，指定 Surface id',
+  // 批量注册：4 个内置 Tool 一次性注册，notifyRegistryChange 只触发一次，
+  // 避免冷启动 4 次注册 → 4 次 setLocalToolVersion → 4 次重渲染 → 4 次 openaiTools 重算。
+  registerFunctionCalls([
+    {
+      name: BUILTIN_TOOL_NAME,
+      description: '读取当前页面已注册的 AI Surface 快照（选中实体、表单状态等页面上下文）',
+      parameters: {
+        type: 'object',
+        properties: {
+          domain: {
+            type: 'string',
+            description: '可选，按 domain 过滤，如 bizdata、aibase',
+          },
+          surfaceId: {
+            type: 'string',
+            description: '可选，指定 Surface id',
+          },
         },
       },
+      handler: async (args) => {
+        let snapshots = await readAllAISurfaces();
+        const domain = args.domain as string | undefined;
+        const surfaceId = args.surfaceId as string | undefined;
+        if (domain) {
+          snapshots = snapshots.filter((item) => item.domain === domain);
+        }
+        if (surfaceId) {
+          snapshots = snapshots.filter((item) => item.id === surfaceId);
+        }
+        return { surfaces: snapshots, count: snapshots.length };
+      },
     },
-    handler: async (args) => {
-      let snapshots = await readAllAISurfaces();
-      const domain = args.domain as string | undefined;
-      const surfaceId = args.surfaceId as string | undefined;
-      if (domain) {
-        snapshots = snapshots.filter((item) => item.domain === domain);
-      }
-      if (surfaceId) {
-        snapshots = snapshots.filter((item) => item.id === surfaceId);
-      }
-      return { surfaces: snapshots, count: snapshots.length };
+    {
+      name: UPDATE_PLAN_TOOL,
+      description: HARNESS_OPENAI_TOOLS[0].function.description,
+      parameters: HARNESS_OPENAI_TOOLS[0].function.parameters,
+      handler: async (args) => handleUpdatePlan(args as { plan?: PlanItem[]; merge?: boolean }),
     },
-  });
-
-  registerFunctionCall({
-    name: UPDATE_PLAN_TOOL,
-    description: HARNESS_OPENAI_TOOLS[0].function.description,
-    parameters: HARNESS_OPENAI_TOOLS[0].function.parameters,
-    handler: async (args) => handleUpdatePlan(args as { plan?: PlanItem[]; merge?: boolean }),
-  });
-
-  registerFunctionCall({
-    name: TASK_COMPLETE_TOOL,
-    description: HARNESS_OPENAI_TOOLS[1].function.description,
-    parameters: HARNESS_OPENAI_TOOLS[1].function.parameters,
-    handler: async (args) =>
-      handleTaskComplete(args as {
-        summary?: string;
-        next_steps?: Array<{ id: string; label: string }>;
-        criteriaSatisfied?: boolean;
-      }),
-  });
-
-  registerFunctionCall({
-    name: ASK_USER_TOOL,
-    description: ASK_USER_OPENAI_TOOL.function.description,
-    parameters: ASK_USER_OPENAI_TOOL.function.parameters,
-    handler: async (args) => handleAskUser(args as AskUserArgs),
-  });
+    {
+      name: TASK_COMPLETE_TOOL,
+      description: HARNESS_OPENAI_TOOLS[1].function.description,
+      parameters: HARNESS_OPENAI_TOOLS[1].function.parameters,
+      handler: async (args) =>
+        handleTaskComplete(args as {
+          summary?: string;
+          next_steps?: Array<{ id: string; label: string }>;
+          criteriaSatisfied?: boolean;
+        }),
+    },
+    {
+      name: ASK_USER_TOOL,
+      description: ASK_USER_OPENAI_TOOL.function.description,
+      parameters: ASK_USER_OPENAI_TOOL.function.parameters,
+      handler: async (args) => handleAskUser(args as AskUserArgs),
+    },
+  ]);
 }
 
 export function unregisterBuiltinTools(): void {
-  unregisterFunctionCall(BUILTIN_TOOL_NAME);
-  unregisterFunctionCall(UPDATE_PLAN_TOOL);
-  unregisterFunctionCall(TASK_COMPLETE_TOOL);
-  unregisterFunctionCall(ASK_USER_TOOL);
+  unregisterFunctionCalls([BUILTIN_TOOL_NAME, UPDATE_PLAN_TOOL, TASK_COMPLETE_TOOL, ASK_USER_TOOL]);
 }

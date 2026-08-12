@@ -52,6 +52,12 @@ declare namespace API {
     permissionCodes?: string[];
   };
 
+  /** 应用关联的提交外部 API 授权 */
+  type OutboundWebhookScope = {
+    domainCodes?: string[];
+    webhookCodes?: string[];
+  };
+
   type Application = {
     /** 应用ID */
     application_id?: string;
@@ -72,6 +78,8 @@ declare namespace API {
     api_data_scope?: APIDataScope;
     /** 可访问内置 API 授权 */
     builtin_api_scope?: BuiltinApiScope;
+    /** 可关联的提交外部 API */
+    outbound_webhook_scope?: OutboundWebhookScope;
     /** 业务数据 Scope 编码列表 */
     bizdata_scope_codes?: string[];
     /** 应用描述 */
@@ -1496,6 +1504,13 @@ declare namespace API {
   };
 
   // ===== 外部 API 提交（Outbound Webhook） =====
+  type OutboundWebhookResponseConfig = {
+    success?: { schema?: unknown; example?: unknown };
+    exception?: { schema?: unknown; example?: unknown; rules?: string[] };
+    /** 默认 true：HTTP 非 2xx 视为失败 */
+    httpStatusAsException?: boolean;
+  };
+
   type OutboundWebhook = {
     id?: string;
     code?: string;
@@ -1506,9 +1521,20 @@ declare namespace API {
     triggerApiServiceId?: string;
     triggerApiServiceCode?: string;
     targetUrl?: string;
+    httpMethod?: 'POST' | 'PUT' | 'PATCH';
+    authType?: 'none' | 'bearer' | 'api_key';
+    authSendMode?: 'header' | 'query' | null;
+    authKeyName?: string | null;
+    /** 是否已缓存密钥（读接口不回传明文） */
+    authSecretSet?: boolean;
+    authSecretMasked?: string | null;
+    /** 仅写入：省略保留原密钥，空字符串清除 */
+    authSecret?: string;
     requestStructure?: string;
+    requestExample?: string;
     transformScript?: string;
     mockData?: string;
+    responseConfig?: OutboundWebhookResponseConfig | null;
     version?: number;
     publishedAt?: string;
     createdAt?: string;
@@ -1517,6 +1543,13 @@ declare namespace API {
 
   type OutboundWebhookTestProfile = OutboundWebhook & {
     hint?: string;
+  };
+
+  type OutboundWebhookEvaluation = {
+    ok: boolean;
+    matchedRules: string[];
+    httpFailed: boolean;
+    errorMessage: string | null;
   };
 
   type OutboundWebhookTestResult = {
@@ -1529,6 +1562,7 @@ declare namespace API {
     status: 'success' | 'failed';
     errorMessage: string | null;
     durationMs: number;
+    evaluation?: OutboundWebhookEvaluation | null;
   };
 
   type OutboundWebhookRun = {

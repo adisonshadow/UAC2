@@ -5,6 +5,7 @@ const {
   BizdataEntity,
   BizdataCollectionPipeline,
   BizdataCollectionPipelineApplication,
+  OutboundWebhook,
 } = require('../models');
 const { Op } = require('sequelize');
 const { validate: isUuid } = require('uuid');
@@ -249,6 +250,77 @@ function matchesApiDataScope(serviceCode, scope) {
   return domainCodes.some((domain) => code === domain || code.startsWith(`${domain}:`));
 }
 
+/** 解析应用关联的提交外部 API 授权 */
+function parseOutboundWebhookScope(scope) {
+  if (!scope || typeof scope !== 'object') {
+    return { domainCodes: [], webhookCodes: [] };
+  }
+  return {
+    domainCodes: Array.isArray(scope.domainCodes) ? scope.domainCodes.map(String).filter(Boolean) : [],
+    webhookCodes: Array.isArray(scope.webhookCodes) ? scope.webhookCodes.map(String).filter(Boolean) : [],
+  };
+}
+
+function matchesOutboundWebhookScope(webhookCode, scope) {
+  const code = String(webhookCode || '');
+  if (!code) return false;
+  const { domainCodes, webhookCodes } = parseOutboundWebhookScope(scope);
+  if (!domainCodes.length && !webhookCodes.length) return false;
+  if (webhookCodes.includes(code)) return true;
+  return domainCodes.some((domain) => code === domain || code.startsWith(`${domain}:`));
+}
+
+/** 公开文档用：不含密钥与内部脚本密文 */
+function formatOutboundWebhookForCatalog(row) {
+  if (!row) return null;
+  const data = row.toJSON ? row.toJSON() : row;
+  return {
+    id: data.id,
+    code: data.code,
+    name: data.name,
+    description: data.description || null,
+    status: data.status,
+    triggerType: data.trigger_type,
+    triggerApiServiceId: data.trigger_api_service_id,
+    triggerApiServiceCode: data.trigger_api_service_code,
+    targetUrl: data.target_url,
+    httpMethod: data.http_method || 'POST',
+    authType: data.auth_type || 'none',
+    authSendMode: data.auth_send_mode || null,
+    authKeyName: data.auth_key_name || null,
+    authSecretSet: Boolean(data.auth_secret_enc),
+    requestStructure: data.request_structure || null,
+    requestExample: data.request_example || null,
+    responseConfig: data.response_config || null,
+    version: data.version,
+    publishedAt: data.published_at,
+  };
+}
+
+async function buildOutboundWebhookCatalog(scope) {
+  const { domainCodes, webhookCodes } = parseOutboundWebhookScope(scope);
+  if (!domainCodes.length && !webhookCodes.length) {
+    return { outboundWebhooks: [], outboundWebhookTree: [] };
+  }
+
+  const rows = await OutboundWebhook.findAll({
+    where: { status: { [Op.ne]: 'deleted' } },
+    order: [['code', 'ASC']],
+  });
+
+  const outboundWebhooks = rows
+    .filter((row) => matchesOutboundWebhookScope(row.code, scope))
+    .map(formatOutboundWebhookForCatalog)
+    .filter(Boolean);
+
+  const tree = buildCatalogDomainTree(domainCodes, outboundWebhooks.map((w) => ({
+    code: w.code,
+    name: w.name || w.code,
+  })));
+
+  return { outboundWebhooks, outboundWebhookTree: tree };
+}
+
 async function enrichServiceTableName(service) {
   if (service?.tableName || !service?.entityId) return service;
   const entity = await businessDataService.getEntityById(service.entityId);
@@ -410,6 +482,11 @@ async function getPublicApiCatalog(applicationKey) {
   // 全局共享的异常响应模板（用于 API 文档页与 apis.json 展示）
   const exceptionResponses = await listEnabledExceptionResponses();
 
+  // 关联提交外部 API（仅公开文档页展示，不进入 apis.json / OpenAPI）
+  const { outboundWebhooks, outboundWebhookTree } = await buildOutboundWebhookCatalog(
+    application.outbound_webhook_scope,
+  );
+
   return {
     application: {
       application_id: application.application_id,
@@ -424,6 +501,8 @@ async function getPublicApiCatalog(applicationKey) {
     builtinApiTree,
     collectionApis,
     collectionApiTree,
+    outboundWebhooks,
+    outboundWebhookTree,
     exceptionResponses,
     generatedAt: new Date().toISOString(),
   };

@@ -1,0 +1,46 @@
+/* 与 API 服务表单布局对齐 */
+.outbound-webhook-form {
+  max-width: 888px;
+  margin: 0 auto;
+}
+
+.outbound-webhook-form__section {
+  scroll-margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.outbound-webhook-form__section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin: 0 0 6px;
+  padding-bottom: 0;
+  text-align: center;
+}
+
+.outbound-webhook-form__editor-split-left {
+  border-right: 1px solid var(--ant-color-border-secondary);
+}
+
+.outbound-webhook-form__request-col-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.outbound-webhook-form__hook-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.outbound-webhook-test {
+  max-width: 888px;
+  margin: 0 auto;
+}
+
+.outbound-webhook-test__result {
+  padding-bottom: 40px;
+}

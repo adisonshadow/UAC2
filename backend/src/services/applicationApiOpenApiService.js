@@ -9,6 +9,8 @@
  * - 内置 API（builtinApis[]）
  * - 采集 API（collectionApis[]，POST /api/v1/ingest/...）
  *
+ * 明确不包含：outboundWebhooks（提交外部 API，仅公开文档独立页展示）。
+ *
  * 路径合并规则：业务 API 用 basePath + routePattern；内置 API 用 routePath；采集 API 用 basePath。
  * 若同一 path + method 出现多次（不同 service），用 service code 做后缀去重，
  * 避免覆盖。

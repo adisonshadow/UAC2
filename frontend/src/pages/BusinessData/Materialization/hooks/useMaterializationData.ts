@@ -18,16 +18,8 @@ import {
   isTargetNotFoundError,
   parseApiListResponse,
 } from '@/utils/apiResponse';
-import { buildScopeTree, flattenScopeTree } from '../../utils/buildScopeTree';
-
-export type EntitySelectorItem = {
-  value: string;
-  label: string;
-  codeLeaf: string;
-  currentVersion?: number;
-  materializedVersion?: number | null;
-  staleStatus?: API.MaterializationStatusItem['staleStatus'];
-};
+import { buildScopeTree } from '../../utils/buildScopeTree';
+import type { ScopeDomainTreeNode } from '@/components/ScopeDomainTree';
 
 export function getEntityCodeLeaf(code?: string): string {
   return (code || '').split(':').slice(-1)[0] || code || '';
@@ -43,31 +35,41 @@ export function useMaterializationEntities(connectionId?: string) {
     [entities],
   );
 
-  const groupedOptions = useMemo(() => {
+  // 构建完整多级域树（不再扁平化）：域节点承载层级，叶子节点携带物化状态供勾选 + 版本渲染。
+  // 旧实现用 flattenScopeTree 把树拍平成一层 scope 分组，丢失了中间层级（"第一二层合在一起"）。
+  const scopeTree = useMemo<ScopeDomainTreeNode[]>(() => {
     const statusByEntityId = new Map(
       statusItems.filter((item) => item.entityId).map((item) => [item.entityId!, item]),
     );
     const tree = buildScopeTree(erEntities);
-    const flat = flattenScopeTree(tree).filter((node) => !node.isScopeNode && node.entity);
-    const groups = new Map<string, EntitySelectorItem[]>();
 
-    flat.forEach((node) => {
-      const entity = node.entity!;
-      const status = statusByEntityId.get(entity.id!);
-      const scopePath = (entity.code || '').split(':').slice(0, -1).join(':') || 'root';
-      const list = groups.get(scopePath) || [];
-      list.push({
-        value: entity.id!,
-        label: entity.label || '',
-        codeLeaf: getEntityCodeLeaf(entity.code),
-        currentVersion: status?.currentVersion ?? entity.version,
-        materializedVersion: status?.materializedVersion,
-        staleStatus: status?.staleStatus ?? 'not_materialized',
+    const toDomainTree = (nodes: typeof tree): ScopeDomainTreeNode[] =>
+      nodes.map((node) => {
+        const hasChildren = Boolean(node.children?.length);
+        const entity = node.entity;
+        // 叶子（实体）：挂 leafData，供 ScopeDomainTree 的 checkable + renderLeafTitle 使用
+        if (!hasChildren && entity) {
+          const status = statusByEntityId.get(entity.id!);
+          return {
+            code: node.code,
+            name: node.name,
+            leafData: {
+              value: entity.id!,
+              currentVersion: status?.currentVersion ?? entity.version,
+              materializedVersion: status?.materializedVersion,
+              staleStatus: status?.staleStatus ?? 'not_materialized',
+            },
+          };
+        }
+        // 域节点：保留子树
+        return {
+          code: node.code,
+          name: node.name,
+          ...(hasChildren ? { children: toDomainTree(node.children!) } : {}),
+        };
       });
-      groups.set(scopePath, list);
-    });
 
-    return Array.from(groups.entries()).map(([scope, options]) => ({ scope, options }));
+    return toDomainTree(tree);
   }, [erEntities, statusItems]);
 
   const loadEntities = useCallback(async () => {
@@ -115,7 +117,7 @@ export function useMaterializationEntities(connectionId?: string) {
     void loadStatus();
   }, [loadStatus]);
 
-  return { entities, erEntities, groupedOptions, loading, loadEntities, loadStatus, loadAll };
+  return { entities, erEntities, scopeTree, loading, loadEntities, loadStatus, loadAll };
 }
 
 export function useDatabaseConnections() {

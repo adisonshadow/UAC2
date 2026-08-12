@@ -39,11 +39,46 @@ function normalizeBuiltinApiScope(value) {
     }
   });
   if (invalid.length) {
-    const err = new Error(`内置 API code 不存在：${invalid.join(', ')}`);
+    const err = new Error(`内置 API code 不存在: ${invalid.join(', ')}`);
     err.status = 400;
     throw err;
   }
-  return { permissionCodes: Array.from(new Set(permissionCodes)) };
+  return { permissionCodes };
+}
+
+/** 规范化关联提交外部 API：{ domainCodes, webhookCodes }，webhookCodes 须为已发布配置 */
+async function normalizeOutboundWebhookScope(value) {
+  if (value === undefined || value === null) {
+    return { domainCodes: [], webhookCodes: [] };
+  }
+  if (typeof value !== 'object') {
+    const err = new Error('outbound_webhook_scope 必须为对象');
+    err.status = 400;
+    throw err;
+  }
+  const domainCodes = Array.isArray(value.domainCodes)
+    ? value.domainCodes.map((c) => String(c || '').trim()).filter(Boolean)
+    : [];
+  const webhookCodes = Array.isArray(value.webhookCodes)
+    ? value.webhookCodes.map((c) => String(c || '').trim()).filter(Boolean)
+    : [];
+
+  if (webhookCodes.length) {
+    const { OutboundWebhook } = require('../models');
+    const rows = await OutboundWebhook.findAll({
+      where: { code: webhookCodes, status: { [Op.ne]: 'deleted' } },
+      attributes: ['code'],
+    });
+    const found = new Set(rows.map((r) => r.code));
+    const invalid = webhookCodes.filter((c) => !found.has(c));
+    if (invalid.length) {
+      const err = new Error(`提交外部 API code 不存在: ${invalid.join(', ')}`);
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  return { domainCodes, webhookCodes };
 }
 
 class ApplicationController {
@@ -396,6 +431,7 @@ class ApplicationController {
         api_connect_config,
         api_data_scope,
         builtin_api_scope,
+        outbound_webhook_scope,
         bizdata_scope_codes,
         description
       } = ctx.request.body;
@@ -551,6 +587,17 @@ class ApplicationController {
         }
       }
 
+      let outboundWebhookScopeUpdate = application.outbound_webhook_scope;
+      if (outbound_webhook_scope !== undefined) {
+        try {
+          outboundWebhookScopeUpdate = await normalizeOutboundWebhookScope(outbound_webhook_scope);
+        } catch (scopeErr) {
+          ctx.status = scopeErr.status || 400;
+          ctx.body = { code: ctx.status, message: scopeErr.message, data: null };
+          return;
+        }
+      }
+
       await application.update({
         name,
         code: application.code === SYSTEM_APPLICATION_CODE ? application.code : code,
@@ -562,6 +609,7 @@ class ApplicationController {
         api_connect_config,
         api_data_scope,
         builtin_api_scope: builtinApiScopeUpdate,
+        outbound_webhook_scope: outboundWebhookScopeUpdate,
         bizdata_scope_codes: scopeCodesUpdate,
         description
       });

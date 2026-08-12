@@ -1,10 +1,9 @@
 import { CommentOutlined } from '@ant-design/icons';
 import { FloatButton } from 'antd';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { resolveConfig } from '../config/runtime';
 import { AIBaseClient } from '../sdk/client';
 import type { AIChatConfig, AIChatDisplayMode } from '../types';
-import AIChatPanel from '../ui/AIChatPanel';
 import { registerAIChatControls } from '../utils/aiChatBridge';
 import { registerBuiltinTools, unregisterBuiltinTools } from '../registry/builtinTools';
 import { AIChatLayoutContext, type AIChatLayoutContextValue } from './context';
@@ -15,6 +14,10 @@ import {
   getDisplayModeForPath,
   subscribePathname,
 } from './pathnameDisplayMode';
+
+// 懒挂载 AIChatPanel：首屏不加载 Panel 及其重依赖（gpt-vis/XMarkdown/Attachments 等），
+// 推迟到 Panel 真正打开时按需加载，显著降低首屏冷启动的工作量。
+const AIChatPanel = lazy(() => import('../ui/AIChatPanel'));
 
 export interface AIChatProviderProps {
   config?: AIChatConfig;
@@ -105,7 +108,9 @@ export function AIChatProvider({ config, children }: AIChatProviderProps) {
         <ChatReferenceProvider>
           {children}
           {displayMode !== 'hidden' && chatOpen && (
-            <AIChatPanel onClose={() => setChatOpen(false)} />
+            <Suspense fallback={null}>
+              <AIChatPanel onClose={() => setChatOpen(false)} />
+            </Suspense>
           )}
           {displayMode !== 'hidden' && !chatOpen && (
             <FloatButton

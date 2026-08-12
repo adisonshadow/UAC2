@@ -115,8 +115,15 @@ function registerOutboundWebhookTools() {
         triggerApiServiceId: { type: 'string' },
         triggerApiServiceCode: { type: 'string' },
         requestStructure: { type: 'string' },
+        requestExample: { type: 'string', description: '发往外部的请求 Demo JSON 文本' },
         transformScript: { type: 'string' },
         mockData: { type: 'string' },
+        httpMethod: { type: 'string', enum: ['POST', 'PUT', 'PATCH'] },
+        authType: { type: 'string', enum: ['none', 'bearer', 'api_key'] },
+        authSendMode: { type: 'string', enum: ['header', 'query'] },
+        authKeyName: { type: 'string' },
+        authSecret: { type: 'string', description: '写入密钥；省略则保留原密钥' },
+        responseConfig: { type: 'object', description: '成功/异常契约与 rules' },
       },
       required: ['name', 'targetUrl'],
     },
@@ -127,8 +134,10 @@ function registerOutboundWebhookTools() {
       buildResourceId: () => '',
       buildPayload: (args) => ({
         requestStructure: args.requestStructure,
+        requestExample: args.requestExample,
         transformScript: args.transformScript,
         mockData: args.mockData,
+        responseConfig: args.responseConfig,
       }),
       handler: async (args) => {
         const body: Partial<API.OutboundWebhook> = {
@@ -139,8 +148,15 @@ function registerOutboundWebhookTools() {
           triggerApiServiceId: args.triggerApiServiceId as string,
           triggerApiServiceCode: args.triggerApiServiceCode as string,
           requestStructure: args.requestStructure as string,
+          requestExample: args.requestExample as string,
           transformScript: args.transformScript as string,
           mockData: args.mockData as string,
+          httpMethod: args.httpMethod as API.OutboundWebhook['httpMethod'],
+          authType: args.authType as API.OutboundWebhook['authType'],
+          authSendMode: args.authSendMode as API.OutboundWebhook['authSendMode'],
+          authKeyName: args.authKeyName as string,
+          authSecret: args.authSecret as string,
+          responseConfig: args.responseConfig as API.OutboundWebhookResponseConfig,
         };
         const res = await postOutboundWebhook(body);
         return getApiData<API.OutboundWebhook>(res);
@@ -163,8 +179,15 @@ function registerOutboundWebhookTools() {
         triggerApiServiceId: { type: 'string' },
         triggerApiServiceCode: { type: 'string' },
         requestStructure: { type: 'string' },
+        requestExample: { type: 'string' },
         transformScript: { type: 'string' },
         mockData: { type: 'string' },
+        httpMethod: { type: 'string', enum: ['POST', 'PUT', 'PATCH'] },
+        authType: { type: 'string', enum: ['none', 'bearer', 'api_key'] },
+        authSendMode: { type: 'string', enum: ['header', 'query'] },
+        authKeyName: { type: 'string' },
+        authSecret: { type: 'string' },
+        responseConfig: { type: 'object' },
       },
       required: ['webhookId'],
     },
@@ -175,8 +198,10 @@ function registerOutboundWebhookTools() {
       buildResourceId: (args) => String(args.webhookId || ''),
       buildPayload: (args) => ({
         requestStructure: args.requestStructure,
+        requestExample: args.requestExample,
         transformScript: args.transformScript,
         mockData: args.mockData,
+        responseConfig: args.responseConfig,
       }),
       handler: async (args) => {
         const body: Partial<API.OutboundWebhook> = {
@@ -187,8 +212,15 @@ function registerOutboundWebhookTools() {
           triggerApiServiceId: args.triggerApiServiceId as string,
           triggerApiServiceCode: args.triggerApiServiceCode as string,
           requestStructure: args.requestStructure as string,
+          requestExample: args.requestExample as string,
           transformScript: args.transformScript as string,
           mockData: args.mockData as string,
+          httpMethod: args.httpMethod as API.OutboundWebhook['httpMethod'],
+          authType: args.authType as API.OutboundWebhook['authType'],
+          authSendMode: args.authSendMode as API.OutboundWebhook['authSendMode'],
+          authKeyName: args.authKeyName as string,
+          authSecret: args.authSecret as string,
+          responseConfig: args.responseConfig as API.OutboundWebhookResponseConfig,
         };
         const res = await patchOutboundWebhook(String(args.webhookId), body);
         return getApiData<API.OutboundWebhook>(res);
@@ -211,8 +243,15 @@ function registerOutboundWebhookTools() {
         triggerApiServiceId: { type: 'string' },
         triggerApiServiceCode: { type: 'string' },
         requestStructure: { type: 'string' },
+        requestExample: { type: 'string' },
         transformScript: { type: 'string' },
         mockData: { type: 'string' },
+        httpMethod: { type: 'string', enum: ['POST', 'PUT', 'PATCH'] },
+        authType: { type: 'string', enum: ['none', 'bearer', 'api_key'] },
+        authSendMode: { type: 'string', enum: ['header', 'query'] },
+        authKeyName: { type: 'string' },
+        authSecret: { type: 'string' },
+        responseConfig: { type: 'object' },
       },
       required: ['name', 'targetUrl'],
     },
@@ -223,8 +262,10 @@ function registerOutboundWebhookTools() {
       buildResourceId: (args) => String(args.webhookId || ''),
       buildPayload: (args) => ({
         requestStructure: args.requestStructure,
+        requestExample: args.requestExample,
         transformScript: args.transformScript,
         mockData: args.mockData,
+        responseConfig: args.responseConfig,
       }),
       handler: async (args) => {
         const body: Partial<API.OutboundWebhook> = {
@@ -235,8 +276,15 @@ function registerOutboundWebhookTools() {
           triggerApiServiceId: args.triggerApiServiceId as string,
           triggerApiServiceCode: args.triggerApiServiceCode as string,
           requestStructure: args.requestStructure as string,
+          requestExample: args.requestExample as string,
           transformScript: args.transformScript as string,
           mockData: args.mockData as string,
+          httpMethod: args.httpMethod as API.OutboundWebhook['httpMethod'],
+          authType: args.authType as API.OutboundWebhook['authType'],
+          authSendMode: args.authSendMode as API.OutboundWebhook['authSendMode'],
+          authKeyName: args.authKeyName as string,
+          authSecret: args.authSecret as string,
+          responseConfig: args.responseConfig as API.OutboundWebhookResponseConfig,
         };
         if (args.webhookId) {
           const res = await patchOutboundWebhook(String(args.webhookId), body);
@@ -332,14 +380,21 @@ function registerOutboundWebhookTools() {
   // ===== 写：建议脚本（AI 生成的脚本写入编辑器，不持久化） =====
   registerFunctionCall({
     name: 'outbound_webhook_suggest_scripts',
-    description: '将请求结构、处置脚本和 Mock Data 草稿写入当前编辑页（通过 mutation 同步）',
+    description: '将请求结构、请求 Demo、处置脚本、Mock Data、异常规则草稿写入当前编辑页（通过 mutation 同步）',
     parameters: {
       type: 'object',
       properties: {
         webhookId: { type: 'string' },
         requestStructure: { type: 'string' },
+        requestExample: { type: 'string' },
         transformScript: { type: 'string' },
         mockData: { type: 'string' },
+        exceptionRules: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "如 code != 200、isOK != 'SUCCESS'",
+        },
+        responseConfig: { type: 'object' },
       },
       required: ['transformScript'],
     },
@@ -350,13 +405,19 @@ function registerOutboundWebhookTools() {
       buildResourceId: (args) => String(args.webhookId || ''),
       buildPayload: (args) => ({
         requestStructure: args.requestStructure,
+        requestExample: args.requestExample,
         transformScript: args.transformScript,
         mockData: args.mockData,
+        exceptionRules: args.exceptionRules,
+        responseConfig: args.responseConfig,
       }),
       handler: async (args) => ({
         requestStructure: args.requestStructure,
+        requestExample: args.requestExample,
         transformScript: args.transformScript,
         mockData: args.mockData,
+        exceptionRules: args.exceptionRules,
+        responseConfig: args.responseConfig,
       }),
     }),
   });

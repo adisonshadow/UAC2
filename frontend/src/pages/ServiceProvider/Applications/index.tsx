@@ -41,6 +41,14 @@ import {
 } from '@/components/ApiDomainTreePicker';
 import SearchableScopeTree, { fromApiDomainTree, fromBuiltinApiTree } from '@/components/SearchableScopeTree';
 import { getBuiltinApis, type BuiltinApiTreeNode } from '@/services/UAC/api/builtinApis';
+import { getOutboundWebhooks } from '@/services/UAC/api/outboundWebhooks';
+import {
+  attachApiServicesToDomainTree,
+  buildApiServiceDomainTree,
+  collectDomainCodes,
+  type ApiServiceDomainTreeItem,
+  type ApiServiceListItem,
+} from '@/utils/buildApiServiceDomainTree';
 import { buildApplicationApiDocsUrl } from '@/utils/applicationApiDocsUrl';
 import { getApplications, putApplicationsId, deleteApplicationsId, postApplicationsIdGenerateSecret } from '@/services/UAC/api/applications';
 import { isApiSuccess, parseApiListResponse, getApiData } from '@/utils/apiResponse';
@@ -58,7 +66,34 @@ interface ApplicationRecord extends API.Application {
   api_connect_config?: API.APIConnectConfig;
   api_data_scope?: API.APIDataScope;
   builtin_api_scope?: API.BuiltinApiScope;
+  outbound_webhook_scope?: API.OutboundWebhookScope;
   bizdata_scope_codes?: string[];
+}
+
+/** 从 outbound_webhook_scope 解析 Tree 勾选 keys */
+function parseOutboundWebhookScopeValue(scope: unknown): string[] {
+  if (!scope) return [];
+  if (typeof scope !== 'object') return [];
+  const record = scope as Record<string, unknown>;
+  const domainCodes = Array.isArray(record.domainCodes)
+    ? record.domainCodes.map(String).filter(Boolean)
+    : [];
+  const webhookCodes = Array.isArray(record.webhookCodes)
+    ? record.webhookCodes.map(String).filter(Boolean)
+    : [];
+  return [...domainCodes, ...webhookCodes];
+}
+
+/** 将 Tree 勾选 keys 序列化为 outbound_webhook_scope */
+function buildOutboundWebhookScopePayload(
+  checkedKeys: string[],
+  domainCodes: Set<string>,
+): API.OutboundWebhookScope {
+  const payload = buildApiDataScopePayload(checkedKeys, domainCodes);
+  return {
+    domainCodes: payload.domainCodes || [],
+    ...(payload.serviceCodes?.length ? { webhookCodes: payload.serviceCodes } : { webhookCodes: [] }),
+  };
 }
 
 const Page: React.FC = () => {
@@ -76,9 +111,12 @@ const Page: React.FC = () => {
   const [ssoConfigForm] = Form.useForm();
   const [apiScopeSelection, setApiScopeSelection] = useState<string[]>([]);
   const [builtinApiSelection, setBuiltinApiSelection] = useState<string[]>([]);
+  const [outboundWebhookSelection, setOutboundWebhookSelection] = useState<string[]>([]);
   const [builtinApiTree, setBuiltinApiTree] = useState<BuiltinApiTreeNode[]>([]);
   const [builtinApiTreeLoading, setBuiltinApiTreeLoading] = useState(false);
-  const [activeApiTab, setActiveApiTab] = useState<'business' | 'builtin'>('business');
+  const [outboundWebhookItems, setOutboundWebhookItems] = useState<ApiServiceListItem[]>([]);
+  const [outboundWebhookTreeLoading, setOutboundWebhookTreeLoading] = useState(false);
+  const [activeApiTab, setActiveApiTab] = useState<'business' | 'builtin' | 'outbound'>('business');
   // 业务 API 配置：展示具体 API（叶子），域节点可勾选并级联到子节点
   const apiDomainTree = useApiDomainTreeData({
     showApiSelectable: true,
@@ -108,11 +146,57 @@ const Page: React.FC = () => {
     };
   }, [apiConfigModalVisible]);
 
+  // 提交外部 API 树（按 code 域分层，样式对齐业务 API）
+  useEffect(() => {
+    if (!apiConfigModalVisible) return;
+    let cancelled = false;
+    const load = async () => {
+      setOutboundWebhookTreeLoading(true);
+      try {
+        const res = await getOutboundWebhooks({ size: -1 });
+        if (!cancelled && isApiSuccess(res)) {
+          const items = getApiData<{ items?: API.OutboundWebhook[] }>(res)?.items || [];
+          setOutboundWebhookItems(
+            items
+              .filter((w) => w.code && w.status !== 'deleted')
+              .map((w) => ({
+                id: w.id || w.code!,
+                code: w.code!,
+                name: w.name || w.code,
+                status: w.status,
+              })),
+          );
+        }
+      } catch {
+        if (!cancelled) setOutboundWebhookItems([]);
+      } finally {
+        if (!cancelled) setOutboundWebhookTreeLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfigModalVisible]);
+
   const businessScopeTree = useMemo(
     () => fromApiDomainTree(apiDomainTree.treeData),
     [apiDomainTree.treeData],
   );
   const builtinScopeTree = useMemo(() => fromBuiltinApiTree(builtinApiTree), [builtinApiTree]);
+
+  const outboundDomainTree = useMemo(() => {
+    const domains = buildApiServiceDomainTree(outboundWebhookItems);
+    return attachApiServicesToDomainTree(domains, outboundWebhookItems);
+  }, [outboundWebhookItems]);
+  const outboundScopeTree = useMemo(
+    () => fromApiDomainTree(outboundDomainTree as ApiServiceDomainTreeItem[]),
+    [outboundDomainTree],
+  );
+  const outboundDomainCodes = useMemo(
+    () => collectDomainCodes(outboundDomainTree as ApiServiceDomainTreeItem[]),
+    [outboundDomainTree],
+  );
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildApplicationPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -172,6 +256,8 @@ const Page: React.FC = () => {
               setCurrentApplication(record);
               setApiScopeSelection(parseApiDataScopeValue(record.api_data_scope));
               setBuiltinApiSelection(record.builtin_api_scope?.permissionCodes ?? []);
+              setOutboundWebhookSelection(parseOutboundWebhookScopeValue(record.outbound_webhook_scope));
+              setActiveApiTab('business');
               apiConfigForm.setFieldsValue({
                 api_enabled: record.api_enabled,
               });
@@ -251,6 +337,10 @@ const Page: React.FC = () => {
           ...(currentApplication?.code === SYSTEM_APPLICATION_CODE
             ? {}
             : { builtin_api_scope: { permissionCodes: builtinApiSelection } }),
+          outbound_webhook_scope: buildOutboundWebhookScopePayload(
+            outboundWebhookSelection,
+            outboundDomainCodes,
+          ),
         }
       );
 
@@ -407,6 +497,7 @@ const Page: React.FC = () => {
               api_connect_config: item.api_connect_config,
               api_data_scope: item.api_data_scope,
               builtin_api_scope: item.builtin_api_scope,
+              outbound_webhook_scope: item.outbound_webhook_scope,
             } as ApplicationRecord));
             return {
               data: mappedItems,
@@ -448,7 +539,7 @@ const Page: React.FC = () => {
           {apiEnabledInConfig ? (
             <Tabs
               activeKey={activeApiTab}
-              onChange={(k) => setActiveApiTab(k as 'business' | 'builtin')}
+              onChange={(k) => setActiveApiTab(k as 'business' | 'builtin' | 'outbound')}
               items={[
                 {
                   key: 'business',
@@ -484,6 +575,21 @@ const Page: React.FC = () => {
                         ),
                       },
                     ]),
+                {
+                  key: 'outbound',
+                  label: '提交外部API配置',
+                  children: (
+                    <SearchableScopeTree
+                      treeData={outboundScopeTree}
+                      value={outboundWebhookSelection}
+                      onChange={setOutboundWebhookSelection}
+                      loading={outboundWebhookTreeLoading}
+                      valueStrategy="all"
+                      emptyText="暂无提交外部API，请先在「提交外部API」中创建"
+                      searchPlaceholder="检索域 / 提交外部API 名称"
+                    />
+                  ),
+                },
               ]}
             />
           ) : null}

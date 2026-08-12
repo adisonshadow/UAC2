@@ -61,6 +61,21 @@ const router = new Router({
  *                 $ref: '#/components/schemas/APIConnectConfig'
  *               api_data_scope:
  *                 $ref: '#/components/schemas/APIDataScope'
+ *               builtin_api_scope:
+ *                 type: object
+ *                 description: '可访问内置API { permissionCodes: string[] }'
+ *               outbound_webhook_scope:
+ *                 type: object
+ *                 description: '可关联的提交外部API { domainCodes: string[], webhookCodes: string[] }'
+ *                 properties:
+ *                   domainCodes:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                   webhookCodes:
+ *                     type: array
+ *                     items:
+ *                       type: string
  *               bizdata_scope_codes:
  *                 type: array
  *                 items:
@@ -288,6 +303,21 @@ router.get('/:id', auth, ApplicationController.getById);
  *                 $ref: '#/components/schemas/APIConnectConfig'
  *               api_data_scope:
  *                 $ref: '#/components/schemas/APIDataScope'
+ *               builtin_api_scope:
+ *                 type: object
+ *                 description: '可访问内置API { permissionCodes: string[] }'
+ *               outbound_webhook_scope:
+ *                 type: object
+ *                 description: '可关联的提交外部API { domainCodes: string[], webhookCodes: string[] }'
+ *                 properties:
+ *                   domainCodes:
+ *                     type: array
+ *                     items:
+ *                       type: string
+ *                   webhookCodes:
+ *                     type: array
+ *                     items:
+ *                       type: string
  *               bizdata_scope_codes:
  *                 type: array
  *                 items:

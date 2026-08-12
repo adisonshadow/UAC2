@@ -351,12 +351,13 @@ const LoginPage: React.FC = () => {
     const checkUserLoginStatus = async () => {
       try {
         setIsCheckingAuth(true);
-        const isTokenValid = await checkTokenValid();
-        
+        const urlParams = new URL(window.location.href).searchParams;
+        const appId = urlParams.get('app');
+        // SSO 页：本地若是应用密钥签发的 token，check 必须带 app
+        const isTokenValid = await checkTokenValid(appId);
+
         if (isTokenValid) {
           setIsLoggedIn(true);
-          const urlParams = new URL(window.location.href).searchParams;
-          const appId = urlParams.get('app');
           if (!appId) {
             setRedirectMessage('您已登录，正在打开管理界面……');
           }
@@ -403,7 +404,10 @@ const LoginPage: React.FC = () => {
     ssoRedirectStartedRef.current = true;
     const timer = setTimeout(async () => {
       try {
-        const userData = parseAuthUser(await getAuthCheck({}));
+        // SSO JWT 按应用密钥签发，check 必须带 app
+        const userData = parseAuthUser(
+          await getAuthCheck({ app: appId }, { skipErrorHandler: true }),
+        );
         if (!userData) {
           message.error('获取用户信息失败');
           ssoRedirectStartedRef.current = false;
@@ -442,8 +446,15 @@ const LoginPage: React.FC = () => {
       // 等待一下，确保 token 已经保存
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // 获取用户信息
-      const userResponse = await getAuthCheck({});
+      // 处理 SSO 回调 - 只有在URL中有app参数时才执行SSO回调
+      const urlParams = new URL(window.location.href).searchParams;
+      const appId = urlParams.get('app');
+
+      // SSO JWT 按应用密钥签发，check 必须带 app；否则会走平台密钥验签得到 401
+      const userResponse = await getAuthCheck(
+        appId ? { app: appId } : {},
+        { skipErrorHandler: true },
+      );
       const userData = parseAuthUser(userResponse);
 
       if (userData) {
@@ -473,10 +484,6 @@ const LoginPage: React.FC = () => {
           return;
         }
 
-        // 处理 SSO 回调 - 只有在URL中有app参数时才执行SSO回调
-        const urlParams = new URL(window.location.href).searchParams;
-        const appId = urlParams.get('app');
-        
         if (appId) {
           await performSsoRedirect(appId, updatedUserInfo, token, refreshToken);
           return;

@@ -245,6 +245,9 @@ router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.inv
  *   post:
  *     tags: [AI-Service]
  *     summary: 记录 Client Tool 失败/未验证调用日志 [需要认证]
+ *     description: |
+ *       供前端 Client Tool 失败/未验证时落盘。默认关闭（AI_TOOL_INVOKE_LOG_ENABLED=false 时直接 200 且不写文件）。
+ *       前端需显式 AI_TOOL_LOG_ENABLED=true 才会 POST，避免开发态代理 502 刷屏。
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
@@ -261,6 +264,7 @@ router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.inv
  *               conversationKey: { type: string }
  *               turnId: { type: string }
  *               round: { type: integer }
+ *               result: { description: 可截断的结果预览 }
  *     responses:
  *       200:
  *         description: 记录成功或日志未启用

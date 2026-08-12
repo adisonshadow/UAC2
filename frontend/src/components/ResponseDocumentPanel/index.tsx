@@ -10,6 +10,10 @@ export type ResponseDocumentEditorProps = {
   onResponseExampleChange: (value: string) => void;
   schemaError?: string | null;
   exampleError?: string | null;
+  /** 左侧 Schema 标题，默认「响应 Schema (200)」 */
+  schemaTitle?: string;
+  /** 右侧 Example 标题，默认「响应 Example (200)」 */
+  exampleTitle?: string;
 };
 
 export function tryParseJson(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -29,6 +33,8 @@ const ResponseDocumentEditor: React.FC<ResponseDocumentEditorProps> = ({
   onResponseExampleChange,
   schemaError,
   exampleError,
+  schemaTitle = '响应 Schema (200)',
+  exampleTitle = '响应 Example (200)',
 }) => {
   const localSchemaError = useMemo(() => {
     if (schemaError) return schemaError;
@@ -46,7 +52,7 @@ const ResponseDocumentEditor: React.FC<ResponseDocumentEditorProps> = ({
     <div className="response-document-panel">
       <Row gutter={16}>
         <Col span={12} className="response-document-panel__split-col-left">
-          <div className="response-document-panel__section-title">响应 Schema (200)</div>
+          <div className="response-document-panel__section-title">{schemaTitle}</div>
           {localSchemaError ? (
             <Alert type="error" showIcon message={localSchemaError} style={{ marginBottom: 8 }} />
           ) : null}
@@ -63,7 +69,7 @@ const ResponseDocumentEditor: React.FC<ResponseDocumentEditorProps> = ({
           />
         </Col>
         <Col span={12}>
-          <div className="response-document-panel__section-title">响应 Example (200)</div>
+          <div className="response-document-panel__section-title">{exampleTitle}</div>
           {localExampleError ? (
             <Alert type="error" showIcon message={localExampleError} style={{ marginBottom: 8 }} />
           ) : null}

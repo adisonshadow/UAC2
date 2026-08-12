@@ -8,8 +8,39 @@ const DEFAULT_NAMESPACE = 'default';
 const registry = new Map<string, FunctionCallDef>();
 const listeners = new Set<() => void>();
 
+/**
+ * 批量注册期间挂起通知：批量操作结束后只 notifyRegistryChange() 一次，
+ * 避免一次冷启动注册多个 Tool 时触发多次订阅回调 → 多次重渲染。
+ * isBatchFlushing 期间 notifyRegistryChange 只置 dirty，flush 时统一通知。
+ */
+let isBatchFlushing = false;
+let batchDirty = false;
+
 function notifyRegistryChange() {
+  if (isBatchFlushing) {
+    batchDirty = true;
+    return;
+  }
   listeners.forEach((listener) => listener());
+}
+
+/**
+ * 批量注册/注销的事务边界：fn 执行期间挂起通知，结束后若发生变更只通知一次。
+ * 即使 fn 抛错也会恢复标志并在发生变更时通知，保证不丢通知。
+ */
+function withBatchedNotify(fn: () => void): void {
+  const wasFlushing = isBatchFlushing;
+  isBatchFlushing = true;
+  try {
+    fn();
+  } finally {
+    isBatchFlushing = wasFlushing;
+    // 只在最外层事务结束时统一通知，嵌套调用由最外层负责 flush
+    if (!isBatchFlushing && batchDirty) {
+      batchDirty = false;
+      listeners.forEach((listener) => listener());
+    }
+  }
 }
 
 /** 内部 key：namespace + name 组合，保证不同命名空间同名 Tool 不冲突 */
@@ -52,6 +83,25 @@ export function registerFunctionCall(
 }
 
 /**
+ * 批量注册本地 client Tool，注册过程只触发一次 notifyRegistryChange。
+ * 用于冷启动一次性注册多个 Tool（如 harness 内置 Tool），把通知风暴收敛为单次。
+ * @param defs 多个 Tool 定义
+ * @param options 统一的命名空间（同 registerFunctionCall 语义）
+ */
+export function registerFunctionCalls(
+  defs: FunctionCallDef[],
+  options?: RegisterFunctionCallOptions,
+): void {
+  if (defs.length === 0) return;
+  const ns = resolveNamespace(options?.namespace);
+  withBatchedNotify(() => {
+    for (const def of defs) {
+      registry.set(makeKey(ns, def.name), def);
+    }
+  });
+}
+
+/**
  * 注销本地 client Tool。
  * @param name Tool functionName
  * @param namespace 与注册时一致；未传则注销 'default' 命名空间下的同名 Tool。
@@ -61,6 +111,22 @@ export function unregisterFunctionCall(name: string, namespace?: string): void {
   if (registry.delete(makeKey(ns, name))) {
     notifyRegistryChange();
   }
+}
+
+/**
+ * 批量注销本地 client Tool，注销过程只触发一次 notifyRegistryChange（与
+ * registerFunctionCalls 配对，把冷启动注销通知也收敛为单次）。
+ * @param names 多个 Tool functionName
+ * @param namespace 与注册时一致；未传则注销 'default' 命名空间下的同名 Tool
+ */
+export function unregisterFunctionCalls(names: string[], namespace?: string): void {
+  if (names.length === 0) return;
+  const ns = resolveNamespace(namespace);
+  withBatchedNotify(() => {
+    for (const name of names) {
+      registry.delete(makeKey(ns, name));
+    }
+  });
 }
 
 /**

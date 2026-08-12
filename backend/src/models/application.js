@@ -65,6 +65,12 @@ Application.init({
     defaultValue: { permissionCodes: [] },
     comment: '可访问内置API：{permissionCodes:["user:account:list",...]}'
   },
+  outbound_webhook_scope: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: { domainCodes: [], webhookCodes: [] },
+    comment: '可关联的提交外部API：{domainCodes:[], webhookCodes:[]}'
+  },
   bizdata_scope_codes: {
     type: DataTypes.JSONB,
     allowNull: false,

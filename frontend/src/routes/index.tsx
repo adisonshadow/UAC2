@@ -25,6 +25,7 @@ const ApplicationFormPage = lazy(() => import('@/pages/ServiceProvider/Applicati
 const ApplicationTopLevelSkillPage = lazy(() => import('@/pages/ServiceProvider/Applications/TopLevelSkillPage'));
 const ApplicationPublicApiCatalog = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog'));
 const ApplicationExceptionResponses = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog/ExceptionResponsesPage'));
+const ApplicationOutboundWebhooksDocs = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog/OutboundWebhooksPage'));
 const ApplicationApiSkill = lazy(() => import('@/pages/ServiceProvider/Applications/PublicApiCatalog/ApiSkillPage'));
 const FileStorageBuckets = lazy(() => import('@/pages/FileStorage/Buckets'));
 const FileStorageBrowser = lazy(() => import('@/pages/FileStorage/Browser'));
@@ -90,6 +91,7 @@ export default function AppRoutes() {
         <Route path="/public/applications/:code/api-docs" element={<ApplicationPublicApiCatalog />} />
         {/* 异常响应明细页（所有 API 共享，需在通配路由前匹配） */}
         <Route path="/public/applications/:code/api-docs/exception-responses" element={<ApplicationExceptionResponses />} />
+        <Route path="/public/applications/:code/api-docs/outbound-webhooks" element={<ApplicationOutboundWebhooksDocs />} />
         <Route path="/public/applications/:code/api-docs/api-skill" element={<ApplicationApiSkill />} />
         <Route path="/public/applications/:code/api-docs/*" element={<ApplicationPublicApiCatalog />} />
 

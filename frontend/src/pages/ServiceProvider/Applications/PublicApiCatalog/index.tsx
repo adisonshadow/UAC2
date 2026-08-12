@@ -1,5 +1,5 @@
 import { useAIChatDisplayMode } from '@eadaf/ai-base';
-import { ApiOutlined, PartitionOutlined, CopyOutlined, WarningOutlined, ReadOutlined } from '@ant-design/icons';
+import { ApiOutlined, PartitionOutlined, CopyOutlined, WarningOutlined, ReadOutlined, CloudUploadOutlined } from '@ant-design/icons';
 import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import type { DataNode } from 'antd/es/tree';
@@ -19,6 +19,7 @@ import { ResponseExampleViewer } from '@/components/ResponseDocumentPanel/Respon
 import {
   buildApplicationApiDocsPath,
   buildExceptionResponsesDocsPath,
+  buildOutboundWebhooksDocsPath,
   buildApiSkillDocsPath,
   parseApiDocsRoutePathFromPathname,
 } from '@/utils/applicationApiDocsUrl';
@@ -716,6 +717,15 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
           </p>
         </div>
         <div className="application-api-catalog__header-actions">
+          <Button
+            type="primary"
+            ghost
+            size="small"
+            icon={<CloudUploadOutlined />}
+            onClick={() => code && navigate(buildOutboundWebhooksDocsPath(code))}
+          >
+            关联提交外部API
+          </Button>
           <Button
             type="primary"
             ghost

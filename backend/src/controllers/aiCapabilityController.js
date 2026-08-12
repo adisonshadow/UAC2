@@ -193,6 +193,7 @@ class AiCapabilityController {
     try {
       const enabled = String(process.env.AI_TOOL_INVOKE_LOG_ENABLED || 'false').toLowerCase() === 'true';
       if (!enabled) {
+        ctx.status = 200;
         ctx.body = { data: { logged: false } };
         return;
       }
@@ -200,10 +201,22 @@ class AiCapabilityController {
       const body = ctx.request.body || {};
       const { logAiToolInvokeFailure } = require('../services/ai/aiToolInvokeLogService');
 
+      const MAX_PREVIEW = 2000;
+      const truncate = (value) => {
+        if (value == null) return value;
+        try {
+          const text = typeof value === 'string' ? value : JSON.stringify(value);
+          if (text.length <= MAX_PREVIEW) return value;
+          return { _truncated: true, preview: `${text.slice(0, MAX_PREVIEW)}…` };
+        } catch {
+          return String(value).slice(0, MAX_PREVIEW);
+        }
+      };
+
       logAiToolInvokeFailure({
         userId: ctx.state.user?.id || ctx.state.user?.userId,
         tool: body.name || body.tool,
-        args: body.args,
+        args: truncate(body.args),
         envelope: body.envelope,
         error: body.error,
         executionType: body.executionType || 'client',
@@ -211,9 +224,10 @@ class AiCapabilityController {
         conversationKey: body.conversationKey,
         turnId: body.turnId,
         round: body.round,
-        rawResult: body.result,
+        rawResult: truncate(body.result),
       });
 
+      ctx.status = 200;
       ctx.body = { data: { logged: true } };
     } catch (error) {
       logger.error('记录 Client Tool 日志失败', { error: error.message });

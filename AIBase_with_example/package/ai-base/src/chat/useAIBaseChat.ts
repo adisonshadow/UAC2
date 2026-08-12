@@ -241,11 +241,19 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     };
   }, [client, config]);
 
+  // 水合锁：挂载后异步从 IndexedDB 读取历史并注入 store。
+  // —— 把 defaultMessages 从「store 构造期异步读 IDB」改为「挂载后 effect 读」，
+  //    避免 store 冷启动时 defaultMessagesRequesting 在数百毫秒内反复 emit 触发渲染抖动。
+  // hydratedRef.current=false 期间，持久化 effect 不会写回 IDB，防止用空消息覆盖历史。
+  const hydratedRef = useRef(false);
+
   const chat = useXChat({
     provider,
     conversationKey,
-    defaultMessages: async (info?: { conversationKey?: string }) =>
-      loadPersistedMessages(storageNamespace, info?.conversationKey),
+    // 同步返回空数组：store 的 initializeMessages 仍会 emit，但两次 emit 紧贴在一个
+    // microtask 内快速 settle，不再有「等待 IDB 读盘」造成的数百毫秒渲染抖动窗口。
+    // 历史水合改由下面的挂载 effect 负责。
+    defaultMessages: () => [],
     requestPlaceholder: () => ({ role: 'assistant' as const, content: '正在思考中...' }),
     requestFallback: (_, { error, messageInfo }) => {
       if (error.name === 'AbortError') {
@@ -270,6 +278,14 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
   const { messages, setMessages, isRequesting: chatRequesting, abort: chatAbort, isDefaultMessagesRequesting } = chat;
 
+  // messages 的同步镜像：submitQuery 仅在「调用时」读取当前 messages（构建 history），
+  // 不需要在 messages 变化时重建 callback。用 ref 读取即可移除依赖，避免每个流式 chunk
+  // 都重建 submitQuery 及其下游闭包。通过 effect 同步，符合 React 19 禁止在 render 期写 ref 的约束。
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   const contextUsagePercent = useMemo(() => {
     const history = messages.map((item) => item.message as EADAFChatMessage);
     return getContextUsagePercent(history, systemPrompt);
@@ -279,11 +295,48 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     () => {
       if (!persistMessages || !storageNamespace || !conversationKey) return;
       if (isDefaultMessagesRequesting) return;
+      // 水合未完成前不写回：此时 messages 可能为空，写入会覆盖 IDB 里的历史。
+      if (!hydratedRef.current) return;
       void saveConversationMessages(storageNamespace, conversationKey, messages);
     },
     [persistMessages, storageNamespace, conversationKey, messages, isDefaultMessagesRequesting],
     400,
   );
+
+  // 历史水合：挂载后（或切换会话时）异步从 IndexedDB 读取历史，一次性注入 store。
+  // 与原 defaultMessages 异步读盘相比：store 不再在构造期承担异步读盘 + 反复 emit，
+  // 水合动作收敛为一次 setMessages，渲染抖动窗口显著收窄。
+  // 幂等：用 hydratedRef 保证每个会话只注入一次，避免 StrictMode 双挂载 / store 缓存预填
+  // 导致 persisted 被反复追加（曾出现历史被复制成 4×4 的脏数据）。
+  useEffect(() => {
+    // 未开启持久化 / 无会话 key：无需水合，直接标记为已水合，放开持久化 gate。
+    if (!persistMessages || !storageNamespace || !conversationKey) {
+      hydratedRef.current = true;
+      return undefined;
+    }
+    let cancelled = false;
+    hydratedRef.current = false;
+    // 本轮水合的幂等锁：即使 .then 被多次触发也只注入一次
+    let injected = false;
+    loadPersistedMessages(storageNamespace, conversationKey)
+      .then((persisted) => {
+        if (cancelled || injected) return;
+        injected = true;
+        if (persisted.length === 0) return;
+        // 幂等替换：直接用持久化历史替换 store，绝不追加。
+        // 水合发生在挂载后、用户发消息前；若 store 已被缓存预填（chatMessagesStoreHelper），
+        // 替换它正是期望行为（重新水合当前会话的真实历史）。
+        setMessages(persisted);
+      })
+      .finally(() => {
+        if (!cancelled) hydratedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+    // 切换会话需重新水合：依赖 conversationKey / storageNamespace。
+    // setMessages 来自 useXChat，引用稳定（其内部用 useCallback）。
+  }, [persistMessages, storageNamespace, conversationKey, setMessages]);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -311,9 +364,11 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       abortRef.current = new AbortController();
       setStreaming(true);
 
-      const userId = `user-${Date.now()}`;
-      const assistantId = `assistant-${Date.now() + 1}`;
-      let history = messages.map((item) => {
+      // 用 UUID 生成消息 id，避免 Date.now()+偏移 在快速重发/StrictMode 双调用/
+      // 自动续跑等场景下产生相同 key（曾出现 Bubble.List "two children with same key" 报错）。
+      const userId = `user-${crypto.randomUUID()}`;
+      const assistantId = `assistant-${crypto.randomUUID()}`;
+      let history = messagesRef.current.map((item) => {
         const msg = item.message as EADAFChatMessage;
         return {
           ...msg,
@@ -1080,7 +1135,6 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       allowedToolNames,
       client,
       config,
-      messages,
       openaiTools,
       selectedSlug,
       setMessages,

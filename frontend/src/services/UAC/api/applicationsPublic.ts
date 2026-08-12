@@ -76,6 +76,28 @@ export interface CollectionApiCatalogItem {
   responseExample?: unknown;
 }
 
+export interface OutboundWebhookCatalogItem {
+  id?: string;
+  code: string;
+  name?: string;
+  description?: string | null;
+  status?: string;
+  triggerType?: string;
+  triggerApiServiceId?: string;
+  triggerApiServiceCode?: string;
+  targetUrl?: string;
+  httpMethod?: string;
+  authType?: string;
+  authSendMode?: string | null;
+  authKeyName?: string | null;
+  authSecretSet?: boolean;
+  requestStructure?: string | null;
+  requestExample?: string | null;
+  responseConfig?: API.OutboundWebhookResponseConfig | null;
+  version?: number;
+  publishedAt?: string;
+}
+
 export interface ApplicationApiCatalogResult {
   application: {
     application_id: string;
@@ -90,6 +112,9 @@ export interface ApplicationApiCatalogResult {
   builtinApiTree?: ApplicationApiCatalogTreeNode[];
   collectionApis?: CollectionApiCatalogItem[];
   collectionApiTree?: ApplicationApiCatalogTreeNode[];
+  /** 关联提交外部 API（仅文档页；不进入 apis.json） */
+  outboundWebhooks?: OutboundWebhookCatalogItem[];
+  outboundWebhookTree?: ApplicationApiCatalogTreeNode[];
   exceptionResponses?: API.ExceptionResponseDocItem[];
   generatedAt?: string;
 }

@@ -1,5 +1,5 @@
 import Editor from '@monaco-editor/react';
-import { ProForm, ProFormCheckbox, ProFormRadio, ProFormSelect, ProFormText } from '@ant-design/pro-components';
+import { ProForm, ProFormCheckbox, ProFormRadio, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Form, Popover, Row, Segmented, Select, Spin, Tag, Tooltip, Typography } from 'antd';
 import type { FormInstance } from 'antd';
@@ -197,6 +197,7 @@ export type ApiServiceFormValues = {
   scopeCode?: string;
   serviceSlug?: string;
   name?: string;
+  description?: string;
   tags?: string[];
   transportProtocols?: ApiServiceTransportProtocol[];
   accessRestrictionMode?: ApiServiceAccessRestrictionMode;
@@ -784,6 +785,15 @@ const ApiServiceForm: React.FC<ApiServiceFormProps> = ({
               <Form.Item label="标签" name="tags" tooltip="可输入多个标签，按回车确认">
                 <AntdTagInput placeholder="report, readonly" />
               </Form.Item>
+            </Col>
+            <Col span={24}>
+              <ProFormTextArea
+                label="备注 / 描述"
+                name="description"
+                placeholder="说明该 API 的业务用途、调用方、入参约定与注意事项"
+                fieldProps={{ rows: 3, maxLength: 2000, showCount: true }}
+                tooltip="对外文档与列表说明；建议写清谁调用、何时调用、create/update 等关键约定"
+              />
             </Col>
             <Col span={24} style={{ marginTop: 8 }}>
               {resolveLoading && <Spin size="small" description="正在推断数据库连接…" />}

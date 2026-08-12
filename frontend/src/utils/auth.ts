@@ -83,10 +83,14 @@ export const getRedirectUrl = (currentPath: string) => {
 };
 
 // 检查 token 是否有效
-export const checkTokenValid = async () => {
-  console.log('开始检查 token 有效性...');
+// SSO：JWT 按应用密钥签发时需传 app，否则会按平台密钥验签导致误判无效
+export const checkTokenValid = async (appId?: string | null) => {
+  console.log('开始检查 token 有效性...', { appId: appId || null });
   try {
-    const response = await getAuthCheck({}, { skipErrorHandler: true });
+    const response = await getAuthCheck(
+      appId ? { app: appId } : {},
+      { skipErrorHandler: true },
+    );
     const isValid = isAuthCheckSuccess(response);
     console.log('Token 有效性检查结果:', { isValid });
     return isValid;

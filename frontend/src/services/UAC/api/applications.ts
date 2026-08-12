@@ -106,6 +106,8 @@ export async function putApplicationsId(
     api_enabled?: boolean;
     api_connect_config?: API.APIConnectConfig;
     api_data_scope?: API.APIDataScope;
+    builtin_api_scope?: API.BuiltinApiScope;
+    outbound_webhook_scope?: API.OutboundWebhookScope;
     bizdata_scope_codes?: string[];
     /** 应用描述 */
     description?: string;

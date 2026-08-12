@@ -1,0 +1,55 @@
+/* 让节点标题撑满整行宽度，使右侧 toggle 按钮被推到行最右。
+   antd 6 默认 .ant-tree-treenode 是 flex 但只占内容宽度（不铺满列表），
+   需让 treenode 撑满整行，content-wrapper 才有空间拉伸，最后 space-between 把 toggle 推到行尾。 */
+.scope-domain-tree .ant-tree-treenode {
+  width: 100%;
+}
+
+.scope-domain-tree .ant-tree-node-content-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scope-domain-tree .ant-tree-title {
+  display: block;
+  width: 100%;
+}
+
+.scope-tree-node-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 22px;
+}
+
+.scope-tree-node-title__label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* toggle 按钮：仅 icon，点击折叠/展开整条子树 */
+.scope-tree-toggle {
+  flex: none;
+  margin-left: 8px;
+  padding: 2px 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 10px;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.scope-tree-toggle:hover {
+  color: rgba(0, 0, 0, 0.88);
+}
+
+/* 折叠态：箭头朝右（旋转 -90deg）；展开态：朝下（默认） */
+.scope-tree-toggle--closed {
+  transform: rotate(-90deg);
+}
+
+.scope-tree-toggle--open {
+  transform: rotate(0deg);
+}

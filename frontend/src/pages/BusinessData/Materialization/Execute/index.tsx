@@ -2,7 +2,8 @@ import { Button, Input, Select, Space, Splitter } from 'antd';
 import { useAISurface, useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { buildMaterializationExecutePrompts } from '@/ai/pageChatPrompts';
-import EntitySelector from '../components/EntitySelector';
+import ScopeDomainTree from '@/components/ScopeDomainTree';
+import LeafVersionTag from '../components/LeafVersionTag';
 import SqlPreviewPanel from '../components/SqlPreviewPanel';
 import {
   useDatabaseConnections,
@@ -26,7 +27,8 @@ const MaterializationExecutePage: React.FC = () => {
 
   const {
     erEntities,
-    groupedOptions,
+    scopeTree,
+    loading: entitiesLoading,
     loadAll: loadEntities,
   } = useMaterializationEntities(connectionId);
   const { connections, defaultConnection, loading: connLoading, loadConnections } = useDatabaseConnections();
@@ -144,11 +146,18 @@ const MaterializationExecutePage: React.FC = () => {
           overflow: 'auto',
         }}
       >
-        <EntitySelector
-          groupedOptions={groupedOptions}
-          erEntities={erEntities}
-          selectedIds={selectedIds}
-          onChange={setSelectedIds}
+        <ScopeDomainTree
+          treeData={scopeTree}
+          checkable
+          checkedKeys={selectedIds}
+          onCheck={setSelectedIds}
+          onSelect={() => undefined}
+          showAllNode
+          allNodeLabel="全选"
+          renderLeafTitle={(node) => <LeafVersionTag node={node} />}
+          loading={entitiesLoading}
+          emptyDescription="暂无实体"
+          style={{ height: '100%' }}
         />
       </div>
     </div>

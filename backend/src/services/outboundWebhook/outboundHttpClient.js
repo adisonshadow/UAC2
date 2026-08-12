@@ -1,21 +1,56 @@
 /**
- * 外部 API HTTP 客户端：POST JSON 到目标 URL
- * 使用 Node.js 内置 fetch（Node 18+），超时 10s
+ * 外部 API HTTP 客户端：按 method / headers / query 发送 JSON
+ * 使用 Node.js 内置 fetch（Node 18+），超时默认 10s
  */
 const DEFAULT_TIMEOUT_MS = 10000;
 
+const ALLOWED_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+
 /**
- * POST JSON 到外部 API。
- * @returns { ok, status, body, error }
+ * @param {string} url
+ * @param {unknown} body
+ * @param {{
+ *   method?: string,
+ *   headers?: Record<string, string>,
+ *   query?: Record<string, string>,
+ *   timeout?: number,
+ * }} [options]
+ * @returns {Promise<{ ok: boolean, status: number, body: string|null, error?: string }>}
  */
-async function postJson(url, body, { timeout = DEFAULT_TIMEOUT_MS } = {}) {
+async function requestJson(url, body, {
+  method = 'POST',
+  headers = {},
+  query = {},
+  timeout = DEFAULT_TIMEOUT_MS,
+} = {}) {
+  const httpMethod = String(method || 'POST').toUpperCase();
+  if (!ALLOWED_METHODS.has(httpMethod)) {
+    return {
+      ok: false,
+      status: 0,
+      body: null,
+      error: `不支持的 HTTP 方法: ${httpMethod}`,
+    };
+  }
+
+  let finalUrl = url;
+  const queryEntries = Object.entries(query || {}).filter(([, v]) => v != null && v !== '');
+  if (queryEntries.length) {
+    const u = new URL(url);
+    queryEntries.forEach(([k, v]) => u.searchParams.set(k, String(v)));
+    finalUrl = u.toString();
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    const resp = await fetch(finalUrl, {
+      method: httpMethod,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body ?? {}),
       signal: controller.signal,
     });
     const respText = await resp.text().catch(() => '');
@@ -37,4 +72,14 @@ async function postJson(url, body, { timeout = DEFAULT_TIMEOUT_MS } = {}) {
   }
 }
 
-module.exports = { postJson, DEFAULT_TIMEOUT_MS };
+/** @deprecated 使用 requestJson；保留兼容旧调用 */
+async function postJson(url, body, options = {}) {
+  return requestJson(url, body, { ...options, method: 'POST' });
+}
+
+module.exports = {
+  requestJson,
+  postJson,
+  DEFAULT_TIMEOUT_MS,
+  ALLOWED_METHODS,
+};

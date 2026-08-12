@@ -145,6 +145,7 @@ const ApiServiceEditPage: React.FC = () => {
         scopeCode: data.scopeCode,
         serviceSlug: data.serviceSlug,
         name: data.name,
+        description: data.description || '',
         tags: data.tags || [],
         primaryOperation: data.enabledOperations?.[0],
         accessRestrictionMode: restriction.mode || 'none',
@@ -193,6 +194,7 @@ const ApiServiceEditPage: React.FC = () => {
         scopeCode: values.scopeCode || serviceMeta?.scopeCode,
         serviceSlug: values.serviceSlug || serviceMeta?.serviceSlug,
         name: values.name || serviceMeta?.name,
+        description: values.description ?? serviceMeta?.description,
         status: serviceMeta?.status,
         entityId: values.entityId || serviceMeta?.entityId,
         entityCode: values.entityCode || serviceMeta?.entityCode,
@@ -252,6 +254,7 @@ const ApiServiceEditPage: React.FC = () => {
         setServiceMeta((prev) => ({ ...prev, ...payload }));
         form.setFieldsValue({
           name: payload.name ?? form.getFieldValue('name'),
+          description: payload.description ?? form.getFieldValue('description'),
           tags: payload.tags ?? form.getFieldValue('tags'),
           scopeCode: payload.scopeCode ?? form.getFieldValue('scopeCode'),
           serviceSlug: payload.serviceSlug ?? form.getFieldValue('serviceSlug'),
@@ -311,6 +314,7 @@ const ApiServiceEditPage: React.FC = () => {
         scopeCode: values.scopeCode || scopeCodeFromEntityCode(values.entityCode),
         serviceSlug: values.serviceSlug,
         name: String(values.name || '').trim(),
+        description: String(values.description || '').trim(),
         tags: values.tags || [],
         scriptMode: values.scriptMode,
         entityId: values.entityId,

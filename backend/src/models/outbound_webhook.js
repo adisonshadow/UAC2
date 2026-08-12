@@ -3,7 +3,7 @@ const sequelize = require('../config/database');
 
 /**
  * 外部 API 提交配置
- * 当绑定的业务 API 请求成功后，触发本配置：运行处置脚本转换数据 → POST 到外部 API
+ * 当绑定的业务 API 请求成功后，触发本配置：运行处置脚本转换数据 → HTTP 调用外部 API
  */
 const OutboundWebhook = sequelize.define('OutboundWebhook', {
   id: {
@@ -46,7 +46,33 @@ const OutboundWebhook = sequelize.define('OutboundWebhook', {
     type: DataTypes.TEXT,
     allowNull: false,
   },
+  http_method: {
+    type: DataTypes.STRING(10),
+    allowNull: false,
+    defaultValue: 'POST',
+  },
+  auth_type: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'none',
+  },
+  auth_send_mode: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+  },
+  auth_key_name: {
+    type: DataTypes.STRING(128),
+    allowNull: true,
+  },
+  auth_secret_enc: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
   request_structure: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  request_example: {
     type: DataTypes.TEXT,
     allowNull: true,
   },
@@ -56,6 +82,10 @@ const OutboundWebhook = sequelize.define('OutboundWebhook', {
   },
   mock_data: {
     type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  response_config: {
+    type: DataTypes.JSONB,
     allowNull: true,
   },
   version: {

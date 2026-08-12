@@ -30,6 +30,13 @@ export function buildExceptionResponsesDocsPath(applicationKey: string): string 
   return `/public/applications/${encodeURIComponent(key)}/api-docs/exception-responses`;
 }
 
+/** 应用关联的提交外部 API 文档页路径 */
+export function buildOutboundWebhooksDocsPath(applicationKey: string): string {
+  const key = String(applicationKey || '').trim();
+  if (!key) return '';
+  return `/public/applications/${encodeURIComponent(key)}/api-docs/outbound-webhooks`;
+}
+
 /** 应用 API Skill 文档页路径（站内路由，EADAF API 调用约定） */
 export function buildApiSkillDocsPath(applicationKey: string): string {
   const key = String(applicationKey || '').trim();

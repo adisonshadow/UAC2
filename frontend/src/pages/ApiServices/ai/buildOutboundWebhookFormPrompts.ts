@@ -8,7 +8,7 @@ export function buildOutboundWebhookFormPrompts(_references: unknown[]): AIChatP
     {
       key: 'ow-generate',
       label: 'AI 一键编写请求结构和脚本',
-      description: '根据绑定的业务 API，自动生成请求结构、处置脚本和 Mock Data',
+      description: '根据绑定的业务 API，自动生成请求结构、请求 Demo、处置脚本、Mock Data 与异常规则',
     },
     {
       key: 'ow-help',

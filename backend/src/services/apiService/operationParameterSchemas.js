@@ -318,10 +318,11 @@ function mapInterfaceTypeToZod(tsType, { required = false, isFile = false } = {}
       const normalized = String(tsType || '').toLowerCase();
       if (normalized.includes('number')) base = zodCoerceNumber();
       else if (normalized.includes('boolean')) base = z.coerce.boolean();
-      else if (normalized.includes('object') || normalized.includes('record')) {
-        base = z.record(z.unknown());
-      } else if (normalized.includes('[]') || normalized.includes('array')) {
+      // 数组优先：避免 Record<string, unknown>[] 被误判为 record
+      else if (normalized.includes('[]') || normalized.includes('array')) {
         base = z.array(z.unknown());
+      } else if (normalized.includes('object') || normalized.includes('record')) {
+        base = z.record(z.unknown());
       } else {
         base = z.string();
       }
@@ -467,7 +468,7 @@ function normalizeWriteBody(body, entity, pathLabel = 'body') {
   return assertBodyFieldsAllowed(body, entity, pathLabel);
 }
 
-function coerceInvokeParameters(parameters = {}, entity = null) {
+function coerceInvokeParameters(parameters = {}, entity = null, service = null) {
   const next = { ...(parameters || {}) };
 
   Object.keys(parameters || {}).forEach((key) => {
@@ -493,11 +494,15 @@ function coerceInvokeParameters(parameters = {}, entity = null) {
     }
   }
 
-  if (next.body !== undefined) {
-    next.body = normalizeWriteBody(next.body, entity, 'body');
-  }
-  if (next.set !== undefined) {
-    next.set = normalizeWriteBody(next.set, entity, 'set');
+  // TypeScript Handler 以 requestParameterInterface 为准，允许自定义 body（如 PCS 推送载荷）
+  const scriptMode = service?.scriptMode || service?.script_mode || 'sql';
+  if (scriptMode !== 'typescript') {
+    if (next.body !== undefined) {
+      next.body = normalizeWriteBody(next.body, entity, 'body');
+    }
+    if (next.set !== undefined) {
+      next.set = normalizeWriteBody(next.set, entity, 'set');
+    }
   }
 
   return next;
@@ -742,11 +747,18 @@ function mapInterfaceTypeToJsonSchema(tsType) {
   const normalized = String(tsType || '').toLowerCase();
   if (normalized.includes('number')) return { type: 'number' };
   if (normalized.includes('boolean')) return { type: 'boolean' };
+  // 数组优先：避免 Record<string, unknown>[] 被误判为 object
+  if (normalized.includes('[]') || normalized.includes('array')) {
+    const itemIsObject = normalized.includes('object') || normalized.includes('record');
+    return {
+      type: 'array',
+      items: itemIsObject
+        ? { type: 'object', additionalProperties: true }
+        : { type: 'string' },
+    };
+  }
   if (normalized.includes('object') || normalized.includes('record')) {
     return { type: 'object', additionalProperties: true };
-  }
-  if (normalized.includes('[]') || normalized.includes('array')) {
-    return { type: 'array', items: { type: 'string' } };
   }
   return { type: 'string' };
 }
@@ -1335,7 +1347,7 @@ function buildMockParameters(service, operation, entity, enumMap = null) {
 
 function validateParameters(service, operation, parameters, entity, enumMap = null) {
   const { zodSchema } = buildBaseSchemas(service, operation, entity, enumMap);
-  const coerced = coerceInvokeParameters(parameters || {}, entity);
+  const coerced = coerceInvokeParameters(parameters || {}, entity, service);
   const parsed = zodSchema.safeParse(coerced);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => ({

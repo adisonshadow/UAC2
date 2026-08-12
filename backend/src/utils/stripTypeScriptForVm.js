@@ -1,6 +1,7 @@
 /**
  * 移除 Handler / 采集脚本中的 TypeScript 语法，供 vm.Script 执行。
  * 注意：不可粗暴删除所有 `: Type`，否则会破坏对象字面量（如 status: map[key]）。
+ * 也不可对任意函数调用括号做剥离，否则 insert({ id: workCardDbId }) 会被误伤。
  */
 function stripParamTypes(inner) {
   return inner.replace(/\b(\w+)\??\s*:\s*(\{[^}]*\}|[^,)]+)/g, (match, name, typePart) => {
@@ -29,11 +30,25 @@ function stripTypeScriptForVm(source) {
   code = code.replace(/^\s*import\s+.+$/gm, '');
   code = code.replace(/^\s*export\s+(async\s+)?/gm, '$1');
 
-  // 函数/调用参数类型
-  code = code.replace(/\(([^)]*)\)/g, (full, inner) => {
-    if (!/:\s*[\w"'[{]/.test(inner)) return full;
-    return `(${stripParamTypes(inner)})`;
-  });
+  // 仅处理函数声明 / 函数表达式的参数类型（勿扫描任意调用括号）
+  code = code.replace(
+    /\b(async\s+)?function(\s+\w+)?\s*\(([^)]*)\)/g,
+    (full, asyncKw = '', name = '', inner) => {
+      if (!/:\s*[\w"'[{]/.test(inner)) return full;
+      return `${asyncKw || ''}function${name || ''}(${stripParamTypes(inner)})`;
+    },
+  );
+
+  // 箭头函数参数：(x: Type) => / async (x: Type) =>
+  code = code.replace(
+    /(\basync\s*)?\(([^)]*)\)(\s*:\s*[^={\n]+)?\s*=>/g,
+    (full, asyncKw = '', inner, _retType) => {
+      const params = /:\s*[\w"'[{]/.test(inner) ? stripParamTypes(inner) : inner;
+      return `${asyncKw || ''}(${params}) =>`;
+    },
+  );
+
+  // 单参数箭头：x: Type 不适用；保留 name => 原样
 
   // 变量声明类型：const x: Type = → const x =
   code = code.replace(/\b(let|const|var)\s+(\w+)\s*:\s*[^=\n]+(?==)/g, '$1 $2');
