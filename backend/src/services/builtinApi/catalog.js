@@ -964,6 +964,15 @@ const BUILTIN_API_CATALOG = [
     actions: ['read'],
     description: '获取 AIBase 能力清单（scopes/skills/tools）',
   },
+  {
+    code: 'ai:runtime:http_request',
+    domain: 'ai',
+    label: 'AI 公共 HTTP 请求',
+    routePath: '/api/v1/ai/http-request',
+    httpMethods: ['POST'],
+    actions: ['create'],
+    description: '公共 HTTP 请求（类 curl）；受信主机自动注入当前用户 JWT',
+  },
 
   // ===== system 域：系统设置 =====
   {

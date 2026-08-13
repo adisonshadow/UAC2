@@ -1,8 +1,17 @@
 const { Scope, Tool, Skill, Application } = require('../models');
 const SkillController = require('./skillController');
 const { invokeTool, formatOpenAITool } = require('../services/ai/toolInvokeService');
+const { executeHttpRequest } = require('../services/ai/httpRequestToolService');
 const { CAPABILITIES } = require('../constants/aiCapabilities');
 const logger = require('../utils/logger');
+
+function extractBearerToken(ctx) {
+  const auth = ctx.headers.authorization || ctx.headers.Authorization || '';
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    return auth.slice(7).trim() || null;
+  }
+  return null;
+}
 
 class AiCapabilityController {
   static async getCapabilities(ctx) {
@@ -176,6 +185,7 @@ class AiCapabilityController {
       const logContext = {
         userId: ctx.state.user?.id || ctx.state.user?.userId,
         traceId: ctx.state.traceId,
+        userToken: extractBearerToken(ctx),
       };
 
       const result = await invokeTool(tool, toolArgs || {}, logContext);
@@ -185,6 +195,33 @@ class AiCapabilityController {
       ctx.status = 500;
       ctx.body = {
         error: { code: 'TOOL_INVOKE_FAILED', message: error.message, traceId: ctx.state.traceId },
+      };
+    }
+  }
+
+  /**
+   * 直接执行公共 HTTP 请求（与 http_request Tool 同一实现，便于联调）
+   * POST /api/v1/ai/http-request
+   */
+  static async httpRequest(ctx) {
+    try {
+      const result = await executeHttpRequest(ctx.request.body || {}, {
+        userToken: extractBearerToken(ctx),
+        userId: ctx.state.user?.id || ctx.state.user?.userId,
+        traceId: ctx.state.traceId,
+      });
+      ctx.body = { data: result };
+    } catch (error) {
+      const code = error.code || 'HTTP_REQUEST_FAILED';
+      const status =
+        code === 'missing_user_token' || code === 'invalid_url' || code === 'invalid_method'
+          || code === 'invalid_protocol' || code === 'host_blocked'
+          ? 400
+          : 500;
+      logger.error('http-request 失败', { error: error.message, code });
+      ctx.status = status;
+      ctx.body = {
+        error: { code, message: error.message, traceId: ctx.state.traceId },
       };
     }
   }

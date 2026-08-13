@@ -2,8 +2,11 @@ const salesDemoDb = require('../demo/salesDemoDb');
 const materializationService = require('../businessData/materializationService');
 const materializedTableBrowseService = require('../businessData/materializedTableBrowseService');
 const { executeToolWithEnvelope } = require('./executeToolWithEnvelope');
+const { executeHttpRequest } = require('./httpRequestToolService');
 
 const BUILTIN_HANDLERS = {
+  /** 公共 HTTP 请求（类 curl）；context.userToken 用于受信主机鉴权 */
+  http_request: async (args, context = {}) => executeHttpRequest(args, context),
   demo_echo: async (args) => ({
     echoed: args,
     message: 'Server builtin echo succeeded'
@@ -83,7 +86,7 @@ const BUILTIN_HANDLERS = {
 
 const EXECUTION_TYPES = ['client', 'server_http', 'server_builtin'];
 
-async function invokeServerHttp(config, args) {
+async function invokeServerHttp(config, args, context = {}) {
   const url = config?.url;
   if (!url) {
     throw new Error('server_http 工具缺少 url 配置');
@@ -91,6 +94,10 @@ async function invokeServerHttp(config, args) {
 
   const method = (config.method || 'POST').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(config.headers || {}) };
+  // 可选：server_config.forwardUserToken=true 时注入当前用户 JWT
+  if (config.forwardUserToken && context.userToken) {
+    headers.Authorization = `Bearer ${context.userToken}`;
+  }
   const response = await fetch(url, {
     method,
     headers,
@@ -109,18 +116,23 @@ async function invokeServerHttp(config, args) {
   return { result: text };
 }
 
-async function invokeServerBuiltin(config, args) {
+async function invokeServerBuiltin(config, args, context = {}) {
   const handlerName = config?.handler;
   if (!handlerName || !BUILTIN_HANDLERS[handlerName]) {
     throw new Error(`未注册的 builtin handler: ${handlerName || '(empty)'}`);
   }
-  return BUILTIN_HANDLERS[handlerName](args);
+  return BUILTIN_HANDLERS[handlerName](args, context);
 }
 
 async function invokeTool(tool, args = {}, logContext = {}) {
   const functionName = tool.function_name || tool.functionName || '(unknown)';
   const executionType = tool.execution_type || tool.executionType;
   const requiresVerification = tool.requires_verification === true || tool.requiresVerification === true;
+  const invokeContext = {
+    userToken: logContext.userToken || null,
+    userId: logContext.userId || null,
+    traceId: logContext.traceId || null,
+  };
 
   if (tool.execution_type === 'client') {
     return executeToolWithEnvelope({
@@ -144,7 +156,7 @@ async function invokeTool(tool, args = {}, logContext = {}) {
       requiresVerification,
       logContext,
       fn: async () => {
-        const result = await invokeServerHttp(tool.server_config || {}, args);
+        const result = await invokeServerHttp(tool.server_config || {}, args, invokeContext);
         return { executionType: 'server_http', result };
       },
     });
@@ -158,7 +170,7 @@ async function invokeTool(tool, args = {}, logContext = {}) {
       requiresVerification,
       logContext,
       fn: async () => {
-        const result = await invokeServerBuiltin(tool.server_config || {}, args);
+        const result = await invokeServerBuiltin(tool.server_config || {}, args, invokeContext);
         return { executionType: 'server_builtin', result };
       },
     });

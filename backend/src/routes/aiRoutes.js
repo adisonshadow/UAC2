@@ -241,6 +241,37 @@ router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.inv
 
 /**
  * @swagger
+ * /api/v1/ai/http-request:
+ *   post:
+ *     tags: [AI-Service]
+ *     summary: 公共 HTTP 请求（类 curl）[需要认证]
+ *     description: |
+ *       与 Tool `http_request` 同一实现。
+ *       相对路径或受信主机自动注入当前用户 JWT；外部 URL 不带用户 JWT。
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [url]
+ *             properties:
+ *               method: { type: string, example: GET }
+ *               url: { type: string, example: /api/v1/ai/models }
+ *               headers: { type: object }
+ *               body: {}
+ *               timeoutMs: { type: integer, example: 15000 }
+ *     responses:
+ *       200:
+ *         description: 请求完成（含目标 HTTP status）
+ *       400:
+ *         description: 参数错误或缺少用户 token
+ */
+router.post('/http-request', authWithBuiltinApiGuard, AiCapabilityController.httpRequest);
+
+/**
+ * @swagger
  * /api/v1/ai/tool-invoke-logs:
  *   post:
  *     tags: [AI-Service]
