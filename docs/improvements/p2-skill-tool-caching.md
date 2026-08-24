@@ -1,5 +1,7 @@
 # P2 — Skill/Tool 加载 N+1 与缓存
 
+> **已被吸收**：与 [`新Agent架构方案`](../TODOs/新Agent架构方案/README.md) MS2 并行；排期见 [09](../TODOs/新Agent架构方案/09-路线图与问题分级.md)。本文保留锚点。
+
 ## 背景
 
 `loadChatSkillContext` 先 `getCapabilities` 拿到 skill meta 列表，再对每个 slug 单独

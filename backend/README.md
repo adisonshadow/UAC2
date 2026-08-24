@@ -10,7 +10,7 @@ Koa + Sequelize 实现的 EADAF REST API，提供身份权限、应用 SSO、业
 - **应用与 SSO**：三方应用注册、SSO 配置、应用侧 API 接入
 - **业务数据**：实体模型、枚举、关系、物化预览/执行、数据库连接（PostgreSQL / MongoDB / Redis）
 - **AI 管理**：Provider、Model、Scope、Tool、Skill、Chat 网关、Tool 调用、请求日志
-- **其他**：文件上传、健康检查、Swagger 文档
+- **其他**：企业文件存储（轻量 multipart ≤100MB + tus 超大文件断点续传）、健康检查、Swagger 文档
 
 ## 安装
 
@@ -60,6 +60,7 @@ curl -s http://localhost:9526/api/v1/health
 2. **`init-db` 会 DROP SCHEMA `uac` 并重建**，会清空该 schema 下全部数据，禁止对生产库执行。
 3. **CORS**：`CORS_ORIGIN` 需包含前端地址（开发默认含 `http://localhost:9527`）。
 4. **超管账号**：`superadmin.sql` 在 init 时写入，上线前务必改密或删除。
-5. **增量表结构**：如 `migrate-bizdata-database-connections.sql`、`migrate-department-roles.sql` 等，在已有库上需手动 `psql -f` 执行。
+5. **增量表结构**：如 `migrate-storage-tus.sql`、`migrate-bizdata-database-connections.sql`、`migrate-department-roles.sql` 等，在已有库上需手动 `psql -f` 执行。
 6. **物化执行**：目标 PostgreSQL Schema / MongoDB 库不存在时返回 409，前端确认后带 `createTargetIfMissing: true` 自动创建。
 7. **路由 Swagger**：接口注释即文档源，改路由后请同步更新 JSDoc `@swagger` 备注。
+8. **文件存储**：轻量上传 `POST /api/v1/storage/objects/upload` 上限 100MB；超过必须走 tus `POST/HEAD/PATCH /api/v1/storage/tus`（可传小文件，默认上限 5GB）。进度以磁盘 + PostgreSQL 为准，Redis 仅作可选加速。完成后仍用 `objectId` 走 preview/download。

@@ -581,10 +581,25 @@ declare namespace API {
     issuer?: string;
     /** 前端应用URL */
     frontend_url?: string;
-    /** SSO 登录页展示的应用 Logo（上传图片 ID 或 URL） */
-    logo?: string;
+    /** SSO 登录页样式 */
+    login_page?: SsoLoginPageStyle;
     /** 其他SSO协议特定的参数 */
     additional_params?: Record<string, any>;
+  };
+
+  type SsoLoginPageStyle = {
+    /** 登录页主题：浅色 / 深色 / 跟随系统 */
+    theme?: 'light' | 'dark' | 'system';
+    /** 左侧侧边栏素材类型 */
+    aside_kind?: 'lottie' | 'image';
+    /** 侧边栏 Lottie 文件（存储对象 ID 或 URL） */
+    aside_lottie?: string | null;
+    /** 侧边栏图片（存储对象 ID 或 URL，支持 SVG） */
+    aside_image?: string | null;
+    /** 使用更大的文字，适合 Pad 显示 */
+    large_text?: boolean;
+    /** 登录页副标题；不填则不显示 */
+    subtitle?: string | null;
   };
 
   type User = {
@@ -1145,6 +1160,8 @@ declare namespace API {
     metadataEnabled?: boolean;
     apiServiceAllowWriteOperations?: boolean;
     apiServiceTestAutoRollback?: boolean;
+    autoBackupEnabled?: boolean;
+    autoBackupCron?: string;
   };
 
   type SystemBackupItem = {
@@ -1256,6 +1273,7 @@ declare namespace API {
     mimeType?: string;
     size?: number;
     relativePath?: string;
+    contentMd5?: string;
     applicationId?: string;
     createdBy?: string;
     createdAt?: string;

@@ -77,6 +77,7 @@ export default function ApiServicesAI() {
     <AIChatPageScope
       scopeSlug="business-data"
       fallbackSkillSlugs={fallbackSkillSlugs}
+      semanticRouteDomains={['api_services']}
       headerCaption={headerCaption}
       systemPromptPrefix={systemPromptPrefix}
       welcome={welcome}

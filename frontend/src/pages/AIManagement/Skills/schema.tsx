@@ -34,7 +34,19 @@ export const skillTableColumns: ProColumns<Record<string, any>>[] = [
     title: '关联 Tool',
     dataIndex: 'tools',
     search: false,
-    render: (_, record) => (record.tools || []).map((t: any) => t.functionName).join(', ') || '-',
+    width: 280,
+    ellipsis: false,
+    render: (_, record) => {
+      const tools = (record.tools || []) as Array<{ id?: string; functionName?: string }>;
+      if (!tools.length) return '-';
+      return (
+        <Space wrap size={[4, 4]} style={{ maxWidth: 360 }}>
+          {tools.map((t) => (
+            <Tag key={t.id || t.functionName}>{t.functionName}</Tag>
+          ))}
+        </Space>
+      );
+    },
   },
   {
     title: '状态',

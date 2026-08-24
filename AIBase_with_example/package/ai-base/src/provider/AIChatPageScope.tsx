@@ -18,6 +18,7 @@ export type AIChatPageScopeConfig = Partial<
     | 'exposeAllClientTools'
     | 'nextStepPrompts'
     | 'maxToolResultChars'
+    | 'semanticRouteDomains'
   >
 >;
 
@@ -53,6 +54,19 @@ export function useEffectiveAIChatConfig(): ResolvedAIChatConfig {
           exposeAllClientTools: pageScope.exposeAllClientTools ?? rootConfig.exposeAllClientTools,
           nextStepPrompts: pageScope.nextStepPrompts ?? rootConfig.nextStepPrompts,
           maxToolResultChars: pageScope.maxToolResultChars ?? rootConfig.maxToolResultChars,
+          // 根级布局配置：页面 scope 不覆盖，但 resolveConfig 需透传以免落回默认
+          autoNavigate: rootConfig.autoNavigate,
+          toolConcurrency: rootConfig.toolConcurrency,
+          decisionPreference: rootConfig.decisionPreference,
+          reasoningDisplayMode: rootConfig.reasoningDisplayMode,
+          toolDisplayNames: rootConfig.toolDisplayNames,
+          theme: rootConfig.theme,
+          semanticRoutes: rootConfig.semanticRoutes,
+          semanticRouteDomains:
+            pageScope.semanticRouteDomains ?? rootConfig.semanticRouteDomains,
+          enableStructuredTermination: rootConfig.enableStructuredTermination,
+          roundDelayMs: rootConfig.roundDelayMs,
+          navigate: rootConfig.navigate,
         });
 
     if (dynamicPrompts == null) return base;
@@ -81,6 +95,7 @@ export function AIChatPageScope({
   exposeAllClientTools,
   nextStepPrompts,
   maxToolResultChars,
+  semanticRouteDomains,
 }: AIChatPageScopeProps) {
   const value = useMemo(
     () => ({
@@ -95,6 +110,7 @@ export function AIChatPageScope({
       exposeAllClientTools,
       nextStepPrompts,
       maxToolResultChars,
+      semanticRouteDomains,
     }),
     [
       scopeSlug,
@@ -109,6 +125,7 @@ export function AIChatPageScope({
       exposeAllClientTools,
       nextStepPrompts,
       maxToolResultChars,
+      semanticRouteDomains?.join(','),
     ],
   );
 

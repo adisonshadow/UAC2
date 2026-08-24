@@ -1,9 +1,31 @@
 const Router = require('koa-router');
+const koaBody = require('koa-body').default;
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 const SystemController = require('../controllers/systemController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const router = new Router({ prefix: '/api/v1/system' });
+
+// 恢复备份的文件上传中间件：.dump 格式、单文件、上限 1GB，落在系统临时目录
+const restoreUploadDir = path.join(os.tmpdir(), 'eadaf-db-restore');
+if (!fs.existsSync(restoreUploadDir)) {
+  fs.mkdirSync(restoreUploadDir, { recursive: true });
+}
+const restoreUploadMiddleware = koaBody({
+  multipart: true,
+  formidable: {
+    uploadDir: restoreUploadDir,
+    keepExtensions: true,
+    maxFileSize: 1024 * 1024 * 1024,
+    filter: ({ originalFilename }) => {
+      const name = String(originalFilename || '').toLowerCase();
+      return name.endsWith('.dump');
+    },
+  },
+});
 
 /**
  * @swagger
@@ -60,5 +82,30 @@ router.get('/backups', authWithBuiltinApiGuard, SystemController.listBackups);
  *         description: 备份已触发
  */
 router.post('/backups/run', authWithBuiltinApiGuard, SystemController.runBackup);
+
+/**
+ * @swagger
+ * /api/v1/system/backups/restore:
+ *   post:
+ *     tags: [System]
+ *     summary: 上传 .dump 备份文件并恢复数据库（覆盖现有数据，高危操作） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file: { type: string, format: binary, description: '.dump 备份文件' }
+ *     responses:
+ *       200:
+ *         description: 恢复完成
+ */
+router.post(
+  '/backups/restore',
+  authWithBuiltinApiGuard,
+  restoreUploadMiddleware,
+  SystemController.restoreBackup,
+);
 
 module.exports = router;

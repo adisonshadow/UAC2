@@ -24,6 +24,7 @@ import ScopeDocPanel from '../components/ScopeDocPanel';
 import JsonSchemaEditor from '../components/JsonSchemaEditor';
 import EnumManager from '../components/EnumManager';
 import EntityDeletionModal from '../components/EntityDeletionModal';
+import MetadataEditor from '../components/MetadataEditor';
 import { buildEntityValidatePrompt, buildBatchValidatePrompt } from '../utils/entityValidation';
 import {
   getBusinessDataSchema,
@@ -350,6 +351,13 @@ const ModelDesigner: React.FC = () => {
                 saving={saving}
               />
             )}
+            {selected.id ? (
+              <MetadataEditor
+                targetType="entity"
+                targetId={selected.id}
+                targetCode={selected.code}
+              />
+            ) : null}
           </Space>
         </div>
       </AISurfaceMarker>

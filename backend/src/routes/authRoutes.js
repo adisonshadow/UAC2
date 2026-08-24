@@ -143,6 +143,9 @@ const router = new Router({ prefix: '/api/v1/auth' });
        *                                 - POST_REDIRECT: POST跳转（默认）
        *                                 - HEADER_REDIRECT: 302重定向+URL参数
        *                               example: "POST_REDIRECT"
+       *                             login_page:
+       *                               type: object
+       *                               description: SSO 登录页样式（主题、侧边栏素材、大字号）
  *       202:
  *         description: |
  *           需要验证码（普通登录模式步骤2.1）

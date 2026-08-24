@@ -154,10 +154,9 @@ async function loadInitialState(): Promise<InitialState> {
   }
 
   const brandingDisplay = resolveBrandingDisplay(appBranding);
-  const systemFeatures =
-    featuresRes && featuresRes.code === 200
-      ? (featuresRes.data as API.SystemFeatures) || { metadataEnabled: false }
-      : { metadataEnabled: false };
+  const systemFeatures = isApiSuccess(featuresRes)
+    ? (getApiData<API.SystemFeatures>(featuresRes) ?? { metadataEnabled: false })
+    : { metadataEnabled: false };
 
   return {
     fetchUserInfo,

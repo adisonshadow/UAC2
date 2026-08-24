@@ -165,6 +165,34 @@ router.get('/system-branding', ApplicationController.getSystemBranding);
        *                           format: uri
        *                           description: 前端应用URL
        *                           example: "https://your-app.com"
+       *                         login_page:
+       *                           type: object
+       *                           description: SSO 登录页样式（主题、侧边栏素材、大字号）
+       *                           properties:
+       *                             theme:
+       *                               type: string
+       *                               enum: [light, dark, system]
+       *                               description: 登录页主题。light 浅色、dark 深色、system 跟随系统
+       *                             aside_kind:
+       *                               type: string
+       *                               enum: [lottie, image]
+       *                               description: 左侧侧边栏素材类型
+       *                             aside_lottie:
+       *                               type: string
+       *                               nullable: true
+       *                               description: 侧边栏 Lottie 文件（存储对象 ID 或 URL）
+       *                             aside_image:
+       *                               type: string
+       *                               nullable: true
+       *                               description: 侧边栏图片（存储对象 ID 或 URL，支持 SVG）
+       *                             large_text:
+       *                               type: boolean
+       *                               description: 使用更大的文字，适合 Pad 显示
+       *                             subtitle:
+       *                               type: string
+       *                               nullable: true
+       *                               maxLength: 80
+       *                               description: 登录页副标题；不填则不显示
  *                     description:
  *                       type: string
  *                       nullable: true

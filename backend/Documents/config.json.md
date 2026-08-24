@@ -23,8 +23,8 @@
   "host": "localhost",       // API 服务主机地址
   "cors": {                  // CORS 配置
     "origin": ["http://localhost:3000", "http://localhost:8080"],  // 允许的源
-    "methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],         // 允许的 HTTP 方法
-    "allowedHeaders": ["Content-Type", "Authorization"],          // 允许的请求头
+    "methods": ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"],         // 允许的 HTTP 方法（tus 续传需要 HEAD/PATCH）
+    "allowedHeaders": ["Content-Type", "Authorization"],          // 允许的请求头（tus 实际还会反射 Upload-* / Tus-*）
     "credentials": true,     // 是否允许携带凭证
     "maxAge": 86400         // 预检请求缓存时间（秒）
   },
@@ -94,9 +94,31 @@
       "needAuth": true      // 是否需要认证才能访问文件
     }
   },
-  "defaultType": "image"    // 默认文件类型
+  "defaultType": "image"    // 默认文件类型（仅遗留 /api/v1/uploads）
 }
 ```
+
+> `upload` 仅用于遗留通用上传类型表。**企业文件存储**走 `storage`（见下），与 `upload.types` 无关。
+
+## 企业文件存储配置 (storage)
+
+```json
+{
+  "root": "upload_test",           // 物理文件根目录，相对 process.cwd()；环境变量 STORAGE_ROOT
+  "systemBucket": {
+    "code": "eadaf-system",        // 系统 Bucket，头像/Logo 等；SYSTEM_STORAGE_BUCKET_CODE
+    "name": "EADAF系统资源",
+    "description": "EADAF业务系统自用资源（用户头像、应用 Logo 等），公开访问，不可编辑或删除"
+  },
+  "tus": {                         // 超大文件断点续传（tus 协议）
+    "maxSize": 5368709120,         // 单文件上限，默认 5GB；STORAGE_TUS_MAX_SIZE（字节）
+    "expirationMs": 86400000,      // 未完成会话过期，默认 24h；STORAGE_TUS_EXPIRATION_MS
+    "dirName": ".tus"              // 临时目录名，实际路径为 {root}/.tus；STORAGE_TUS_DIR_NAME
+  }
+}
+```
+
+进度权威在磁盘 `{root}/.tus` 与表 `uac.storage_upload_sessions`。Redis（`REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`）**可选**：连上则缓存 offset，未配置或宕机不影响续传。
 
 ## 日志配置 (logging)
 ```json
@@ -134,7 +156,7 @@
 - `host`: API 服务主机地址，默认为 localhost
 - `cors`: 跨域资源共享配置
   - `origin`: 允许访问的源地址列表
-  - `methods`: 允许的 HTTP 方法列表
+  - `methods`: 允许的 HTTP 方法列表（含 HEAD/PATCH，供 tus 续传）
   - `allowedHeaders`: 允许的请求头列表
   - `credentials`: 是否允许携带凭证
   - `maxAge`: 预检请求缓存时间
@@ -166,7 +188,17 @@
     - `extensions`: 允许的文件扩展名列表
     - `maxSize`: 最大文件大小（字节）
     - `needAuth`: 是否需要认证才能访问文件，默认为 true
-- `defaultType`: 默认文件类型，默认为 image
+- `defaultType`: 默认文件类型，默认为 image（遗留 `/api/v1/uploads`）
+
+### 企业文件存储配置
+- `root`: 文件落盘根目录，默认 `upload_test`（`STORAGE_ROOT`）
+- `systemBucket`: 系统内置 Bucket（头像/Logo），默认编码 `eadaf-system`
+- `tus`: 超大文件断点续传
+  - `maxSize`: 单文件上限，默认 5GB（`STORAGE_TUS_MAX_SIZE`）
+  - `expirationMs`: 未完成上传过期时间，默认 24 小时（`STORAGE_TUS_EXPIRATION_MS`）
+  - `dirName`: tus 临时目录名，默认 `.tus`，完整路径 `{root}/.tus`
+- 轻量接口 `POST /api/v1/storage/objects/upload` 硬上限 **100MB**；超过必须走 `/api/v1/storage/tus`
+- 已有库需执行 `scripts/migrate-storage-tus.sql`（`content_md5` + `storage_upload_sessions`）
 
 ### 日志配置
 - `level`: 日志级别，可选值：error, warn, info, verbose, debug, silly

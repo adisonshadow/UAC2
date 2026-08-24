@@ -54,6 +54,7 @@ const ProvidersPage: React.FC = () => {
         rowKey="id"
         scroll={{ x: 'max-content' }}
         search={search}
+        headerTitle="AI 服务商列表"
         columns={[
           ...augmentColumnsWithChatReference(providerTableColumns, 'name', buildAIProviderReference),
           {

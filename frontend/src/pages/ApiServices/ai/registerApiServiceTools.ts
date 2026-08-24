@@ -222,7 +222,7 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_resolve_connection',
     description:
-      '自动推断 API 服务应使用的数据库连接与 targetSchema：优先按主实体物化记录；多个连接时选物化匹配最多的连接；禁止向用户索要 connectionId。返回含 targetSchema，写 SQL 时须使用该 schema',
+      '自动推断 API 服务应使用的数据库连接与 targetSchema：优先按主实体物化记录；实体尚未物化时回落到同域已物化实体；多个连接时选物化匹配最多的连接；禁止向用户索要 connectionId。返回含 targetSchema，写 SQL 时须使用该 schema',
     parameters: {
       type: 'object',
       properties: {
@@ -548,7 +548,7 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_create_services_batch',
     description:
-      '批量创建 API 服务（如 CRUD 全套）。每个服务一个 operation；可传 entityCode 自动生成 find/create/updateOne/deleteOne',
+      '批量创建 API 服务（如 CRUD 全套）。每个服务一个 operation；可传 entityCode 自动生成 find/create/updateOne/deleteOne。connectionId/targetSchema 省略时按实体物化记录推断，新实体尚未物化则用同域已物化实体的 schema',
     requiresVerification: true,
     parameters: {
       type: 'object',

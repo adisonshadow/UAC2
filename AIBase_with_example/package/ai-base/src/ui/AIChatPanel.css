@@ -1,14 +1,38 @@
 .aibase-chat-panel {
+  --aibase-bg-container: #ffffff;
+  --aibase-border: #f0f0f0;
+  --aibase-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+  --aibase-text: rgba(0, 0, 0, 0.88);
+  --aibase-text-secondary: rgba(0, 0, 0, 0.65);
+  --aibase-text-tertiary: rgba(0, 0, 0, 0.45);
+  --aibase-welcome-bg: rgba(0, 0, 0, 0.02);
+  --aibase-business-error: #953300;
+  --aibase-system-error: #940a0a;
+
   position: fixed;
   right: 0;
   bottom: 0;
   z-index: 100;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-left: 1px solid #f0f0f0;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+  background: var(--aibase-bg-container);
+  border-left: 1px solid var(--aibase-border);
+  box-shadow: var(--aibase-shadow);
   box-sizing: border-box;
+  color: var(--aibase-text);
+}
+
+.aibase-chat-panel[data-aibase-theme='dark'],
+[data-aibase-theme='dark'] {
+  --aibase-bg-container: #141414;
+  --aibase-border: #303030;
+  --aibase-shadow: -2px 0 8px rgba(0, 0, 0, 0.45);
+  --aibase-text: rgba(255, 255, 255, 0.85);
+  --aibase-text-secondary: rgba(255, 255, 255, 0.65);
+  --aibase-text-tertiary: rgba(255, 255, 255, 0.45);
+  --aibase-welcome-bg: rgba(255, 255, 255, 0.08);
+  --aibase-business-error: #d48806;
+  --aibase-system-error: #ff7875;
 }
 
 .aibase-chat-float-btn {
@@ -18,7 +42,7 @@
 .aibase-chat-header {
   height: 52px;
   box-sizing: border-box;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--aibase-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -33,6 +57,52 @@
 
 .aibase-chat-header-btn {
   font-size: 18px;
+}
+
+.aibase-chat-settings {
+  width: 320px;
+  padding: 12px 16px;
+}
+
+.aibase-chat-settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.aibase-chat-settings-row.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.aibase-chat-settings-row + .aibase-chat-settings-row {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--aibase-border);
+}
+
+.aibase-chat-settings-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.aibase-chat-settings-label {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.aibase-chat-settings-desc {
+  font-size: 12px;
+  color: var(--aibase-text-tertiary);
+  line-height: 18px;
+}
+
+.aibase-chat-settings-control {
+  flex: 0 0 auto;
 }
 
 .aibase-chat-list {
@@ -58,13 +128,13 @@
 .aibase-chat-welcome {
   padding: 12px 16px;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--aibase-welcome-bg);
   margin-bottom: 16px;
 }
 
 .aibase-chat-send {
   padding: 12px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--aibase-border);
   flex-shrink: 0;
 }
 
@@ -93,7 +163,7 @@
 .aibase-chat-attach-btn {
   flex: 0 0 auto;
   font-size: 16px;
-  color: rgba(0, 0, 0, 0.65);
+  color: var(--aibase-text-secondary);
 }
 
 .aibase-chat-model-select {
@@ -128,11 +198,112 @@
   padding-inline-end: 0;
 }
 
+.aibase-chat-bubble-actions {
+  margin-top: 4px;
+}
+
 .aibase-tool-invoke-steps {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+/* 执行中标题扫光（仅工具名/任务名文字，不含 description / 结果） */
+.aibase-text-shine {
+  display: inline;
+  background: linear-gradient(
+    110deg,
+    #111111 0%,
+    #111111 44%,
+    #cdd2db 48%,
+    #cdd2db 52%,
+    #111111 56%,
+    #111111 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: aibase-shine-sweep 2.2s infinite ease-in-out;
+}
+
+[data-aibase-theme='dark'] .aibase-text-shine {
+  background: linear-gradient(
+    110deg,
+    #666666 0%,
+    #ffffff 48%,
+    #ffffff 52%,
+    #666666 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes aibase-shine-sweep {
+  0% {
+    background-position: -120% 0;
+  }
+  100% {
+    background-position: 220% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aibase-text-shine {
+    animation: none;
+    background: none;
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+.aibase-context-prep {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+
+.aibase-planning-next-moves {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.aibase-planning-next-moves-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.aibase-planning-next-moves .aibase-text-shine {
+  font-weight: 600;
+}
+
+.aibase-planning-next-moves-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aibase-planning-next-moves-list li {
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
+  padding-left: 0;
+}
+
+.aibase-planning-next-moves-list li.is-completed {
+  color: var(--ant-color-text-tertiary, rgba(0, 0, 0, 0.45));
+}
+
+.aibase-planning-next-moves-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
 }
 
 .aibase-tool-invoke-steps .ant-thought-chain-item,
@@ -143,16 +314,92 @@
 /* business_error：业务失败（Tool 已执行但校验未过）— 蓝色，区别于 system_error 红色 */
 .aibase-tool-invoke-steps--business-error .aibase-tool-step-business-error-icon,
 .aibase-tool-invoke-steps--business-error .ant-thought-chain-node-title {
-  color: #953300;
+  color: var(--aibase-business-error);
 }
 
 .aibase-tool-invoke-steps--business-error .ant-thought-chain-node-description {
-  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
+  color: var(--ant-color-text-secondary, var(--aibase-text-secondary));
 }
 
 /* AI 报错等瞬态系统消息：红色、不入对话上下文，仅展示 */
 .aibase-chat-system-error {
-  color: #940a0a;
+  color: var(--aibase-system-error);
   font-size: 13px;
   margin: 20px 0;
+}
+
+.aibase-chart-parse-error {
+  color: var(--aibase-text-tertiary, rgba(0, 0, 0, 0.45));
+}
+
+.aibase-turn-replay {
+  margin-top: 4px;
+  width: 100%;
+}
+
+.aibase-turn-replay-empty {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--aibase-text-tertiary);
+}
+
+.aibase-turn-replay-list,
+.aibase-turn-replay-metrics {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.aibase-turn-replay-item + .aibase-turn-replay-item {
+  margin-top: 6px;
+}
+
+.aibase-turn-replay-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--aibase-border, rgba(0, 0, 0, 0.06));
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.aibase-turn-replay-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.aibase-turn-replay-meta,
+.aibase-turn-replay-line,
+.aibase-turn-replay-metrics li {
+  font-size: 12px;
+  color: var(--aibase-text-tertiary);
+}
+
+.aibase-turn-replay-detail {
+  margin-top: 4px;
+  padding: 4px 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aibase-turn-replay-metrics li {
+  padding: 2px 0;
+}
+
+.aibase-turn-replay-metrics code {
+  font-size: 11px;
+}
+
+/* 思考内容「只显示3行」：可视区域固定为 3 行，内容滚到末尾 */
+.aibase-reasoning-preview {
+  max-height: calc(3 * var(--ant-font-size, 14px) * var(--ant-line-height, 1.5714285714));
+  overflow: hidden;
+  cursor: pointer;
 }

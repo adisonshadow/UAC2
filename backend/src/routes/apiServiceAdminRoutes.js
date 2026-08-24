@@ -124,7 +124,7 @@ router.get('/operations/catalog', auth, ApiServiceController.operationCatalog);
  * /api/v1/admin/api-services/resolve-connection:
  *   post:
  *     tags: [Admin-ApiServices]
- *     summary: 按主实体/Scope 物化记录推断数据库连接与 targetSchema（不以连接默认 schema 为准） [需要认证]
+ *     summary: 按主实体物化记录推断数据库连接与 targetSchema；实体尚未物化时回落到同 Scope 已物化实体（不以连接默认 schema 为准） [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true

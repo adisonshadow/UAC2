@@ -72,6 +72,30 @@ docker_postgres_target() {
   return 1
 }
 
+# Docker CLI 可能仍指向已退出/不可用的 context（如旧 OrbStack），导致 docker 命令整体连不上。
+# 依次探测常见 daemon socket，找到可用的即 export DOCKER_HOST 覆盖（不影响用户全局配置）。
+ensure_docker_reachable() {
+  command -v docker >/dev/null 2>&1 || return 1
+
+  # 当前配置可达则直接使用
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "unix://${HOME}/.orbstack/run/docker.sock" \
+    "unix://${HOME}/.docker/run/docker.sock" \
+    "unix:///var/run/docker.sock"; do
+    local sock="${candidate#unix://}"
+    if [ -S "$sock" ] && DOCKER_HOST="$candidate" docker info >/dev/null 2>&1; then
+      export DOCKER_HOST="$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 exec_docker_pg_dump() {
   local target="$1"
   local output_file="$2"
@@ -117,6 +141,8 @@ run_pg_dump() {
   local docker_target=""
 
   if [ "$use_docker" != "false" ]; then
+    # 当前 docker context 不可达（如已退出的 OrbStack）时自动探测其他可用 daemon
+    ensure_docker_reachable || true
     docker_target="$(docker_postgres_target || true)"
   fi
 

@@ -231,7 +231,7 @@ router.get('/skills/:slug', authWithBuiltinApiGuard, SkillController.getPublicBy
  *             type: object
  *             required: [functionName]
  *             properties:
- *               functionName: { type: string }
+ *               functionName: { type: string, description: 'Tool functionName；请求头可带 X-AIBase-TurnId 关联 turn 审计' }
  *               arguments: { type: object }
  *     responses:
  *       200:

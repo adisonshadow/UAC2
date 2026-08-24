@@ -1,13 +1,18 @@
-import { BulbOutlined, CloseOutlined, CommentOutlined, PaperClipOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons';
+import { BulbOutlined, CommentOutlined, MinusOutlined, PaperClipOutlined, PlusOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import type { BubbleListProps, ConversationItemType } from '@ant-design/x';
 import { Attachments, Bubble, Conversations, Prompts, Sender, Welcome, XProvider } from '@ant-design/x';
 import type { Attachment, AttachmentsRef } from '@ant-design/x/es/attachments';
 import type { BubbleListRef } from '@ant-design/x/es/bubble/interface';
 import { useXConversations } from '@ant-design/x-sdk';
-import { Avatar, Button, Popover, Progress, Select, Space, Tag, Tooltip, message } from 'antd';
+import { Avatar, Button, InputNumber, Popover, Progress, Segmented, Select, Space, Switch, Tag, Tooltip, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAIBaseChat } from '../chat/useAIBaseChat';
-import type { AIBaseModelInfo } from '../types';
+import type { AIBaseModelInfo, AIBaseThemeMode } from '../types';
+import type { DecisionPreference, ReasoningDisplayMode } from '../config/agentPrefsChannel';
+import {
+  MAX_TOOL_CONCURRENCY,
+  MIN_TOOL_CONCURRENCY,
+} from '../config/agentPrefsChannel';
 import { useAIChatLayout } from '../provider/context';
 import { useEffectiveAIChatConfig } from '../provider/AIChatPageScope';
 import { useChatSessionGroupId } from '../provider/ChatSessionGroupContext';
@@ -26,6 +31,7 @@ import {
   setUserHabit,
 } from '../storage/userHabit';
 import { useDebouncedEffect } from '../storage/useDebouncedEffect';
+import TurnReplayPanel from './TurnReplayPanel';
 import {
   getModelAttachmentAccept,
   isFileAllowedForModel,
@@ -34,7 +40,9 @@ import {
 } from '../utils/modelAttachmentConfig';
 import type { AssistantSegment } from '../chat/chatToolSteps';
 import AssistantBubbleContent from './AssistantBubbleContent';
+import BubbleActions from './BubbleActions';
 import { scrollBubbleListToBottom } from './bubbleListScroll';
+import { extractBubbleCopyText } from './extractBubbleCopyText';
 import './AIChatPanel.css';
 import '../a2ui/NextStepA2uiDeck.css';
 import './UserChoiceCard.css';
@@ -43,12 +51,44 @@ const DEFAULT_CONVERSATIONS: ConversationItemType[] = [
   { key: 'default', label: '新会话', group: '今天' },
 ];
 
+const THEME_OPTIONS: { label: string; value: AIBaseThemeMode }[] = [
+  { label: '浅色', value: 'light' },
+  { label: '深色', value: 'dark' },
+  { label: '自动', value: 'auto' },
+];
+
+const DECISION_OPTIONS: { label: string; value: DecisionPreference }[] = [
+  { label: '让用户抉择', value: 'user' },
+  { label: '让 AI 抉择', value: 'ai' },
+];
+
+const REASONING_DISPLAY_OPTIONS: { label: string; value: ReasoningDisplayMode }[] = [
+  { label: '折叠', value: 'collapsed' },
+  { label: '只显示3行', value: 'preview3' },
+  { label: '显示全部', value: 'full' },
+];
+
 interface AIChatPanelProps {
   onClose: () => void;
 }
 
 export default function AIChatPanel({ onClose }: AIChatPanelProps) {
-  const { headerOffset, panelWidth, client } = useAIChatLayout();
+  const {
+    headerOffset,
+    panelWidth,
+    client,
+    autoNavigate,
+    setAutoNavigate,
+    toolConcurrency,
+    setToolConcurrency,
+    decisionPreference,
+    setDecisionPreference,
+    reasoningDisplayMode,
+    setReasoningDisplayMode,
+    themeMode,
+    resolvedTheme,
+    setTheme,
+  } = useAIChatLayout();
   const config = useEffectiveAIChatConfig();
   const sessionGroupId = useChatSessionGroupId();
   const storageNamespace = useMemo(
@@ -122,6 +162,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
     selectedSlug,
     setSelectedSlug,
     submitQuery,
+    retryAssistantMessage,
     abort,
     contextUsagePercent,
   } = useAIBaseChat(activeConversationKey, {
@@ -194,6 +235,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
           extraInfo: {
             reasoningContent: (msg as { reasoningContent?: string }).reasoningContent,
             segments,
+            copyText: extractBubbleCopyText(msg.content, segments),
           },
         };
       }),
@@ -206,6 +248,9 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
     ],
     [messages, systemNotices],
   );
+
+  const retryAssistantRef = useRef<(assistantId: string) => void>(() => {});
+  const requestingRef = useRef(isRequesting);
 
   const bubbleRole = useMemo<BubbleListProps['role']>(
     () => ({
@@ -221,6 +266,21 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
             nextStepPrompts={config.nextStepPrompts}
           />
         ),
+        footer: (content, info) => {
+          if (info.status === 'loading' || info.status === 'updating') return null;
+          const copyText =
+            (typeof info.extraInfo?.copyText === 'string' && info.extraInfo.copyText) ||
+            extractBubbleCopyText(content, info.extraInfo?.segments);
+          return (
+            <BubbleActions
+              text={copyText}
+              onRetry={() => {
+                if (requestingRef.current) return;
+                retryAssistantRef.current(String(info.key ?? ''));
+              }}
+            />
+          );
+        },
       },
       user: {
         placement: 'end',
@@ -318,6 +378,42 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
     ],
   );
 
+  const handleRetryAssistant = useCallback(
+    async (assistantId: string) => {
+      if (!assistantId || requestingRef.current) return;
+      const resolved = resolveModelForSubmit();
+      if (!resolved) {
+        if (!modelsLoadDoneRef.current) {
+          messageApi.warning('模型仍在加载，请稍后再试');
+          return;
+        }
+        messageApi.warning('暂无可用 AI 模型，请先在「AI 管理」中配置并启用模型');
+        return;
+      }
+      try {
+        await retryAssistantMessage(assistantId, {
+          enableThinking: deepThinking,
+          modelSlug: resolved.slug,
+        });
+        requestAnimationFrame(() => scrollToBottom());
+      } catch (error) {
+        setSystemNotices((prev) => [
+          ...prev,
+          { id: `sys-${Date.now()}`, content: extractAiChatErrorMessage(error) },
+        ]);
+      }
+    },
+    [deepThinking, messageApi, resolveModelForSubmit, retryAssistantMessage, scrollToBottom],
+  );
+
+  useEffect(() => {
+    requestingRef.current = isRequesting;
+  }, [isRequesting]);
+
+  useEffect(() => {
+    retryAssistantRef.current = handleRetryAssistant;
+  }, [handleRetryAssistant]);
+
   useEffect(() => {
     const pending = pendingExternalMessageRef.current;
     if (!pending || !modelsLoadDoneRef.current) return;
@@ -408,31 +504,147 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
             },
           }}
           content={
-            <Conversations
-              className="aibase-chat-conversations"
-              items={[...conversations]
-                // key 多为 Date.now()；DESC 让最新会话排在分组最前
-                .sort((a, b) => String(b.key).localeCompare(String(a.key), undefined, { numeric: true }))
-                .map((item) =>
-                  item.key === activeConversationKey
-                    ? { ...item, label: `[当前] ${item.label}` }
-                    : item,
-                )}
-              activeKey={activeConversationKey}
-              groupable
-              onActiveChange={setActiveConversationKey}
-              styles={{ item: { padding: '0 8px' } }}
-            />
+            <div data-aibase-theme={resolvedTheme}>
+              <Conversations
+                className="aibase-chat-conversations"
+                items={[...conversations]
+                  // key 多为 Date.now()；DESC 让最新会话排在分组最前
+                  .sort((a, b) => String(b.key).localeCompare(String(a.key), undefined, { numeric: true }))
+                  .map((item) =>
+                    item.key === activeConversationKey
+                      ? { ...item, label: `[当前] ${item.label}` }
+                      : item,
+                  )}
+                activeKey={activeConversationKey}
+                groupable
+                onActiveChange={setActiveConversationKey}
+                styles={{ item: { padding: '0 8px' } }}
+              />
+            </div>
           }
         >
           <Button type="text" icon={<CommentOutlined />} className="aibase-chat-header-btn" />
         </Popover>
+        <Popover
+          placement="bottomRight"
+          trigger="click"
+          styles={{
+            container: {
+              padding: 0,
+              maxHeight: 'calc(80vh - 60px)',
+              overflowY: 'auto',
+              boxShadow:
+                '0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 9px 28px 8px rgba(0, 0, 0, 0.05)',
+            },
+          }}
+          content={
+            <div className="aibase-chat-settings" data-aibase-theme={resolvedTheme}>
+              <div className="aibase-chat-settings-row is-stacked">
+                <div className="aibase-chat-settings-info">
+                  <span className="aibase-chat-settings-label">外观</span>
+                  <span className="aibase-chat-settings-desc">
+                    仅影响 AI 助手侧栏。选择「自动」时跟随系统浅色 / 深色。
+                  </span>
+                </div>
+                <Segmented
+                  className="aibase-chat-settings-control"
+                  size="small"
+                  block
+                  value={themeMode}
+                  options={THEME_OPTIONS}
+                  onChange={(value) => setTheme(value as AIBaseThemeMode)}
+                  aria-label="AI 助手外观"
+                />
+              </div>
+              <div className="aibase-chat-settings-row">
+                <div className="aibase-chat-settings-info">
+                  <span className="aibase-chat-settings-label">自动跳转</span>
+                  <span className="aibase-chat-settings-desc">
+                    开启后，AI 完成任务可根据语义路由自动跳转到相关页面（如创建后进入编辑页）。
+                    仅约束 AI 的页面跳转工具，不影响业务工具自身的跳转。
+                  </span>
+                </div>
+                <Switch
+                  checked={autoNavigate}
+                  onChange={setAutoNavigate}
+                  size="small"
+                  aria-label="自动跳转"
+                />
+              </div>
+              <div className="aibase-chat-settings-row">
+                <div className="aibase-chat-settings-info">
+                  <span className="aibase-chat-settings-label">并行工具调用</span>
+                  <span className="aibase-chat-settings-desc">
+                    同一步内最多同时运行多少个可并行的 Tool 调用。默认 10，范围{' '}
+                    {MIN_TOOL_CONCURRENCY}–{MAX_TOOL_CONCURRENCY}。
+                  </span>
+                </div>
+                <InputNumber
+                  className="aibase-chat-settings-control"
+                  size="small"
+                  min={MIN_TOOL_CONCURRENCY}
+                  max={MAX_TOOL_CONCURRENCY}
+                  value={toolConcurrency}
+                  onChange={(value) => {
+                    if (typeof value === 'number') setToolConcurrency(value);
+                  }}
+                  aria-label="并行工具调用数"
+                />
+              </div>
+              <div className="aibase-chat-settings-row is-stacked">
+                <div className="aibase-chat-settings-info">
+                  <span className="aibase-chat-settings-label">面临抉择时倾向</span>
+                  <span className="aibase-chat-settings-desc">
+                    「让用户抉择」时 AI 应通过选择题征求你的意见；「让 AI 抉择」时常规取舍由
+                    AI 自行决定（危险/不可逆操作仍会询问）。
+                  </span>
+                </div>
+                <Segmented
+                  className="aibase-chat-settings-control"
+                  size="small"
+                  block
+                  value={decisionPreference}
+                  options={DECISION_OPTIONS}
+                  onChange={(value) => setDecisionPreference(value as DecisionPreference)}
+                  aria-label="面临抉择时倾向"
+                />
+              </div>
+              <div className="aibase-chat-settings-row is-stacked">
+                <div className="aibase-chat-settings-info">
+                  <span className="aibase-chat-settings-label">思考内容显示方式</span>
+                  <span className="aibase-chat-settings-desc">
+                    「折叠」只显示深度思考标题；「只显示3行」滚动展示最后三行，点击可展开；「显示全部」在生成过程中展开全文。
+                  </span>
+                </div>
+                <Segmented
+                  className="aibase-chat-settings-control"
+                  size="small"
+                  block
+                  value={reasoningDisplayMode}
+                  options={REASONING_DISPLAY_OPTIONS}
+                  onChange={(value) => setReasoningDisplayMode(value as ReasoningDisplayMode)}
+                  aria-label="思考内容显示方式"
+                />
+              </div>
+              <div className="aibase-chat-settings-row is-stacked">
+                <TurnReplayPanel />
+              </div>
+            </div>
+          }
+        >
+          <Button
+            type="text"
+            icon={<SettingOutlined />}
+            className="aibase-chat-header-btn"
+            aria-label="AI 助手设置"
+          />
+        </Popover>
         <Button
           type="text"
-          icon={<CloseOutlined />}
+          icon={<MinusOutlined />}
           className="aibase-chat-header-btn"
           onClick={onClose}
-          aria-label="关闭 AI 助手"
+          aria-label="最小化 AI 助手"
         />
       </Space>
     </div>
@@ -441,6 +653,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
   return (
     <aside
       className="aibase-chat-panel"
+      data-aibase-theme={resolvedTheme}
       style={{ top: headerOffset, width: panelWidth }}
     >
       {contextHolder}

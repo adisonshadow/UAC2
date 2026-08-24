@@ -1,22 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Alert, Form, Input, Button, Card, Space, Typography, Tabs } from 'antd';
+import { Alert, Form, Input, Button, Card, Space, Tabs } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import { history } from '@/utils/navigation';
 import { LeftOutlined } from '@ant-design/icons';
-import api from '@/services/UAC/api';
 import {
   postUsersRequestPasswordReset,
   postUsersResetPasswordWithToken,
 } from '@/services/UAC/api/users';
+import { getApplicationsSsoId } from '@/services/UAC/api/applicationsSso';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import {
   mergeAppBranding,
   resolveBrandingDisplay,
   type AppBranding,
 } from '@/utils/appBranding';
+import AuthPageFrame from '@/components/AuthPageFrame';
+import type { SsoLoginPageStyle } from '@/utils/ssoLoginPage';
 import '../Auth/index.scss';
 
-interface ApplicationInfo extends AppBranding {}
+interface ApplicationInfo extends AppBranding {
+  sso_config?: {
+    login_page?: SsoLoginPageStyle;
+  };
+}
 
 const checkPasswordStrength = (password: string): number => {
   let strength = 0;
@@ -36,20 +42,28 @@ const ResetPassword: React.FC = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('1');
   const [applicationInfo, setApplicationInfo] = useState<ApplicationInfo | null>(null);
+  const [loginPage, setLoginPage] = useState<SsoLoginPageStyle | null>(null);
+  const appIdFromUrl = new URLSearchParams(window.location.search).get('app');
+  const [ssoStyleLoaded, setSsoStyleLoaded] = useState(!appIdFromUrl);
 
   useEffect(() => {
     const fetchApplicationInfo = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const appId = urlParams.get('app');
-      if (appId) {
-        try {
-          const response = await api.applications.getApplicationsId({ id: appId });
-          if (response.code === 200 && response.data) {
-            setApplicationInfo(response.data);
-          }
-        } catch {
-          message.error('获取应用信息失败');
+      if (!appId) {
+        setSsoStyleLoaded(true);
+        return;
+      }
+      try {
+        const response = await getApplicationsSsoId({ id: appId }, { skipErrorHandler: true });
+        if (response.code === 200 && response.data) {
+          setApplicationInfo(response.data);
+          setLoginPage(response.data.sso_config?.login_page || null);
         }
+      } catch {
+        // 未启用 SSO 时沿用系统品牌
+      } finally {
+        setSsoStyleLoaded(true);
       }
     };
 
@@ -57,7 +71,7 @@ const ResetPassword: React.FC = () => {
   }, []);
 
   const branding = mergeAppBranding(applicationInfo, initialState?.appBranding);
-  const { name: pageTitle, shortName: pageShortName } = resolveBrandingDisplay(branding);
+  const { shortName: pageShortName } = resolveBrandingDisplay(branding);
 
   const handleRequestReset = async (values: { username: string; email: string }) => {
     try {
@@ -227,41 +241,27 @@ const ResetPassword: React.FC = () => {
   ];
 
   return (
-    <div className="auth-page">
-      <div className="auth-bg">
-        <img src="/images/bg.svg" alt="background" className="bg-image" />
-        <div className="bg-text">
-          <Typography.Title level={1} className="title">
-            {pageShortName}
-          </Typography.Title>
-        </div>
-      </div>
-
-      <div className="auth-content">
-        <Card className="auth-card" variant="borderless">
-          <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-            {/* <div className="auth-header">
-              <img src="/images/logo.svg" alt="UAC" className="logo" />
-              <div className="title">{pageTitle}</div>
-              <div className="description">请先获取重置码再进行密码重置</div>
-            </div> */}
-
-            <Tabs style={{ marginTop: '20px' }} tabPlacement="start" activeKey={activeTab} onChange={setActiveTab} items={items} tabBarExtraContent={
-              <Button 
-                type="link"
-                icon={<LeftOutlined />}
-                onClick={() => {
-                  const urlParams = new URLSearchParams(window.location.search);
-                  const appId = urlParams.get('app');
-                  history.push(`/auth/login${appId ? `?app=${appId}` : ''}`);
-                }}>返回登录
-              </Button>
-            } />
-
-          </Space>
-        </Card>
-      </div>
-    </div>
+    <AuthPageFrame
+      shortName={pageShortName}
+      loginPage={loginPage}
+      asidePending={Boolean(appIdFromUrl) && !ssoStyleLoaded}
+    >
+      <Card className="auth-card" variant="borderless">
+        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+          <Tabs style={{ marginTop: '20px' }} tabPlacement="start" activeKey={activeTab} onChange={setActiveTab} items={items} tabBarExtraContent={
+            <Button 
+              type="link"
+              icon={<LeftOutlined />}
+              onClick={() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const appId = urlParams.get('app');
+                history.push(`/auth/login${appId ? `?app=${appId}` : ''}`);
+              }}>返回登录
+            </Button>
+          } />
+        </Space>
+      </Card>
+    </AuthPageFrame>
   );
 };
 

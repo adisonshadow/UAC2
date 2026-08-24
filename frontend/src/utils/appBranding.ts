@@ -55,12 +55,8 @@ export function mergeAppBranding(
   return systemApp || undefined;
 }
 
-export function resolveLoginPageDescription(
-  branding?: AppBranding | null,
-  ssoEnabled?: boolean,
-): string {
-  const custom = branding?.description?.trim();
-  if (custom) return custom;
+/** 平台登录页默认副标题；SSO 登录页仅使用 login_page.subtitle，不回退到应用描述 */
+export function resolveLoginPageDescription(ssoEnabled?: boolean): string {
   return ssoEnabled ? '请使用统一身份认证登录' : '请使用用户名和密码登录';
 }
 

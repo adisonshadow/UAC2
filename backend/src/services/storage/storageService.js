@@ -18,6 +18,19 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+function getTusDir() {
+  return path.join(getStorageRoot(), config.storage.tus.dirName || '.tus');
+}
+
+function sanitizeStorageFilename(name) {
+  return String(name || 'file').replace(/[^\w.\-()\u4e00-\u9fff]/g, '_').slice(0, 255) || 'file';
+}
+
+function buildObjectRelativePath(bucketCode, objectId, filename) {
+  const ext = path.extname(filename || '') || '';
+  return path.join(bucketCode, `${objectId}${ext}`).split(path.sep).join('/');
+}
+
 function formatBucket(row) {
   const json = row.toJSON ? row.toJSON() : row;
   return {
@@ -47,6 +60,7 @@ function formatObject(row) {
     mimeType: json.mime_type,
     size: Number(json.size || 0),
     relativePath: json.relative_path,
+    contentMd5: json.content_md5 || null,
     applicationId: json.application_id,
     createdBy: json.created_by,
     createdAt: json.created_at,
@@ -221,7 +235,7 @@ async function uploadObject({ bucketCode, file, authContext, applicationId }) {
 
   const objectId = uuidv4();
   const ext = path.extname(file.originalFilename || '') || '';
-  const safeName = (file.originalFilename || 'file').replace(/[^\w.\-()\u4e00-\u9fff]/g, '_');
+  const safeName = sanitizeStorageFilename(file.originalFilename || 'file');
   const relativePath = path.join(bucketRow.code, `${objectId}${ext}`);
 
   const destDir = path.join(getStorageRoot(), bucketRow.code);
@@ -248,8 +262,24 @@ async function uploadObject({ bucketCode, file, authContext, applicationId }) {
   return getObjectById(row.object_id);
 }
 
+async function findObjectByBucketAndMd5(bucketId, contentMd5) {
+  if (!bucketId || !contentMd5) return null;
+  const row = await StorageObject.findOne({
+    where: { bucket_id: bucketId, content_md5: contentMd5 },
+    include: [
+      { model: StorageBucket, as: 'StorageBucket', required: false },
+      { model: Application, as: 'Application', attributes: ['application_id', 'name', 'code'], required: false },
+      { model: User, as: 'creator', attributes: ['user_id', 'username', 'name'], required: false },
+    ],
+  });
+  return row ? formatObject(row) : null;
+}
+
 module.exports = {
   getStorageRoot,
+  getTusDir,
+  sanitizeStorageFilename,
+  buildObjectRelativePath,
   listBuckets,
   getBucketById,
   getBucketByCode,
@@ -262,4 +292,5 @@ module.exports = {
   uploadObject,
   formatBucket,
   formatObject,
+  findObjectByBucketAndMd5,
 };

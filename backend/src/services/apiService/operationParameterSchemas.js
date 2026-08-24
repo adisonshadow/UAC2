@@ -316,12 +316,12 @@ function mapInterfaceTypeToZod(tsType, { required = false, isFile = false } = {}
       base = z.enum(unionEnum);
     } else {
       const normalized = String(tsType || '').toLowerCase();
-      if (normalized.includes('number')) base = zodCoerceNumber();
-      else if (normalized.includes('boolean')) base = z.coerce.boolean();
-      // 数组优先：避免 Record<string, unknown>[] 被误判为 record
-      else if (normalized.includes('[]') || normalized.includes('array')) {
+      // 数组必须优先于 number/boolean/record：否则 number[] / Array<number> 会被误判为 number
+      if (normalized.includes('[]') || normalized.startsWith('array<') || normalized.includes('array<')) {
         base = z.array(z.unknown());
-      } else if (normalized.includes('object') || normalized.includes('record')) {
+      } else if (normalized.includes('number')) base = zodCoerceNumber();
+      else if (normalized.includes('boolean')) base = z.coerce.boolean();
+      else if (normalized.includes('object') || normalized.includes('record')) {
         base = z.record(z.unknown());
       } else {
         base = z.string();
@@ -745,18 +745,17 @@ function mapInterfaceTypeToJsonSchema(tsType) {
     return { type: 'string', enum: unionEnum };
   }
   const normalized = String(tsType || '').toLowerCase();
+  // 数组必须优先于 number/boolean/record：否则 number[] / Array<number> 会被误判为 number
+  if (normalized.includes('[]') || normalized.startsWith('array<') || normalized.includes('array<')) {
+    const itemIsNumber = /\bnumber\b/.test(normalized) || normalized.includes('<number');
+    const itemIsObject = normalized.includes('object') || normalized.includes('record');
+    let items = { type: 'string' };
+    if (itemIsNumber) items = { type: 'number' };
+    else if (itemIsObject) items = { type: 'object', additionalProperties: true };
+    return { type: 'array', items };
+  }
   if (normalized.includes('number')) return { type: 'number' };
   if (normalized.includes('boolean')) return { type: 'boolean' };
-  // 数组优先：避免 Record<string, unknown>[] 被误判为 object
-  if (normalized.includes('[]') || normalized.includes('array')) {
-    const itemIsObject = normalized.includes('object') || normalized.includes('record');
-    return {
-      type: 'array',
-      items: itemIsObject
-        ? { type: 'object', additionalProperties: true }
-        : { type: 'string' },
-    };
-  }
   if (normalized.includes('object') || normalized.includes('record')) {
     return { type: 'object', additionalProperties: true };
   }
@@ -777,9 +776,10 @@ function mergeInterfaceFieldsIntoProperties(properties, fields, requiredSet) {
     if (meta.isFile) {
       baseSchema = { type: 'string', format: 'uuid', description: meta.description || 'storage objectId' };
     } else if (meta.isArray) {
+      const fromType = mapInterfaceTypeToJsonSchema(meta.tsType);
       baseSchema = {
         type: 'array',
-        items: { type: 'string' },
+        items: fromType.items || { type: 'string' },
         ...(meta.description ? { description: meta.description } : {}),
       };
     } else {

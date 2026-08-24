@@ -1,5 +1,7 @@
 # P2 — Tool 参数 Schema 校验
 
+> **已被吸收**：实施以 [`新Agent架构方案/03-Tool与参数契约.md`](../TODOs/新Agent架构方案/03-Tool与参数契约.md)（MS0）为准；本文保留 file:line 锚点。
+
 ## 背景
 
 模型产出的 `tool_calls[i].function.arguments` 是流式拼接的字符串，可能畸形（截断、

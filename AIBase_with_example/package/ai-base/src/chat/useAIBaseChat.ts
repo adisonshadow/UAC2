@@ -11,32 +11,72 @@ import {
   reconcilePlan,
 } from './autoContinuePolicy';
 import { buildCombinedSystemPrompt, loadChatSkillContext } from '../registry/skillLoader';
-import { resolveTerminationCompletionStrategy } from '../registry/skillPolicyRegistry';
-import { mergeOpenAITools, toOpenAIToolFromMeta } from '../registry/toolManifest';
 import {
+  createClientSkillBodyLoader,
+  registerSkillBodyLoader,
+  registerSkillActivatedListener,
+} from '../registry/skillBodyChannel';
+import { resolveTerminationCompletionStrategy } from '../registry/skillPolicyRegistry';
+import { mergeSkillToolsIntoPool, rebuildSessionOpenAITools } from '../registry/toolManifest';
+import {
+  ensureFunctionRegistryContractSource,
+  getToolContract,
+  subscribeToolContracts,
+} from '../registry/toolContractRegistry';
+import {
+  HARNESS_TOOL_NAMES,
   ASK_USER_OPENAI_TOOL,
   HARNESS_OPENAI_TOOLS,
+  NAVIGATE_TO_PAGE_OPENAI_TOOL,
+  RUN_CODE_OPENAI_TOOL,
+  RUN_SUBAGENT_OPENAI_TOOL,
+  SKILL_OPENAI_TOOL,
   TASK_COMPLETE_TOOL,
   UPDATE_PLAN_TOOL,
 } from '../registry/builtinTools';
 import { isUserChoiceRequestData } from './userChoice';
-import { beginTurn, getPlan, setPlan, recordInvokedTool, recordToolOutcome } from '../registry/agentPlanState';
+import { applyTaskCompleteDelivery } from './emitTaskCompleteDelivery';
+import {
+  beginTurn,
+  getPlan,
+  setPlan,
+  recordInvokedTool,
+  recordToolOutcome,
+  expandAvailableTools,
+} from '../registry/agentPlanState';
+import {
+  beginTurnTrace,
+  endTurnTrace,
+  setActiveTurnContext,
+  appendTurnEvent,
+} from '../observability/turnTrace';
 import type { AIBaseSkill, AIBaseTool, OpenAIToolDefinition } from '../types';
 import type { ToolResponse } from '../types/toolResponse';
 import { isToolResponse } from '../types/toolResponse';
 import type { AIBaseClient } from '../sdk/client';
 import { executeToolWithEnvelope } from '../utils/executeToolWithEnvelope';
 import { resolveToolStepFromEnvelope } from './resolveToolStepFromEnvelope';
-import { upsertSegment, type AssistantSegment, type ChatToolStep } from './chatToolSteps';
+import {
+  upsertSegment,
+  removeSegment,
+  collapseTransientToolSurfaces,
+  type AssistantSegment,
+  type ChatToolStep,
+} from './chatToolSteps';
 import { createEADAFChatProvider, type EADAFChatMessage } from './EADAFChatProvider';
+import { findRetryTurn, resolveUserRetryPayload } from './retryAssistantTurn';
 import { streamChatRound } from './streamToolChat';
-import { resolveToolDisplayName } from '../utils/toolDisplayName';
+import { presentToolCall, presentToolResult } from '../runtime/surfacesRegistry';
 import { runWithConcurrency } from '../utils/runWithConcurrency';
 import { aggregateToolResults } from '../utils/aggregateToolResults';
 import { sleep } from '../utils/sleep';
 import { serializeToolResultForContext, resolveToolResultBudget } from '../utils/toolResultBudget';
 import { normalizeToolResult } from '../utils/normalizeToolResult';
+import { validateToolArgs } from '../utils/validateToolArgs';
+import { buildInvalidArgsEnvelope } from '../types/toolResponse';
 import { logToolInvoke } from '../utils/toolInvokeLogger';
+import { getAutoNavigate } from '../navigation/navigationChannel';
+import { withWriteNavigateHint } from '../navigation/writeNavigateHint';
 import {
   buildMultimodalUserContent,
   formatUserDisplayWithAttachments,
@@ -155,7 +195,7 @@ async function invokeToolByMeta(
 
 export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOptions = {}) {
   const { persistMessages = false, storageNamespace } = options;
-  const { client } = useAIChatLayout();
+  const { client, autoNavigate, toolConcurrency, decisionPreference } = useAIChatLayout();
   const config = useEffectiveAIChatConfig();
   const provider = useMemo(
     () => createEADAFChatProvider(config.apiBase, config.getToken),
@@ -163,11 +203,30 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
   );
   const [selectedSlug, setSelectedSlug] = useState<string>();
   const [skills, setSkills] = useState<AIBaseSkill[]>([]);
+  const [skillCatalog, setSkillCatalog] = useState<
+    import('../registry/skillLoader').SkillCatalogEntry[]
+  >([]);
   const [topLevelSkillMarkdown, setTopLevelSkillMarkdown] = useState('');
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [streaming, setStreaming] = useState(false);
   const [localToolVersion, setLocalToolVersion] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  /**
+   * 本回合 Tool 池（skill 懒加载后同回合立即扩展，不等 React 重渲染）。
+   * submitQuery 开始时初始化；skill activated 时 merge；每轮 LLM 请求读这里。
+   */
+  const turnToolPoolRef = useRef<{
+    allTools: AIBaseTool[];
+    openaiTools: OpenAIToolDefinition[];
+    availableToolNames: Set<string>;
+    harnessParts: {
+      harnessTools: OpenAIToolDefinition[];
+      alwaysHarness: OpenAIToolDefinition[];
+      navTools: OpenAIToolDefinition[];
+      localTools: OpenAIToolDefinition[];
+    };
+  } | null>(null);
 
   // 同一个 Tool 可能被关联到多个 Skill（skill↔tool 多对多），按 functionName 去重，
   // 否则最终发给 LLM 的 tools 清单会含重复名，触发 "Tool names must be unique."。
@@ -189,23 +248,60 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     [allTools],
   );
 
-  const openaiTools = useMemo(() => {
-    const skillTools = allTools.map(toOpenAIToolFromMeta) as OpenAIToolDefinition[];
-    // ask_user 始终注入（mid-task HITL）；update_plan / task_complete 仅在结构化终止开启时注入。
-    // 无视当前激活的 Skill（它们是 Agent 循环的内置机制，非业务能力）。
+  const harnessParts = useMemo(() => {
     const harnessTools = (
       config.enableStructuredTermination
         ? HARNESS_OPENAI_TOOLS
         : [ASK_USER_OPENAI_TOOL]
     ) as unknown as OpenAIToolDefinition[];
-    // 始终经过 mergeOpenAITools：既保证按 function.name 去重（防御性），
-    // 又在开启 exposeAllClientTools 时让本地 client tool 覆盖 DB schema。
-    // harness Tool 放在 localTools 之前，允许同名 local def 覆盖（一般不需要）。
+    const alwaysHarness = [
+      SKILL_OPENAI_TOOL,
+      RUN_CODE_OPENAI_TOOL,
+      RUN_SUBAGENT_OPENAI_TOOL,
+    ] as unknown as OpenAIToolDefinition[];
+    const navTools =
+      config.semanticRoutes && config.semanticRoutes.length > 0
+        ? ([NAVIGATE_TO_PAGE_OPENAI_TOOL] as unknown as OpenAIToolDefinition[])
+        : [];
     const localTools = config.exposeAllClientTools
       ? (toOpenAITools(getAllFunctionCalls()) as OpenAIToolDefinition[])
       : [];
-    return mergeOpenAITools([...skillTools, ...harnessTools], localTools);
-  }, [allTools, config.exposeAllClientTools, config.enableStructuredTermination, localToolVersion]);
+    return { harnessTools, alwaysHarness, navTools, localTools };
+  }, [
+    config.enableStructuredTermination,
+    config.semanticRoutes,
+    config.exposeAllClientTools,
+    localToolVersion,
+  ]);
+
+  const openaiTools = useMemo(() => {
+    ensureFunctionRegistryContractSource();
+    return rebuildSessionOpenAITools({
+      skillTools: allTools,
+      ...harnessParts,
+    });
+  }, [allTools, harnessParts, localToolVersion]);
+
+  /** 同回合把 Skill 授予的 Tool 并进 turn 池 + availableToolNames */
+  const expandTurnToolPool = useCallback((skill: AIBaseSkill) => {
+    const pool = turnToolPoolRef.current;
+    if (!pool) return;
+    const nextAll = mergeSkillToolsIntoPool(pool.allTools, skill.tools);
+    if (nextAll.length === pool.allTools.length) {
+      // 仍扩展授权名（可能 meta 已在但 Set 未含）
+      expandAvailableTools((skill.tools || []).map((t) => t.functionName));
+      return;
+    }
+    pool.allTools = nextAll;
+    pool.openaiTools = rebuildSessionOpenAITools({
+      skillTools: nextAll,
+      ...pool.harnessParts,
+    });
+    for (const tool of skill.tools || []) {
+      if (tool.functionName) pool.availableToolNames.add(tool.functionName);
+    }
+    expandAvailableTools((skill.tools || []).map((t) => t.functionName));
+  }, []);
 
   // exposeAllClientTools 逃生舱告警：仅在首次开启时输出一次，提醒不要用于生产。
   const warnedExposeAllRef = useRef(false);
@@ -216,11 +312,24 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     );
   }
 
-  useEffect(() => subscribeFunctionCalls(() => setLocalToolVersion((v) => v + 1)), []);
+  useEffect(() => {
+    ensureFunctionRegistryContractSource();
+    const unsubFn = subscribeFunctionCalls(() => setLocalToolVersion((v) => v + 1));
+    const unsubContracts = subscribeToolContracts(() => setLocalToolVersion((v) => v + 1));
+    return () => {
+      unsubFn();
+      unsubContracts();
+    };
+  }, []);
 
   const systemPrompt = useMemo(
-    () => buildCombinedSystemPrompt(skills, config, topLevelSkillMarkdown),
-    [skills, config, topLevelSkillMarkdown],
+    () =>
+      buildCombinedSystemPrompt(skills, config, topLevelSkillMarkdown, {
+        autoNavigate,
+        decisionPreference,
+        catalog: skillCatalog,
+      }),
+    [skills, skillCatalog, config, topLevelSkillMarkdown, autoNavigate, decisionPreference],
   );
 
   useEffect(() => {
@@ -230,6 +339,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       .then((loaded) => {
         if (mounted) {
           setSkills(loaded.skills);
+          setSkillCatalog(loaded.catalog || []);
           setTopLevelSkillMarkdown(loaded.topLevelSkillMarkdown);
         }
       })
@@ -240,6 +350,41 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       mounted = false;
     };
   }, [client, config]);
+
+  // harness `skill` 工具按需拉正文；成功后合并进激活 Skill 以扩展 Tool 池（含同回合 turn 池）
+  useEffect(() => {
+    registerSkillBodyLoader(createClientSkillBodyLoader(client));
+    registerSkillActivatedListener((skill) => {
+      expandTurnToolPool(skill);
+      setSkills((prev) => {
+        if (prev.some((item) => item.slug === skill.slug)) {
+          return prev.map((item) => (item.slug === skill.slug ? skill : item));
+        }
+        return [...prev, skill];
+      });
+      setSkillCatalog((prev) => {
+        const hit = prev.some((item) => item.slug === skill.slug);
+        if (hit) {
+          return prev.map((item) =>
+            item.slug === skill.slug ? { ...item, bodyPrefetched: true } : item,
+          );
+        }
+        return [
+          ...prev,
+          {
+            slug: skill.slug,
+            name: skill.name,
+            description: skill.description,
+            bodyPrefetched: true,
+          },
+        ];
+      });
+    });
+    return () => {
+      registerSkillBodyLoader(null);
+      registerSkillActivatedListener(null);
+    };
+  }, [client, expandTurnToolPool]);
 
   // 水合锁：挂载后异步从 IndexedDB 读取历史并注入 store。
   // —— 把 defaultMessages 从「store 构造期异步读 IDB」改为「挂载后 effect 读」，
@@ -259,7 +404,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       if (error.name === 'AbortError') {
         return {
           role: 'assistant' as const,
-          content: messageInfo?.message?.content || '已取消回复',
+          content: messageInfo?.message?.content || '用户已经取消继续对话',
         };
       }
       const msg = friendlifyBurstError(extractAiChatErrorMessage(error));
@@ -276,7 +421,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     },
   });
 
-  const { messages, setMessages, isRequesting: chatRequesting, abort: chatAbort, isDefaultMessagesRequesting } = chat;
+  const { messages, setMessages, isRequesting: chatRequesting, isDefaultMessagesRequesting } = chat;
 
   // messages 的同步镜像：submitQuery 仅在「调用时」读取当前 messages（构建 history），
   // 不需要在 messages 变化时重建 callback。用 ref 读取即可移除依赖，避免每个流式 chunk
@@ -339,9 +484,11 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
   }, [persistMessages, storageNamespace, conversationKey, setMessages]);
 
   const abort = useCallback(() => {
+    // 实际请求由 streamToolChat + abortRef 发出，不走 useXChat.onRequest。
+    // useXChat.abort() 会调用 XRequest.abort()，而 abortController 只在 init() 后才存在；
+    // 未走 onRequest 时会抛 Cannot read properties of undefined (reading 'abort')。
     abortRef.current?.abort();
-    chatAbort();
-  }, [chatAbort]);
+  }, []);
 
   const submitQuery = useCallback(
     async (query: string, options?: SubmitQueryOptions) => {
@@ -423,15 +570,31 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       let assistantDisplayContent = '';
       /** 本轮回复的有序 segment 视图；与 content 平行维护，供 UI 按输出顺序渲染 */
       let assistantSegments: AssistantSegment[] = [];
+      const CONTEXT_PREP_SEGMENT_ID = 'context-prep';
+      assistantSegments = upsertSegment(assistantSegments, {
+        kind: 'text',
+        id: CONTEXT_PREP_SEGMENT_ID,
+        content: '正在准备 Skill 与工具…',
+      });
+      const clearContextPrep = () => {
+        assistantSegments = removeSegment(assistantSegments, CONTEXT_PREP_SEGMENT_ID);
+      };
 
       /** 把本轮文本 upsert 到 segments（同 id 反复更新，保持位置稳定，避免碎片化） */
       const upsertRoundTextSegment = (round: number, text: string) => {
         const trimmed = text.trim();
+        clearContextPrep();
+        clearPlanningSegmentSafe();
         assistantSegments = upsertSegment(assistantSegments, {
           kind: 'text',
           id: `text-round-${round}`,
           content: trimmed,
         });
+      };
+
+      // clearPlanningSegment 在 structured 块内定义；此处用安全包装，定义前调用为空操作
+      let clearPlanningSegmentSafe = () => {
+        /* filled after PLANNING_SEGMENT_ID */
       };
 
       const resolveDisplayContent = (fallback?: string): string => {
@@ -502,9 +665,16 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         );
       };
 
+      // 首帧展示「准备上下文」过程态
+      patchAssistantMessage(
+        { content: '', segments: assistantSegments },
+        { status: 'updating' },
+      );
+
       // 结构化终止：本回合 harness 上下文清理句柄。在 try 之前声明，
       // 保证 finally 能稳定访问（即使 try 体内 beginTurn 前就抛错）。
       let endTurn: (() => void) | null = null;
+      let turnId = '';
 
       try {
         const structuredTermination = config.enableStructuredTermination;
@@ -513,7 +683,13 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         let autoContinueNudges = 0;
         const invokedToolNames = new Set<string>();
         const toolOutcomes: ToolResponse[] = [];
-        const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setActiveTurnContext(turnId, conversationKey);
+        beginTurnTrace({
+          turnId,
+          conversationKey,
+          skillSlugs: skills.map((s) => s.slug),
+        });
 
         // 结构化终止：本回合的权威 plan 状态。由 update_plan Tool 维护，
         // task_complete / 每轮对账 / nudge 读取（经 getPlan() 取最新值）。结构化终止关闭时不用。
@@ -529,8 +705,12 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           config.fallbackSkillSlugs,
         );
 
-        // Planning next moves：结构化执行过程的可视化段（用户可感知的“接下来做什么”）
+        // Planning next moves：短暂过程态（update_plan / 对账后出现；业务 Tool 开始或交付时清除）
         const PLANNING_SEGMENT_ID = 'planning-next-moves-latest';
+        const clearPlanningSegment = () => {
+          assistantSegments = removeSegment(assistantSegments, PLANNING_SEGMENT_ID);
+        };
+        clearPlanningSegmentSafe = clearPlanningSegment;
         const upsertPlanningSegment = (plan: ReturnType<typeof getPlan>): void => {
           if (!structuredTermination) return;
 
@@ -559,7 +739,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
           const lead = picked[0];
           const lastNonHarnessToolOutcome = [...toolOutcomes].reverse().find(
-            (o) => ![UPDATE_PLAN_TOOL, TASK_COMPLETE_TOOL].includes(o.meta.tool),
+            (o) => !HARNESS_TOOL_NAMES.has(o.meta.tool),
           );
           const shouldShowRetryHint =
             lastNonHarnessToolOutcome &&
@@ -576,13 +756,22 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           });
         };
 
-        // 注入本回合上下文给 harness Tool handler（task_complete / update_plan）
+        // 本回合 Tool 池：skill 懒加载后同回合立即扩展（见 expandTurnToolPool）
+        const availableToolNames = new Set(allowedToolNames);
+        turnToolPoolRef.current = {
+          allTools: [...allTools],
+          openaiTools: [...openaiTools],
+          availableToolNames,
+          harnessParts: { ...harnessParts },
+        };
+
+        // 注入本回合上下文给 harness Tool handler（task_complete / update_plan / run_code）
         endTurn = beginTurn({
           plan: [],
           toolOutcomes,
           invokedToolNames,
           completionStrategy: activeCompletionStrategy,
-          availableToolNames: allowedToolNames,
+          availableToolNames,
         });
 
         /**
@@ -631,15 +820,17 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             );
           }
 
+          const roundTools = turnToolPoolRef.current?.openaiTools ?? openaiTools;
           const result = await streamChatRound(
             {
               slug,
               messages: loopMessages,
-              tools: openaiTools.length ? openaiTools : undefined,
+              tools: roundTools.length ? roundTools : undefined,
               enableThinking,
               signal: abortRef.current?.signal,
               apiBase: config.apiBase,
               getToken: config.getToken,
+              turnId,
             },
             ({ content, reasoningContent }) => {
               currentRoundContent = content;
@@ -660,6 +851,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               );
             },
           );
+          appendTurnEvent(turnId, { kind: 'llm_round', round });
 
           const roundText = result.content.trim() || currentRoundContent.trim();
           const roundReasoning = result.reasoningContent.trim() || currentRoundReasoning.trim();
@@ -708,6 +900,8 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
               if (decision.action === 'terminate') {
                 // task_complete 已通过：正常终止
+                clearContextPrep();
+                clearPlanningSegmentSafe();
                 const finalReasoning =
                   enableThinking && (accumulatedReasoning || roundReasoning)
                     ? [accumulatedReasoning, roundReasoning].filter(Boolean).join('\n\n')
@@ -727,6 +921,8 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
               if (decision.action === 'hard-stop') {
                 // 命中硬停止：终止并附原因
+                clearContextPrep();
+                clearPlanningSegmentSafe();
                 const annotated = `${finalContent}\n\n⚠️ ${decision.reason}`;
                 assistantDisplayContent = annotated;
                 if (roundText) upsertRoundTextSegment(round, roundText);
@@ -741,9 +937,49 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               autoContinueNudges += 1;
               const currentPlanSnapshot = getPlan();
               const reconciled = reconcilePlan(currentPlanSnapshot, toolOutcomes);
-              // 对账结果回写 holder（供 task_complete / 后续 nudge 读取）
               if (reconciled !== currentPlanSnapshot) {
                 setPlan(reconciled);
+                // 对账推进进度时补一条折叠的「更新任务清单 · (n/m)」
+                const completed = reconciled.filter((p) => p.status === 'completed').length;
+                const progressTitle = '更新任务清单';
+                const progressSubtitle = `(${completed}/${reconciled.length})`;
+                const progressId = `plan-reconcile-${Date.now()}`;
+                const planPresentation = presentToolCall(UPDATE_PLAN_TOOL, {
+                  mode: 'update',
+                  plan: reconciled,
+                }).presentation;
+                assistantSegments = upsertSegment(assistantSegments, {
+                  kind: 'tool',
+                  id: progressId,
+                  step: {
+                    id: progressId,
+                    functionName: UPDATE_PLAN_TOOL,
+                    displayName: `${progressTitle} · ${progressSubtitle}`,
+                    title: progressTitle,
+                    subtitle: progressSubtitle,
+                    presentation: {
+                      ...planPresentation,
+                      title: progressTitle,
+                      collapseAfter: true,
+                      collapsedPreviewLines: 0,
+                    },
+                    status: 'success',
+                    durationMs: 0,
+                    display: {
+                      kind: 'planning',
+                      payload: {
+                        items: reconciled.map((p) => ({
+                          id: p.id,
+                          label: p.content,
+                          status: p.status,
+                        })),
+                        message: `${progressTitle} · ${progressSubtitle}`,
+                      },
+                      collapsed: true,
+                      visibility: 'transient',
+                    },
+                  },
+                });
               }
 
               // 每轮对账后更新 Planning next moves
@@ -757,7 +993,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               if (roundText) upsertRoundTextSegment(round, roundText);
               loopMessages.push({
                 role: 'user',
-                content: buildStructuredNudge(getPlan(), toolOutcomes),
+                content: buildStructuredNudge(getPlan(), toolOutcomes, { autoNavigate }),
               });
               patchAssistantMessage(
                 {
@@ -798,7 +1034,9 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               if (roundText) upsertRoundTextSegment(round, roundText);
               loopMessages.push({
                 role: 'user',
-                content: buildAutoContinueNudge(allowedToolNames, skills, toolOutcomes),
+                content: buildAutoContinueNudge(allowedToolNames, skills, toolOutcomes, {
+                  autoNavigate,
+                }),
               });
               patchAssistantMessage(
                 {
@@ -860,10 +1098,10 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
           loopMessages = [...loopMessages, result.assistantMessage as unknown as EADAFChatMessage];
 
-          // 同一轮内多个 tool_calls 通常彼此独立，可并发执行（上限 TOOLS_CONCURRENCY），
+          // 同一轮内多个 tool_calls 通常彼此独立，可并发执行（上限来自设置 toolConcurrency），
           // 显著降低多工具场景下的端到端延迟。每个 call 用唯一 stepId，upsertSegment 按 id
           // 就地更新，并发不互相干扰。
-          const TOOLS_CONCURRENCY = 6;
+          const TOOLS_CONCURRENCY = toolConcurrency;
 
           // 把单条工具调用（loading → 执行 → success/error）封装为独立函数，
           // 返回要回灌 loopMessages 的 role:'tool' 消息（按预算序列化结果）。
@@ -872,16 +1110,54 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           ): Promise<EADAFChatMessage> => {
             const functionName = call.function?.name || 'unknown_tool';
             const stepId = call.id || `${functionName}-${Date.now()}`;
-            const displayName = resolveToolDisplayName(functionName, allTools);
+
+            const composeChrome = (
+              callView: ReturnType<typeof presentToolCall>,
+              extras?: Partial<ChatToolStep>,
+            ): ChatToolStep => {
+              const title = callView.title;
+              const subtitle = callView.subtitle;
+              const displayName = subtitle ? `${title} · ${subtitle}` : title;
+              return {
+                id: stepId,
+                functionName,
+                displayName,
+                title,
+                subtitle,
+                presentation: callView.presentation,
+                args: callView.args,
+                status: 'loading',
+                ...extras,
+              };
+            };
+
+            let chrome = presentToolCall(functionName, {});
+            // 已有 plan 时再次 update_plan → 标题走「更新」而非「生成」
+            if (functionName === UPDATE_PLAN_TOOL && getPlan().length > 0) {
+              chrome = {
+                ...chrome,
+                title: '更新任务清单',
+                presentation: { ...chrome.presentation, title: '更新任务清单' },
+              };
+            }
 
             const appendToolStep = (step: ChatToolStep) => {
+              clearContextPrep();
+              if (step.status === 'loading') {
+                assistantSegments = collapseTransientToolSurfaces(assistantSegments);
+                // 业务 Tool 开始执行 → 清除短暂 Planning 过程态
+                if (!HARNESS_TOOL_NAMES.has(functionName)) {
+                  clearPlanningSegment();
+                }
+              }
+
               assistantSegments = upsertSegment(assistantSegments, {
                 kind: 'tool',
                 id: step.id,
                 step,
               });
 
-              // update_plan 成功后展示 Planning next moves（查询/写操作都适用）
+              // update_plan 成功后短暂展示 Planning next moves
               if (structuredTermination && functionName === UPDATE_PLAN_TOOL && step.status === 'success') {
                 upsertPlanningSegment(getPlan());
               }
@@ -918,18 +1194,114 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               );
             };
 
-            appendToolStep({
-              id: stepId,
-              functionName,
-              displayName,
-              status: 'loading',
-            });
+            appendToolStep(composeChrome(chrome));
 
-            let args: Record<string, unknown> = {};
+            let args: Record<string, unknown>;
+            let parseError: string | undefined;
             try {
-              args = JSON.parse(call.function?.arguments || '{}');
-            } catch {
+              args = JSON.parse(call.function?.arguments || '{}') as Record<string, unknown>;
+              if (!args || typeof args !== 'object' || Array.isArray(args)) {
+                parseError = 'arguments 必须是 JSON 对象';
+                args = {};
+              }
+            } catch (e) {
+              parseError = `arguments 不是合法 JSON: ${(e as Error).message}`;
               args = {};
+            }
+
+            // 调用参数即可补全短标题（Skill 语义名 / HTTP method+path）
+            if (functionName === 'skill' && typeof args.slug === 'string') {
+              const slug = args.slug;
+              const hit =
+                skillCatalog.find((s) => s.slug === slug) ||
+                skills.find((s) => s.slug === slug);
+              chrome = presentToolCall(functionName, {
+                slug,
+                ...(hit?.name ? { name: hit.name } : {}),
+              });
+            } else {
+              chrome = presentToolCall(functionName, args);
+            }
+            if (functionName === UPDATE_PLAN_TOOL && getPlan().length > 0 && args.mode !== 'create') {
+              chrome = {
+                ...chrome,
+                title: '更新任务清单',
+                presentation: { ...chrome.presentation, title: '更新任务清单' },
+              };
+            }
+            appendToolStep(composeChrome(chrome, { args }));
+
+            const toolMeta = (turnToolPoolRef.current?.allTools ?? allTools).find(
+              (t) => t.functionName === functionName,
+            );
+            const budget = resolveToolResultBudget(
+              getFunctionCallDef(functionName),
+              toolMeta,
+              config.maxToolResultChars,
+            );
+
+            const applyResultChrome = (
+              envelope: ToolResponse,
+              statusOverride?: ChatToolStep['status'],
+              errorOverride?: string,
+            ) => {
+              const resultView = presentToolResult(functionName, args, envelope);
+              const title = resultView.title;
+              const subtitle = resultView.subtitle;
+              const displayName = subtitle ? `${title} · ${subtitle}` : title;
+              const stepOutcome = resolveToolStepFromEnvelope(envelope);
+              appendToolStep({
+                id: stepId,
+                functionName,
+                displayName,
+                title,
+                subtitle,
+                presentation: resultView.presentation,
+                args: resultView.args ?? args,
+                status: statusOverride ?? stepOutcome.status,
+                durationMs: envelope.meta?.durationMs,
+                error: errorOverride ?? stepOutcome.error,
+                display: resultView.display ?? envelope.display,
+              });
+            };
+
+            if (parseError) {
+              const envelope = buildInvalidArgsEnvelope(
+                functionName,
+                parseError,
+                'INVALID_ARGUMENTS_JSON',
+              );
+              toolOutcomes.push(envelope);
+              recordToolOutcome(envelope);
+              recentErrorFingerprints.push(`${functionName}::${parseError.slice(0, 80)}`);
+              applyResultChrome({ ...envelope, meta: { ...envelope.meta, durationMs: 0 } });
+              return {
+                role: 'tool',
+                content: serializeToolResultForContext(envelope, budget),
+                tool_call_id: call.id,
+                name: functionName,
+              };
+            }
+
+            const parametersSchema =
+              getToolContract(functionName)?.parameters ||
+              getFunctionCallDef(functionName)?.parameters ||
+              toolMeta?.parametersSchema ||
+              toolMeta?.openaiTool?.function?.parameters;
+            const validation = validateToolArgs(args, parametersSchema as Record<string, unknown>);
+            if (!validation.valid) {
+              const message = `参数校验失败: ${validation.message}`;
+              const envelope = buildInvalidArgsEnvelope(functionName, message, 'INVALID_ARGS');
+              toolOutcomes.push(envelope);
+              recordToolOutcome(envelope);
+              recentErrorFingerprints.push(`${functionName}::${message.slice(0, 80)}`);
+              applyResultChrome({ ...envelope, meta: { ...envelope.meta, durationMs: 0 } });
+              return {
+                role: 'tool',
+                content: serializeToolResultForContext(envelope, budget),
+                tool_call_id: call.id,
+                name: functionName,
+              };
             }
 
             const startedAt = Date.now();
@@ -937,29 +1309,34 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             recordInvokedTool(functionName);
             toolsExecutedThisTurn += 1;
 
-            const toolMeta = allTools.find((t) => t.functionName === functionName);
-            const budget = resolveToolResultBudget(
-              getFunctionCallDef(functionName),
-              toolMeta,
-              config.maxToolResultChars,
-            );
-
             // 收敛检测：记录本次调用的签名（toolName + 参数指纹）
             const argsFingerprint = stableStringifyArgs(args).slice(0, 120);
             recentToolSignatures.push(`${functionName}::${argsFingerprint}`);
 
             try {
-              const envelope = await invokeToolByMeta(client, allTools, functionName, args, {
-                conversationKey,
-                turnId,
-                round,
-              });
+              const envelope = await invokeToolByMeta(
+                client,
+                turnToolPoolRef.current?.allTools ?? allTools,
+                functionName,
+                args,
+                {
+                  conversationKey,
+                  turnId,
+                  round,
+                },
+              );
               toolOutcomes.push(envelope);
               recordToolOutcome(envelope);
 
-              // 结构化终止：跟踪 task_complete 的校验结果
+              // 结构化终止：跟踪 task_complete 的校验结果，并写入交付 segment
               if (structuredTermination && functionName === TASK_COMPLETE_TOOL) {
                 lastTaskCompleteVerified = envelope.verified === true;
+                if (envelope.verified === true) {
+                  assistantSegments = applyTaskCompleteDelivery(
+                    assistantSegments,
+                    envelope.data,
+                  );
+                }
               }
               // 收敛检测：记录错误指纹（成功则推入哨兵，打断「连续相同错误」计数）
               // user_choice_request 是合法挂起，不当作错误
@@ -974,14 +1351,9 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
                 );
               }
 
-              const stepOutcome = resolveToolStepFromEnvelope(envelope);
-              appendToolStep({
-                id: stepId,
-                functionName,
-                displayName,
-                status: stepOutcome.status,
-                durationMs: Date.now() - startedAt,
-                error: stepOutcome.error,
+              applyResultChrome({
+                ...envelope,
+                meta: { ...envelope.meta, durationMs: Date.now() - startedAt },
               });
 
               // ask_user：写入 Choice Card segment（挂起在工具轮结束后统一 hard-stop）
@@ -1005,7 +1377,10 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
               return {
                 role: 'tool',
-                content: serializeToolResultForContext(envelope, budget),
+                content: serializeToolResultForContext(
+                  withWriteNavigateHint(envelope, getAutoNavigate()),
+                  budget,
+                ),
                 tool_call_id: call.id,
                 name: functionName,
               };
@@ -1021,14 +1396,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               recordToolOutcome(envelope);
               recentErrorFingerprints.push(`${functionName}::${errorMessage.slice(0, 80)}`);
 
-              appendToolStep({
-                id: stepId,
-                functionName,
-                displayName,
-                status: 'error',
-                durationMs: Date.now() - startedAt,
-                error: errorMessage,
-              });
+              applyResultChrome(envelope, 'error', errorMessage);
               return {
                 role: 'tool',
                 content: serializeToolResultForContext(envelope, budget),
@@ -1043,6 +1411,73 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             TOOLS_CONCURRENCY,
             executeOneToolCall,
           );
+
+          // 工具轮结束后对账：模型漏调 update_plan 时仍推进进度，并展示「更新任务清单 · (n/m)」
+          if (structuredTermination) {
+            const hadExplicitUpdatePlan = result.toolCalls.some(
+              (c) => (c.function?.name || '') === UPDATE_PLAN_TOOL,
+            );
+            const beforePlan = getPlan();
+            const reconciledAfterTools = reconcilePlan(beforePlan, toolOutcomes);
+            if (reconciledAfterTools !== beforePlan) {
+              setPlan(reconciledAfterTools);
+              if (!hadExplicitUpdatePlan) {
+                const completed = reconciledAfterTools.filter((p) => p.status === 'completed').length;
+                const progressTitle = '更新任务清单';
+                const progressSubtitle = `(${completed}/${reconciledAfterTools.length})`;
+                const progressId = `plan-reconcile-${Date.now()}`;
+                const planPresentation = presentToolCall(UPDATE_PLAN_TOOL, {
+                  mode: 'update',
+                  plan: reconciledAfterTools,
+                }).presentation;
+                assistantSegments = upsertSegment(assistantSegments, {
+                  kind: 'tool',
+                  id: progressId,
+                  step: {
+                    id: progressId,
+                    functionName: UPDATE_PLAN_TOOL,
+                    displayName: `${progressTitle} · ${progressSubtitle}`,
+                    title: progressTitle,
+                    subtitle: progressSubtitle,
+                    presentation: {
+                      ...planPresentation,
+                      title: progressTitle,
+                      collapseAfter: true,
+                      collapsedPreviewLines: 0,
+                    },
+                    status: 'success',
+                    durationMs: 0,
+                    display: {
+                      kind: 'planning',
+                      payload: {
+                        items: reconciledAfterTools.map((p) => ({
+                          id: p.id,
+                          label: p.content,
+                          status: p.status,
+                        })),
+                        message: `${progressTitle} · ${progressSubtitle}`,
+                      },
+                      collapsed: true,
+                      visibility: 'transient',
+                    },
+                  },
+                });
+                // 刷新消息以展示进度步
+                patchAssistantMessage(
+                  {
+                    content: assistantDisplayContent,
+                    reasoningContent:
+                      enableThinking && accumulatedReasoning
+                        ? accumulatedReasoning
+                        : undefined,
+                    segments: assistantSegments,
+                  },
+                  { status: 'updating' },
+                );
+              }
+            }
+          }
+
           // 阶段 E：同性质批量结果聚合——把同名 Tool 的批量结果压缩成摘要，
           // 只压缩回灌 LLM 的上下文（UI 段 assistantSegments 不变，用户仍看到每步）。
           // 合并所有 Skill 声明的 resultAggregation.tools，按 name 触发。
@@ -1117,14 +1552,39 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         const message = friendlifyBurstError(extractAiChatErrorMessage(error));
         const isAbort = error instanceof Error && error.name === 'AbortError';
 
-        patchAssistantMessage(
-          { content: isAbort ? '已取消回复' : message, segments: assistantSegments },
-          { status: isAbort ? 'abort' : 'error' },
-        );
+        if (isAbort) {
+          // 用户主动停止：保留已输出的内容，不清空，仅在末尾追加取消提示。
+          // content 与 segments 同步写入提示：content 负责持久化（刷新/切会话后仍可见），
+          // segments 负责当前 UI 渲染（有 segments 时 fallbackContent 不会显示）。
+          const keptContent = resolveDisplayContent();
+          const cancelNotice = '用户已经取消继续对话';
+          const nextContent = keptContent
+            ? `${keptContent}\n\n> ${cancelNotice}`
+            : cancelNotice;
+          assistantDisplayContent = nextContent;
+          assistantSegments = upsertSegment(assistantSegments, {
+            kind: 'text',
+            id: 'cancelled-notice',
+            content: `> ${cancelNotice}`,
+          });
+          patchAssistantMessage(
+            { content: nextContent, segments: assistantSegments },
+            { status: 'abort' },
+          );
+          return '';
+        }
 
-        if (!isAbort) throw error;
-        return '';
+        patchAssistantMessage(
+          { content: message, segments: assistantSegments },
+          { status: 'error' },
+        );
+        throw error;
       } finally {
+        turnToolPoolRef.current = null;
+        if (turnId) {
+          endTurnTrace(turnId);
+          setActiveTurnContext(null);
+        }
         endTurn?.();
         setStreaming(false);
         abortRef.current = null;
@@ -1133,6 +1593,8 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     [
       allTools,
       allowedToolNames,
+      harnessParts,
+      expandTurnToolPool,
       client,
       config,
       openaiTools,
@@ -1141,7 +1603,30 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       skills,
       skillsLoading,
       systemPrompt,
+      toolConcurrency,
+      autoNavigate,
     ],
+  );
+
+  const retryAssistantMessage = useCallback(
+    async (assistantId: string, options?: SubmitQueryOptions) => {
+      const list = messagesRef.current;
+      const turn = findRetryTurn(list, assistantId);
+      if (!turn) return;
+      const payload = resolveUserRetryPayload(list[turn.userIndex]?.message as EADAFChatMessage);
+      if (!payload) {
+        throw new Error('没有可重试的用户消息');
+      }
+      const truncated = list.slice(0, turn.userIndex);
+      messagesRef.current = truncated;
+      setMessages(truncated);
+      await submitQuery(payload.apiText, {
+        enableThinking: options?.enableThinking,
+        displayContent: payload.displayText,
+        modelSlug: options?.modelSlug,
+      });
+    },
+    [setMessages, submitQuery],
   );
 
   return {
@@ -1156,6 +1641,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
     openaiTools,
     systemPrompt,
     submitQuery,
+    retryAssistantMessage,
     contextUsagePercent,
   };
 }

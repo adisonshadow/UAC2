@@ -70,6 +70,7 @@ export default function MemberOrgAI() {
     <AIChatPageScope
       scopeSlug="member-org"
       fallbackSkillSlugs={['uac-access-control']}
+      semanticRouteDomains={['member_org']}
       {...pageScope}
     >
       <Outlet />

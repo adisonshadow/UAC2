@@ -1,12 +1,31 @@
 import type { FunctionCallDef } from '../types';
 import { executeToolWithEnvelope } from '../utils/executeToolWithEnvelope';
 import type { ToolInvokeLogEntry } from '../utils/toolInvokeLogger';
+import { syncPresentationFromToolDef } from '../runtime/surfacesRegistry';
+import type { PresentCallFn, PresentResultFn } from '../runtime/surfacesTypes';
 
 /** 默认命名空间：未显式传 namespace 的注册与查询都落在这里（向后兼容） */
 const DEFAULT_NAMESPACE = 'default';
 
 const registry = new Map<string, FunctionCallDef>();
 const listeners = new Set<() => void>();
+/** presentation 同步 disposer：按 namespace::name 跟踪，注销时清理 */
+const surfaceDisposers = new Map<string, () => void>();
+
+function syncSurfacesForDef(def: FunctionCallDef, key: string): void {
+  surfaceDisposers.get(key)?.();
+  if (!def.presentation && !def.presentCall && !def.presentResult) {
+    surfaceDisposers.delete(key);
+    return;
+  }
+  const dispose = syncPresentationFromToolDef(
+    def.name,
+    def.presentation,
+    def.presentCall as PresentCallFn | undefined,
+    def.presentResult as PresentResultFn | undefined,
+  );
+  surfaceDisposers.set(key, dispose);
+}
 
 /**
  * 批量注册期间挂起通知：批量操作结束后只 notifyRegistryChange() 一次，
@@ -78,7 +97,9 @@ export function registerFunctionCall(
   options?: RegisterFunctionCallOptions,
 ): void {
   const ns = resolveNamespace(options?.namespace);
-  registry.set(makeKey(ns, def.name), def);
+  const key = makeKey(ns, def.name);
+  registry.set(key, def);
+  syncSurfacesForDef(def, key);
   notifyRegistryChange();
 }
 
@@ -96,7 +117,9 @@ export function registerFunctionCalls(
   const ns = resolveNamespace(options?.namespace);
   withBatchedNotify(() => {
     for (const def of defs) {
-      registry.set(makeKey(ns, def.name), def);
+      const key = makeKey(ns, def.name);
+      registry.set(key, def);
+      syncSurfacesForDef(def, key);
     }
   });
 }
@@ -108,7 +131,10 @@ export function registerFunctionCalls(
  */
 export function unregisterFunctionCall(name: string, namespace?: string): void {
   const ns = resolveNamespace(namespace);
-  if (registry.delete(makeKey(ns, name))) {
+  const key = makeKey(ns, name);
+  if (registry.delete(key)) {
+    surfaceDisposers.get(key)?.();
+    surfaceDisposers.delete(key);
     notifyRegistryChange();
   }
 }
@@ -124,7 +150,10 @@ export function unregisterFunctionCalls(names: string[], namespace?: string): vo
   const ns = resolveNamespace(namespace);
   withBatchedNotify(() => {
     for (const name of names) {
-      registry.delete(makeKey(ns, name));
+      const key = makeKey(ns, name);
+      registry.delete(key);
+      surfaceDisposers.get(key)?.();
+      surfaceDisposers.delete(key);
     }
   });
 }

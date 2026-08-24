@@ -2,6 +2,7 @@ import type { AIBaseSkill, PlanItem, SkillCompletionStrategy } from '../types';
 import type { ToolResponse } from '../types/toolResponse';
 import { extractA2uiCommandsPayload } from '../a2ui/parseA2uiCommands';
 import { getSkillCompletionStrategy } from '../registry/skillPolicyRegistry';
+import { needsPostWriteNavigation, WRITE_SUCCESS_NAVIGATE_HINT } from '../navigation/writeNavigateHint';
 
 /**
  * 声明式 auto-continue 策略：取代历史版本里硬编码的 bizdata/apiservice 等业务判定。
@@ -331,6 +332,7 @@ export function buildAutoContinueNudge(
   allowedToolNames: Set<string>,
   skills: AIBaseSkill[] = [],
   toolOutcomes: ToolResponse[] = [],
+  options?: { autoNavigate?: boolean },
 ): string {
   const { requiredTools } = aggregateStrategies(skills);
   const examples = [...requiredTools];
@@ -347,6 +349,14 @@ export function buildAutoContinueNudge(
 
   const preface =
     '[系统自动续调·非用户发言] 这不是用户在说话或纠正你。禁止回复「您说得对」「好的我马上」等对用户确认类话术；直接调用 Tool 继续未完成步骤。';
+
+  if (failed?.error?.message) {
+    return `${preface} 上一 Tool「${failed.meta.tool}」未通过验证（${failed.error.message}）。禁止向用户声称已成功；请根据 Tool 返回的 ok/verified/kind/error.message 说明失败原因或重试。`;
+  }
+
+  if (options?.autoNavigate !== false && needsPostWriteNavigation(toolOutcomes)) {
+    return `${preface} ${WRITE_SUCCESS_NAVIGATE_HINT}`;
+  }
 
   if (failed?.error?.message) {
     return `${preface} 上一 Tool「${failed.meta.tool}」未通过验证（${failed.error.message}）。禁止向用户声称已成功；请根据 Tool 返回的 ok/verified/kind/error.message 说明失败原因或重试。`;
@@ -397,7 +407,15 @@ export interface StructuredTerminationContext {
 
 export const STRUCTURED_MAX_AUTO_CONTINUE_NUDGES = 24;
 export const STRUCTURED_MAX_TOOL_ROUNDS = 48;
-const STRUCTURED_HARNESS_TOOL_NAMES = new Set(['task_complete', 'update_plan', 'ask_user']);
+const STRUCTURED_HARNESS_TOOL_NAMES = new Set([
+  'task_complete',
+  'update_plan',
+  'ask_user',
+  'navigate_to_page',
+  'skill',
+  'run_code',
+  'run_subagent',
+]);
 
 /** 本轮 Tool 结果中是否存在待用户选择的 ask_user 请求 */
 export function hasPendingUserChoiceRequest(toolOutcomes: ToolResponse[] = []): boolean {
@@ -497,6 +515,7 @@ export function decideStructuredTermination(
 export function buildStructuredNudge(
   plan: PlanItem[],
   toolOutcomes: ToolResponse[] = [],
+  options?: { autoNavigate?: boolean },
 ): string {
   const preface =
     '[系统自动续调·非用户发言] 这不是用户在说话或纠正你。禁止回复「您说得对」「好的我马上」等对用户确认类话术。';
@@ -511,8 +530,16 @@ export function buildStructuredNudge(
     return `${preface} 上一 Tool「${failed.meta.tool}」未通过验证（${failed.error.message}）。禁止向用户声称已成功；请根据返回的 ok/verified/kind/error.message 重试或说明失败。`;
   }
 
+  const navHint =
+    options?.autoNavigate !== false && needsPostWriteNavigation(toolOutcomes)
+      ? `${WRITE_SUCCESS_NAVIGATE_HINT} 跳转完成后再推进剩余步骤。`
+      : '';
+
   const unfinished = plan.filter((p) => p.status !== 'completed');
   if (unfinished.length === 0) {
+    if (navHint) {
+      return `${preface} ${navHint} 若任务确已完成，跳转后再调用 task_complete 终止。`;
+    }
     // plan 空 / 全完成但没调 task_complete → 强制走终止工具
     return `${preface} 当前没有未完成的 plan 项。若任务确已完成，必须调用 task_complete 终止；禁止用自由文本声称完成。若还有工作，先用 update_plan 补充步骤再推进。`;
   }
@@ -521,7 +548,9 @@ export function buildStructuredNudge(
   const pending = unfinished.filter((p) => p.status === 'pending');
   const lead = inProgress[0] || pending[0];
 
-  const lines: string[] = [`${preface} 当前 plan 还有 ${unfinished.length} 项未完成：`];
+  const lines: string[] = [
+    `${preface}${navHint ? ` ${navHint}` : ''} 当前 plan 还有 ${unfinished.length} 项未完成：`,
+  ];
   unfinished.slice(0, 8).forEach((p, i) => {
     const mark = p.status === 'in_progress' ? '进行中' : '待办';
     lines.push(`${i + 1}. [${mark}] ${p.content}`);

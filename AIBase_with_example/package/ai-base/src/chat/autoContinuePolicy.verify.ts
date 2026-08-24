@@ -12,6 +12,7 @@ import {
   STRUCTURED_MAX_AUTO_CONTINUE_NUDGES,
   STRUCTURED_MAX_TOOL_ROUNDS,
 } from './autoContinuePolicy';
+import { WRITE_SUCCESS_NAVIGATE_HINT } from '../navigation/writeNavigateHint';
 import { aggregateToolResults } from '../utils/aggregateToolResults';
 import { extractA2uiCommandsPayload } from '../a2ui/parseA2uiCommands';
 import type { AIBaseSkill, PlanItem, SkillCompletionStrategy } from '../types';
@@ -692,6 +693,49 @@ console.log('autoContinuePolicy + A2UI 回归场景全部通过');
 // 场景 S10：buildStructuredNudge —— plan 全完成但没调 task_complete，强制终止工具
 {
   const nudge = buildStructuredNudge([], []);
+  assert.match(nudge, /task_complete/);
+}
+
+// 场景 S10b：写成功且未 navigate → nudge 必须提醒跳转（不恢复硬跳）
+{
+  const nudge = buildStructuredNudge(
+    [{ id: 't1', content: '建 API', status: 'in_progress' }],
+    [
+      {
+        ok: true,
+        verified: true,
+        kind: 'success',
+        meta: { tool: 'bizdata_create_entity' },
+      },
+      {
+        ok: true,
+        verified: true,
+        kind: 'success',
+        meta: { tool: 'apiservice_create_service' },
+        data: { id: 's-1' },
+      },
+    ],
+    { autoNavigate: true },
+  );
+  assert.ok(nudge.includes(WRITE_SUCCESS_NAVIGATE_HINT));
+  assert.match(nudge, /建 API/);
+}
+
+// 场景 S10c：自动跳转关闭时不在 nudge 里催跳
+{
+  const nudge = buildStructuredNudge(
+    [],
+    [
+      {
+        ok: true,
+        verified: true,
+        kind: 'success',
+        meta: { tool: 'apiservice_create_service' },
+      },
+    ],
+    { autoNavigate: false },
+  );
+  assert.equal(nudge.includes(WRITE_SUCCESS_NAVIGATE_HINT), false);
   assert.match(nudge, /task_complete/);
 }
 

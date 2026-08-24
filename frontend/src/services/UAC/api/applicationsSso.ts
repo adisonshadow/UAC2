@@ -31,6 +31,7 @@ export async function getApplicationsSsoId(
         client_secret?: string;
         issuer?: string;
         frontend_url?: string;
+        login_page?: API.SsoLoginPageStyle;
       };
       created_at?: string;
       updated_at?: string;

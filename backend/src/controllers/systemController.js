@@ -1,6 +1,7 @@
 const systemService = require('../services/system/systemService');
 const logger = require('../utils/logger');
 const { formatApiError } = require('../utils/formatApiError');
+const fs = require('fs/promises');
 
 function sendError(ctx, error, fallbackStatus = 500) {
   const formatted = formatApiError(error, { fallbackStatus });
@@ -43,6 +44,35 @@ class SystemController {
       ctx.body = { code: 200, message: '备份任务已执行', data };
     } catch (error) {
       sendError(ctx, error, 500);
+    }
+  }
+
+  static async restoreBackup(ctx) {
+    const files = ctx.request.files || {};
+    const raw = files.file;
+    const file = Array.isArray(raw) ? raw[0] : raw;
+
+    if (!file || !file.filepath) {
+      ctx.status = 400;
+      ctx.body = { code: 400, message: '请上传 .dump 备份文件', data: null };
+      return;
+    }
+
+    try {
+      const data = await systemService.restoreBackup(file.filepath);
+      ctx.body = { code: 200, message: '数据恢复完成', data };
+    } catch (error) {
+      sendError(ctx, error, 500);
+    } finally {
+      // 无论成败都清理上传的临时文件
+      try {
+        await fs.unlink(file.filepath);
+      } catch (cleanupError) {
+        logger.warn('恢复备份临时文件清理失败', {
+          filepath: file.filepath,
+          message: cleanupError.message,
+        });
+      }
     }
   }
 }

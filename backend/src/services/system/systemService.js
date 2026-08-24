@@ -10,6 +10,9 @@ const execFileAsync = promisify(execFile);
 const SYSTEM_FEATURES_KEY = 'system_features';
 const projectRoot = path.resolve(__dirname, '../../..');
 
+/** 自动备份默认周期：每天凌晨 3 点 */
+const DEFAULT_AUTO_BACKUP_CRON = '0 3 * * *';
+
 function resolveBackupDir() {
   const envDir = process.env.DB_BACKUP_DIR;
   if (envDir) {
@@ -41,6 +44,11 @@ async function getSystemFeatures() {
     metadataEnabled: Boolean(value.metadataEnabled),
     apiServiceAllowWriteOperations: Boolean(value.apiServiceAllowWriteOperations),
     apiServiceTestAutoRollback: value.apiServiceTestAutoRollback !== false,
+    autoBackupEnabled: Boolean(value.autoBackupEnabled),
+    autoBackupCron:
+      typeof value.autoBackupCron === 'string' && value.autoBackupCron.trim()
+        ? value.autoBackupCron.trim()
+        : DEFAULT_AUTO_BACKUP_CRON,
   };
 }
 
@@ -57,6 +65,17 @@ async function updateSystemFeatures(payload) {
     ...(payload.apiServiceTestAutoRollback !== undefined
       ? { apiServiceTestAutoRollback: Boolean(payload.apiServiceTestAutoRollback) }
       : {}),
+    ...(payload.autoBackupEnabled !== undefined
+      ? { autoBackupEnabled: Boolean(payload.autoBackupEnabled) }
+      : {}),
+    ...(payload.autoBackupCron !== undefined
+      ? {
+          autoBackupCron:
+            typeof payload.autoBackupCron === 'string' && payload.autoBackupCron.trim()
+              ? payload.autoBackupCron.trim()
+              : DEFAULT_AUTO_BACKUP_CRON,
+        }
+      : {}),
   };
 
   const [setting] = await BizdataSetting.findOrCreate({
@@ -67,6 +86,10 @@ async function updateSystemFeatures(payload) {
   if (!setting.isNewRecord) {
     await setting.update({ value: next });
   }
+
+  // 配置变更后重排自动备份定时任务（惰性 require 避免循环依赖）
+  const { applyAutoBackupSchedule } = require('./autoBackupScheduler');
+  applyAutoBackupSchedule(next);
 
   return next;
 }
@@ -117,12 +140,39 @@ async function runBackup() {
   };
 }
 
+/**
+ * 用 .dump 备份文件恢复当前数据库（覆盖现有数据，高危操作）。
+ * 实际执行在 restore-db-now.sh：容器内 pg_restore（与服务器版本一致）。
+ * @param {string} dumpFilePath 上传的 dump 文件绝对路径
+ */
+async function restoreBackup(dumpFilePath) {
+  if (!dumpFilePath || !path.isAbsolute(dumpFilePath)) {
+    throw new Error('恢复失败：备份文件路径无效');
+  }
+
+  const scriptPath = path.join(projectRoot, 'scripts', 'restore-db-now.sh');
+
+  const { stdout, stderr } = await execFileAsync('bash', [scriptPath, dumpFilePath], {
+    cwd: projectRoot,
+    env: { ...process.env, NODE_ENV: config.env },
+    maxBuffer: 20 * 1024 * 1024,
+    timeout: 1800000,
+  });
+
+  return {
+    stdout: stdout || '',
+    stderr: stderr || '',
+  };
+}
+
 module.exports = {
   SYSTEM_FEATURES_KEY,
+  DEFAULT_AUTO_BACKUP_CRON,
   formatStandard,
   getSystemFeatures,
   updateSystemFeatures,
   listBackups,
   runBackup,
+  restoreBackup,
   resolveBackupDir,
 };

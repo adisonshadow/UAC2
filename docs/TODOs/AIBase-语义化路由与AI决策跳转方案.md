@@ -1,8 +1,10 @@
 # AIBase 语义化路由与 AI 决策跳转方案
 
-> **状态**：方案已确认（D1~D4），待实施
-> **日期**：2026-08-12（更新）
-> **范围**：`@eadaf/ai-base`（`AIBase_with_example/package/ai-base`）+ `frontend`，后端无改动
+> **状态**：已由 v2 取代，勿再按本文实施  
+> **继任文档（历史）**：[AIBase-语义化路由与AI决策跳转方案-v2.md](./AIBase-语义化路由与AI决策跳转方案-v2.md)  
+> **现行总方案**：[新Agent架构方案/07-语义路由.md](./新Agent架构方案/07-语义路由.md)（总览 [README](./新Agent架构方案/README.md)）  
+> **日期**：2026-08-12（更新）；取代链说明更新于 2026-08-14  
+> **范围**：`@eadaf/ai-base`（`AIBase_with_example/package/ai-base`）+ `frontend`，后端无改动  
 > **一句话目标**：废弃"工具成功必跳页"的硬编码规则，改为在初始化 AIBase 时载入语义化路由清单，由 AI 通过 `navigate_to_page` 工具自主决策"何时跳、跳到哪里"，并在 AIBase 面板 header 提供可关闭的"自动跳转"开关。
 
 ---

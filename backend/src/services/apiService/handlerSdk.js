@@ -1,7 +1,8 @@
 const { quotePgIdentifier, withPgClient } = require('../businessData/materialization/connectionRunner');
 const { resolveEntityTableName } = require('../businessData/entityTableName');
-const { BizdataEntity } = require('../../models');
+const { BizdataEntity, BizdataEntityField } = require('../../models');
 const { buildPaginationMeta } = require('./paginationMeta');
+const { serializeWriteRow } = require('./pgWriteSerialize');
 
 const COLUMN_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -261,6 +262,30 @@ function clampSkip(raw) {
 function createHandlerSdk({ service, client = null, runtime = null }) {
   const schema = service?.targetSchema || 'bizdata_mat';
   const tableCache = new Map();
+  const entityMetaCache = new Map(); // code -> { fields }
+
+  async function loadEntityMeta(code) {
+    if (entityMetaCache.has(code)) return entityMetaCache.get(code);
+    const entity = await BizdataEntity.findOne({
+      where: { code },
+      include: [{ model: BizdataEntityField, as: 'fields', required: false }],
+    });
+    const meta = entity
+      ? {
+          code: entity.code,
+          table_name: entity.table_name,
+          fields: (entity.fields || []).map((f) => {
+            const d = f.toJSON ? f.toJSON() : f;
+            return {
+              fieldKey: d.field_key,
+              typeormConfig: d.typeorm_config || {},
+            };
+          }),
+        }
+      : null;
+    entityMetaCache.set(code, meta);
+    return meta;
+  }
 
   async function resolveQualifiedTable(entityCode) {
     const code = String(entityCode || service?.entityCode || '').trim();
@@ -517,10 +542,12 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         }
         keys.forEach((k) => assertColumnName(k, '字段名'));
         const cols = keys.map((k) => quotePgIdentifier(k)).join(', ');
+        const meta = await loadEntityMeta(entityCode);
         const allBindings = [];
         const valueGroups = rows.map((row) => {
+          const serialized = serializeWriteRow(row, meta);
           const placeholders = keys.map((k) => {
-            allBindings.push(row[k]);
+            allBindings.push(serialized[k]);
             return `$${allBindings.length}`;
           });
           return `(${placeholders.join(', ')})`;
@@ -539,9 +566,11 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         }
         const setKeys = Object.keys(set);
         setKeys.forEach((k) => assertColumnName(k, '字段名'));
+        const meta = await loadEntityMeta(entityCode);
+        const serializedSet = serializeWriteRow(set, meta);
         const setBindings = [];
         const setSql = setKeys.map((k, i) => {
-          setBindings.push(set[k]);
+          setBindings.push(serializedSet[k]);
           return `${quotePgIdentifier(k)} = $${i + 1}`;
         }).join(', ');
         const conditions = toSdkFilterConditions(where);

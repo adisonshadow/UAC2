@@ -58,6 +58,7 @@ export default function BusinessDataMaterializeAI() {
     <AIChatPageScope
       scopeSlug="business-data"
       fallbackSkillSlugs={fallbackSkillSlugs}
+      semanticRouteDomains={['bizdata_materialize']}
       headerCaption={headerCaption}
       systemPromptPrefix={systemPromptPrefix}
       welcome={welcome}

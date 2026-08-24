@@ -158,6 +158,8 @@ export async function streamChatRound(
     signal?: AbortSignal;
     apiBase: string;
     getToken: () => string | null;
+    /** MS6：贯穿本回合的 turnId，写入请求头供后端关联 */
+    turnId?: string;
   },
   onUpdate: (update: StreamUpdate) => void,
 ): Promise<StreamRoundResult> {
@@ -165,6 +167,7 @@ export async function streamChatRound(
   const token = params.getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (params.turnId) headers['X-AIBase-TurnId'] = params.turnId;
 
   // 发请求 + 校验响应头（不含流式读取）封装为可重试单元。
   // 仅在拿到流之前的失败（突发/限流 429）做指数退避重试；

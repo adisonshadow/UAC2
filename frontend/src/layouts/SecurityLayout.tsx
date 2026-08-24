@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import { Spin } from 'antd';
@@ -13,31 +13,41 @@ const SecurityLayout: React.FC = () => {
   const location = useLocation();
   const { pathname, search } = location;
   const { initialState, setInitialState } = useInitialState();
+  const setInitialStateRef = useRef(setInitialState);
+  setInitialStateRef.current = setInitialState;
 
   useEffect(() => {
+    let cancelled = false;
     const checkAuthentication = async () => {
       try {
         const isAuthPage = AUTH_PAGES.includes(pathname as (typeof AUTH_PAGES)[number]);
         const hasAppParam = new URLSearchParams(search).has('app');
 
         if (isAuthPage && hasAppParam) {
-          setIsAuthenticated(true);
-          setIsAuthChecking(false);
+          if (!cancelled) {
+            setIsAuthenticated(true);
+            setIsAuthChecking(false);
+          }
           return;
         }
 
-        const isValid = await checkAuth(setInitialState);
-        setIsAuthenticated(isValid);
+        const isValid = await checkAuth(setInitialStateRef.current);
+        if (!cancelled) setIsAuthenticated(isValid);
       } catch (error) {
         console.error('认证检查失败:', error);
-        setIsAuthenticated(false);
+        if (!cancelled) setIsAuthenticated(false);
       } finally {
-        setIsAuthChecking(false);
+        if (!cancelled) setIsAuthChecking(false);
       }
     };
 
+    setIsAuthChecking(true);
     checkAuthentication();
-  }, [pathname, search, setInitialState]);
+    return () => {
+      cancelled = true;
+    };
+    // 仅路径变化时重验；setInitialState 用 ref，避免其引用变化触发重复 getAuthCheck
+  }, [pathname, search]);
 
   if (isAuthChecking) {
     return (

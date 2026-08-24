@@ -53,6 +53,7 @@ const ScopesPage: React.FC = () => {
         rowKey="id"
         scroll={{ x: 'max-content' }}
         search={search}
+        headerTitle="Scope 列表"
         columns={[
           ...augmentColumnsWithChatReference(scopeTableColumns, 'name', buildAIScopeReference),
           {

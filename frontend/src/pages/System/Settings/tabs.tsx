@@ -1,9 +1,14 @@
-import { Button, Card, Space, Switch, Table, Typography } from 'antd';
-import { message } from '@/utils/antdAppApis';
+import { Alert, Button, Card, Modal, Space, Switch, Table, Typography, Upload } from 'antd';
+import type { UploadFile } from 'antd';
+import { InboxOutlined } from '@ant-design/icons';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
+import { Cron } from 'react-js-cron';
+import 'react-js-cron/dist/styles.css';
 import {
   getSystemBackups,
   getSystemFeatures,
+  postSystemBackupRestore,
   postSystemBackupRun,
   putSystemFeatures,
 } from '@/services/UAC/api/system';
@@ -15,6 +20,269 @@ function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
+
+const DEFAULT_AUTO_BACKUP_CRON = '0 3 * * *';
+
+/** react-js-cron 中文本地化文案 */
+const AUTO_BACKUP_CRON_LOCALE = {
+  everyText: '每',
+  emptyMonths: '每月',
+  emptyMonthDays: '每天',
+  emptyMonthDaysShort: '每天',
+  emptyWeekDays: '每周',
+  emptyWeekDaysShort: '每周',
+  emptyHours: '每小时',
+  emptyMinutes: '每分钟',
+  emptyMinutesForHourPeriod: '每分钟',
+  yearOption: '年',
+  monthOption: '月',
+  weekOption: '周',
+  dayOption: '天',
+  hourOption: '小时',
+  minuteOption: '分钟',
+  rebootOption: '重启',
+  prefixPeriod: '每',
+  prefixMonths: '',
+  prefixMonthDays: '',
+  prefixWeekDays: '',
+  prefixWeekDaysForMonthAndYearPeriod: '',
+  prefixHours: '',
+  prefixMinutes: '',
+  prefixMinutesForHourPeriod: '在',
+  suffixMinutesForHourPeriod: '分钟',
+  errorInvalidCron: '无效的 cron 表达式',
+  clearButtonText: '清除',
+};
+
+export const BackupSettingsTab: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [backupDir, setBackupDir] = useState('');
+  const [items, setItems] = useState<API.SystemBackupItem[]>([]);
+  const [autoBackupModalOpen, setAutoBackupModalOpen] = useState(false);
+  const [autoBackupSaving, setAutoBackupSaving] = useState(false);
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [autoBackupCron, setAutoBackupCron] = useState(DEFAULT_AUTO_BACKUP_CRON);
+  const [draftEnabled, setDraftEnabled] = useState(false);
+  const [draftCron, setDraftCron] = useState(DEFAULT_AUTO_BACKUP_CRON);
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [restoreFileList, setRestoreFileList] = useState<UploadFile[]>([]);
+  const [restoring, setRestoring] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getSystemBackups();
+      if (isApiSuccess(res)) {
+        const data = getApiData<API.SystemBackupList>(res);
+        setBackupDir(data?.backupDir || '');
+        setItems(data?.items || []);
+      }
+      const featRes = await getSystemFeatures();
+      if (isApiSuccess(featRes)) {
+        const data = getApiData<API.SystemFeatures>(featRes);
+        setAutoBackupEnabled(Boolean(data?.autoBackupEnabled));
+        setAutoBackupCron(data?.autoBackupCron || DEFAULT_AUTO_BACKUP_CRON);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleRun = async () => {
+    setRunning(true);
+    try {
+      const res = await postSystemBackupRun();
+      if (isApiSuccess(res)) {
+        message.success('备份已完成');
+        await load();
+      } else {
+        message.error(res.message || '备份失败');
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const openAutoBackupModal = () => {
+    setDraftEnabled(autoBackupEnabled);
+    setDraftCron(autoBackupCron || DEFAULT_AUTO_BACKUP_CRON);
+    setAutoBackupModalOpen(true);
+  };
+
+  const handleSaveAutoBackup = async () => {
+    setAutoBackupSaving(true);
+    try {
+      const res = await putSystemFeatures({
+        autoBackupEnabled: draftEnabled,
+        autoBackupCron: draftCron,
+      });
+      if (isApiSuccess(res)) {
+        const data = getApiData<API.SystemFeatures>(res);
+        setAutoBackupEnabled(Boolean(data?.autoBackupEnabled));
+        setAutoBackupCron(data?.autoBackupCron || DEFAULT_AUTO_BACKUP_CRON);
+        setAutoBackupModalOpen(false);
+        message.success('已保存');
+      } else {
+        message.error(res.message || '保存失败');
+      }
+    } finally {
+      setAutoBackupSaving(false);
+    }
+  };
+
+  const handleRestore = () => {
+    const file = restoreFileList[0]?.originFileObj as File | undefined;
+    if (!file) {
+      message.warning('请先选择 .dump 备份文件');
+      return;
+    }
+    modal.confirm({
+      title: '确认恢复数据？',
+      content: `将用「${file.name}」覆盖当前数据库数据，此操作不可撤销，请确认已提前备份。`,
+      okText: '确认恢复',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        setRestoring(true);
+        try {
+          const res = await postSystemBackupRestore(file);
+          if (isApiSuccess(res)) {
+            message.success('数据恢复完成');
+            setRestoreModalOpen(false);
+            setRestoreFileList([]);
+          } else {
+            message.error(res.message || '恢复失败');
+          }
+        } finally {
+          setRestoring(false);
+        }
+      },
+    });
+  };
+
+  return (
+    <Card
+      loading={loading}
+      extra={
+        <Space>
+          <Button type="primary" loading={running} onClick={() => void handleRun()}>
+            立即备份
+          </Button>
+          <Button onClick={openAutoBackupModal}>自动备份</Button>
+          <Button danger onClick={() => setRestoreModalOpen(true)}>
+            恢复数据
+          </Button>
+        </Space>
+      }
+    >
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        备份目录：{backupDir || '-'}
+        {autoBackupEnabled && (
+          <>
+            <br />
+            自动备份已开启，周期：{autoBackupCron}
+          </>
+        )}
+      </Typography.Paragraph>
+      <Table
+        rowKey="name"
+        size="small"
+        pagination={false}
+        dataSource={items}
+        columns={[
+          { title: '文件名', dataIndex: 'name' },
+          {
+            title: '大小',
+            dataIndex: 'size',
+            width: 100,
+            render: (v: number) => formatSize(v),
+          },
+          {
+            title: '时间',
+            dataIndex: 'createdAt',
+            width: 180,
+            render: (v: string) => (v ? new Date(v).toLocaleString() : '-'),
+          },
+        ]}
+      />
+
+      <Modal
+        title="自动备份设置"
+        open={autoBackupModalOpen}
+        onCancel={() => setAutoBackupModalOpen(false)}
+        onOk={() => void handleSaveAutoBackup()}
+        confirmLoading={autoBackupSaving}
+        okText="保存"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <Typography.Text strong>自动备份</Typography.Text>
+              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+                开启后，服务端将按下方周期自动执行数据库备份
+              </div>
+            </div>
+            <Switch checked={draftEnabled} onChange={setDraftEnabled} />
+          </div>
+          <div>
+            <Typography.Text strong>备份周期</Typography.Text>
+            <div style={{ color: '#888', fontSize: 12, margin: '4px 0 8px' }}>
+              支持可视化点选或直接输入标准 cron 表达式（分 时 日 月 周）
+            </div>
+            <Cron
+              value={draftCron}
+              setValue={setDraftCron}
+              disabled={!draftEnabled}
+              defaultPeriod="day"
+              allowEmpty="never"
+              locale={AUTO_BACKUP_CRON_LOCALE}
+            />
+          </div>
+        </Space>
+      </Modal>
+
+      <Modal
+        title="恢复数据"
+        open={restoreModalOpen}
+        onCancel={() => setRestoreModalOpen(false)}
+        onOk={handleRestore}
+        confirmLoading={restoring}
+        okText="确认恢复"
+        okButtonProps={{ danger: true }}
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message="恢复操作将覆盖当前数据库中的现有数据"
+          description="请确认已提前备份。恢复期间请勿操作系统，执行完成后数据将回退到备份文件的状态。"
+          style={{ marginBottom: 12 }}
+        />
+        <Upload.Dragger
+          accept=".dump"
+          maxCount={1}
+          fileList={restoreFileList}
+          beforeUpload={() => false}
+          onChange={({ fileList }) => setRestoreFileList(fileList)}
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">点击或拖拽 .dump 备份文件到此处</p>
+          <p className="ant-upload-hint">仅支持本系统备份产生的 .dump 格式文件</p>
+        </Upload.Dragger>
+      </Modal>
+    </Card>
+  );
+};
 
 export const MetadataSettingsTab: React.FC = () => {
   const { initialState, setInitialState } = useInitialState();
@@ -31,11 +299,19 @@ export const MetadataSettingsTab: React.FC = () => {
       if (isApiSuccess(res)) {
         const data = getApiData<API.SystemFeatures>(res);
         setMetadataEnabled(Boolean(data?.metadataEnabled));
+        setInitialState((prev) =>
+          prev
+            ? {
+                ...prev,
+                systemFeatures: { ...prev.systemFeatures, ...data },
+              }
+            : prev,
+        );
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setInitialState]);
 
   useEffect(() => {
     void load();
@@ -169,82 +445,6 @@ export const ApiServiceSettingsTab: React.FC = () => {
           />
         </div>
       </Space>
-    </Card>
-  );
-};
-
-export const BackupSettingsTab: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [backupDir, setBackupDir] = useState('');
-  const [items, setItems] = useState<API.SystemBackupItem[]>([]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getSystemBackups();
-      if (isApiSuccess(res)) {
-        const data = getApiData<API.SystemBackupList>(res);
-        setBackupDir(data?.backupDir || '');
-        setItems(data?.items || []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const handleRun = async () => {
-    setRunning(true);
-    try {
-      const res = await postSystemBackupRun();
-      if (isApiSuccess(res)) {
-        message.success('备份已完成');
-        await load();
-      } else {
-        message.error(res.message || '备份失败');
-      }
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  return (
-    <Card
-      loading={loading}
-      extra={
-        <Button type="primary" loading={running} onClick={() => void handleRun()}>
-          立即备份
-        </Button>
-      }
-    >
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        备份目录：{backupDir || '-'}
-      </Typography.Paragraph>
-      <Table
-        rowKey="name"
-        size="small"
-        pagination={false}
-        dataSource={items}
-        columns={[
-          { title: '文件名', dataIndex: 'name' },
-          {
-            title: '大小',
-            dataIndex: 'size',
-            width: 100,
-            render: (v: number) => formatSize(v),
-          },
-          {
-            title: '时间',
-            dataIndex: 'createdAt',
-            width: 180,
-            render: (v: string) => (v ? new Date(v).toLocaleString() : '-'),
-          },
-        ]}
-      />
     </Card>
   );
 };

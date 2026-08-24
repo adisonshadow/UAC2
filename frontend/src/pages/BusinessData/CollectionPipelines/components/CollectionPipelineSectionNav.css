@@ -1,3 +1,27 @@
 .collection-pipeline-section-nav {
   flex-shrink: 0;
+  /* Segment 选中态：石板蓝，与页头主色区分 */
+  --ant-color-primary: #69727a;
+  --ant-color-primary-hover: #526d87;
+  --ant-color-primary-active: #364d62;
+}
+
+.collection-pipeline-section-nav .ant-btn-primary {
+  background: #69727a;
+  border-color: #69727a;
+}
+
+.collection-pipeline-section-nav .ant-btn-primary:not(:disabled):hover {
+  background: #526d87;
+  border-color: #526d87;
+}
+
+.collection-pipeline-section-nav .ant-btn-primary:not(:disabled):active {
+  background: #364d62;
+  border-color: #364d62;
+}
+
+.collection-pipeline-section-nav .ant-btn-default:not(:disabled):hover {
+  color: #69727a;
+  border-color: #69727a;
 }

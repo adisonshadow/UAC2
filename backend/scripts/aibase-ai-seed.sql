@@ -1502,6 +1502,11 @@ INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdo
 - **单实体字段详情**：`bizdata_get_entity`（传 entityCode）
 - **`bizdata_list_entities`**：已对 AI 停用；需要字段请 `bizdata_get_entity`
 
+## 调研现状（必遵）
+- **直接** native 调用业务 Tool，禁止用 `run_code` / `run_subagent` 探测可用 Tool
+- 例：调研 `web` 域：`bizdata_list_entity_summaries({ codePrefix: "web" })`、`bizdata_list_enums`、`bizdata_get_scope_description({ scopeCode: "web" })`、单实体用 `bizdata_get_entity({ entityCode: "web:User" })`
+- `skill` 加载成功后 grantedTools 已同回合可用，请按 SOP 直接调用
+
 ## 验证通过标记
 - 新建实体默认未验证通过
 - 批量创建后须对每个实体调用 `bizdata_validate_model`，isValid 为 true 时自动标记验证通过

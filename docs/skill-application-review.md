@@ -1,5 +1,9 @@
 # EADAF Skill 应用合理性审查
 
+> **状态：架构层结论已被新 Agent 架构方案吸收；勿再按本文单独作为总方案。**  
+> **继任文档**：[`docs/TODOs/新Agent架构方案/02-Skill按需加载.md`](./TODOs/新Agent架构方案/02-Skill按需加载.md)、[`08-多应用扩展.md`](./TODOs/新Agent架构方案/08-多应用扩展.md)（总览 [README](./TODOs/新Agent架构方案/README.md)）。  
+> 下文保留作审查否决项与路径速查归档。
+>
 > **本文档**：2026-07-30 对照代码的人工审查结论与待办清单。  
 > **旧文档**（AI 初稿，保留不覆盖）：[`skill-management-analysis.md`](./skill-management-analysis.md)  
 > **审查范围**：Skill 分层、可见性、加载链路、完成策略、种子与管理面；不展开逐 Skill 全文点评（初稿第三部分仍可作参考）。

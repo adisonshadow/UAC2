@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const storageService = require('../services/storage/storageService');
 const { assertObjectAccess } = require('../services/storage/storageAccessService');
+const { getSession, isOwner } = require('../services/storage/tusProgressStore');
 const StorageBucket = require('../models/storage_bucket');
 const StorageObject = require('../models/storage_object');
 const logger = require('../utils/logger');
@@ -110,6 +111,97 @@ class StorageController {
       });
       ctx.status = 201;
       ctx.body = { code: 201, message: '上传成功', data };
+    } catch (error) {
+      StorageController.sendError(ctx, error, 400);
+    }
+  }
+
+  static async getTusResult(ctx) {
+    try {
+      const uploadId = ctx.params.id;
+      const session = await getSession(uploadId);
+      if (!session) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '上传会话不存在', data: null };
+        return;
+      }
+      if (!isOwner(session, ctx.state.authContext)) {
+        ctx.status = 403;
+        ctx.body = { code: 403, message: '无权访问该上传会话', data: null };
+        return;
+      }
+
+      if (session.status === 'completed' || session.status === 'duplicate') {
+        const object = session.objectId ? await storageService.getObjectById(session.objectId) : null;
+        ctx.body = {
+          code: 200,
+          message: session.status === 'duplicate' ? '文件已存在，已去重' : '上传完成',
+          data: {
+            status: session.status,
+            uploadId: session.uploadId,
+            offset: session.offset,
+            uploadLength: session.uploadLength,
+            object,
+          },
+        };
+        return;
+      }
+
+      if (session.status === 'failed' || session.status === 'expired') {
+        ctx.body = {
+          code: 200,
+          message: session.errorMessage || '上传失败',
+          data: {
+            status: session.status,
+            uploadId: session.uploadId,
+            offset: session.offset,
+            uploadLength: session.uploadLength,
+          },
+        };
+        return;
+      }
+
+      ctx.body = {
+        code: 202,
+        message: '上传处理中',
+        data: {
+          status: session.status,
+          uploadId: session.uploadId,
+          offset: session.offset,
+          uploadLength: session.uploadLength,
+        },
+      };
+    } catch (error) {
+      StorageController.sendError(ctx, error);
+    }
+  }
+
+  static async dedupCheck(ctx) {
+    try {
+      const bucketCode = ctx.request.body?.bucketCode;
+      const md5 = String(ctx.request.body?.md5 || '').trim().toLowerCase();
+      if (!bucketCode) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: 'bucketCode 为必填项', data: null };
+        return;
+      }
+      if (!/^[a-f0-9]{32}$/.test(md5)) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: 'md5 须为 32 位 hex', data: null };
+        return;
+      }
+      const bucket = await StorageBucket.findOne({ where: { code: bucketCode, status: 'ACTIVE' } });
+      if (!bucket) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: 'Bucket 不存在或已停用', data: null };
+        return;
+      }
+      const object = await storageService.findObjectByBucketAndMd5(bucket.bucket_id, md5);
+      ctx.body = {
+        code: 200,
+        message: object ? '命中重复文件' : '未命中',
+        data: { duplicate: Boolean(object), object },
+      };
     } catch (error) {
       StorageController.sendError(ctx, error, 400);
     }

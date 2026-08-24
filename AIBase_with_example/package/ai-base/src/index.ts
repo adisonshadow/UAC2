@@ -60,6 +60,20 @@ export {
 export type { RegisterFunctionCallOptions } from './registry/functionRegistry';
 
 export {
+  registerToolContractSource,
+  unregisterToolContractSource,
+  clearToolContractSources,
+  listToolContractSources,
+  listAllToolContracts,
+  getToolContract,
+  resolveVisibleContracts,
+  toolContractToOpenAITool,
+  ensureFunctionRegistryContractSource,
+  subscribeToolContracts,
+} from './registry/toolContractRegistry';
+export type { ToolContract, ToolContractSource } from './registry/toolContractRegistry';
+
+export {
   registerSkillCompletionPolicy,
   unregisterSkillCompletionPolicy,
   clearSkillCompletionPolicies,
@@ -84,17 +98,59 @@ export {
 } from './utils/modelAttachmentConfig';
 /**
  * 结构化终止（task_complete / update_plan）机制。
- * 开启方式：在 AIChatConfig 设 enableStructuredTermination: true。
- * 详见 docs/AIBase 成熟闭环与 Planning next moves 统一方案.md。
+ * 默认开启（enableStructuredTermination: true）；设 false 可回退旧 auto-continue。
+ * 详见 docs/TODOs/新Agent架构方案/06-闭环与终止.md。
  */
 export {
   TASK_COMPLETE_TOOL,
   UPDATE_PLAN_TOOL,
   ASK_USER_TOOL,
+  NAVIGATE_TO_PAGE_TOOL,
+  SKILL_TOOL,
+  RUN_CODE_TOOL,
+  RUN_SUBAGENT_TOOL,
   ASK_USER_OPENAI_TOOL,
+  NAVIGATE_TO_PAGE_OPENAI_TOOL,
+  SKILL_OPENAI_TOOL,
+  RUN_CODE_OPENAI_TOOL,
+  RUN_SUBAGENT_OPENAI_TOOL,
   HARNESS_TOOL_NAMES,
   HARNESS_OPENAI_TOOLS,
 } from './registry/builtinTools';
+export {
+  registerSkillBodyLoader,
+  registerSkillActivatedListener,
+  createClientSkillBodyLoader,
+} from './registry/skillBodyChannel';
+export type { SkillBodyPayload } from './registry/skillBodyChannel';
+export type { SkillCatalogEntry, ChatSkillContext } from './registry/skillLoader';
+export { loadChatSkillContext, buildCombinedSystemPrompt } from './registry/skillLoader';
+export {
+  beginTurnTrace,
+  endTurnTrace,
+  appendTurnEvent,
+  getTurnTrace,
+  listRecentTurnTraces,
+  clearTurnTraces,
+  subscribeTurnTraces,
+  setActiveTurnContext,
+  getActiveTurnId,
+} from './observability/turnTrace';
+export type {
+  TurnTraceRecord,
+  TurnTraceEvent,
+  TurnTraceEventKind,
+  TurnTraceToolSummary,
+} from './observability/turnTrace';
+export {
+  getToolMetrics,
+  resetToolMetrics,
+  subscribeToolMetrics,
+  recordToolMetricSample,
+} from './observability/toolMetrics';
+export type { ToolMetric } from './observability/toolMetrics';
+export { ensureObservabilityBridge } from './observability/bridge';
+export { runSubagentFanout, runSubagentSequence } from './runtime/runSubagent';
 export {
   formatUserChoiceMessage,
   isUserChoiceRequestData,
@@ -108,11 +164,56 @@ export type {
 } from './chat/userChoice';
 export { resolveToolStepFromEnvelope } from './chat/resolveToolStepFromEnvelope';
 
+// 语义化路由与 AI 决策跳转（navigationChannel + markdown 渲染）
+export {
+  registerNavigationHandler,
+  getNavigationHandler,
+  getAutoNavigate,
+  setAutoNavigate,
+  subscribeAutoNavigate,
+  navigateToPage,
+  AUTO_NAVIGATE_HABIT_KEY,
+} from './navigation/navigationChannel';
+export type { NavigateHandler } from './navigation/navigationChannel';
+export { semanticRoutesToMarkdown } from './navigation/semanticRoutesToMarkdown';
+
+export {
+  setAIBaseTheme,
+  getAIBaseTheme,
+  getResolvedAIBaseTheme,
+  subscribeAIBaseTheme,
+  THEME_HABIT_KEY,
+} from './theme/themeChannel';
+
+export {
+  getToolConcurrency,
+  setToolConcurrency,
+  subscribeToolConcurrency,
+  getDecisionPreference,
+  setDecisionPreference,
+  subscribeDecisionPreference,
+  getReasoningDisplayMode,
+  setReasoningDisplayMode,
+  subscribeReasoningDisplayMode,
+  buildAskUserProtocol,
+  DEFAULT_TOOL_CONCURRENCY,
+  DEFAULT_DECISION_PREFERENCE,
+  DEFAULT_REASONING_DISPLAY_MODE,
+  MIN_TOOL_CONCURRENCY,
+  MAX_TOOL_CONCURRENCY,
+  TOOL_CONCURRENCY_HABIT_KEY,
+  DECISION_PREFERENCE_HABIT_KEY,
+  REASONING_DISPLAY_MODE_HABIT_KEY,
+} from './config/agentPrefsChannel';
+export type { DecisionPreference, ReasoningDisplayMode } from './config/agentPrefsChannel';
+
 export { AIBaseClient } from './sdk';
 
 export type {
   AIChatConfig,
   AIChatDisplayMode,
+  AIBaseThemeMode,
+  AIBaseResolvedTheme,
   AIChatPromptItem,
   ResolvedAIChatConfig,
   AIBaseScope,
@@ -125,15 +226,58 @@ export type {
   FunctionCallDef,
   SkillCompletionStrategy,
   PlanItem,
+  SemanticRoute,
+  SemanticRouteParam,
+  NavigationRequest,
+  NavigationResult,
 } from './types';
 export type {
   ToolResponse,
   ToolResponseError,
   ToolResultKind,
+  ToolErrorCategory,
+  ToolDisplay,
+  ToolDisplayKind,
 } from './types/toolResponse';
-export { isToolResponse } from './types/toolResponse';
-export { normalizeToolResult, toToolResponseContextView } from './utils/normalizeToolResult';
+export { isToolResponse, buildInvalidArgsEnvelope } from './types/toolResponse';
+export { normalizeToolResult, toToolResponseContextView, categorizeThrownError } from './utils/normalizeToolResult';
+export { validateToolArgs, formatAjvErrors } from './utils/validateToolArgs';
+export { inferToolDisplay } from './utils/inferToolDisplay';
+export {
+  registerToolDisplayNames,
+  clearHostToolDisplayNames,
+  lookupToolDisplayName,
+  CORE_TOOL_DISPLAY_NAMES,
+} from './utils/toolDisplayNameFallbacks';
 export { executeToolWithEnvelope } from './utils/executeToolWithEnvelope';
+export {
+  createAgentContext,
+  ToolsService,
+  SurfacesService,
+  runJavaScriptCode,
+  getTurnState,
+  registerInvocationPresentation,
+  getInvocationPresentation,
+  presentToolCall,
+  presentToolResult,
+  surfacesRegistry,
+} from './runtime';
+export type {
+  AgentPlugin,
+  AgentToolsApi,
+  AgentSurfacesApi,
+  AgentContextHandle,
+  CreateAgentContextOptions,
+  TurnState,
+  RunCodeToolsBridge,
+  InvocationIcon,
+  InvocationContentMode,
+  InvocationCategory,
+  InvocationPresentation,
+  InvocationPresentationInput,
+  PresentCallView,
+  PresentResultView,
+} from './runtime';
 export type {
   AIMutation,
   ToolMutationResult,

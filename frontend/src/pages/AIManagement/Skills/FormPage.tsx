@@ -1,7 +1,7 @@
 import { EditOutlined } from '@ant-design/icons';
 import { invalidateSkillCache, sendMockUserMessage, useChatReference } from '@eadaf/ai-base';
 import { PageContainer, ProForm, ProFormDependency, ProFormSelect, ProFormSwitch, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
-import { Button, Form, Radio, Space, Spin } from 'antd';
+import { Button, Flex, Form, Input, Radio, Space, Spin, theme } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -95,6 +95,58 @@ async function fetchAllActiveToolOptions() {
   return items.map((item) => toToolOption(item));
 }
 
+type ContentViewMode = 'editor' | 'markdown';
+
+const CONTENT_VIEW_OPTIONS = [
+  { label: 'Editor', value: 'editor' },
+  { label: 'Markdown', value: 'markdown' },
+];
+
+interface SkillContentFieldProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  viewMode: ContentViewMode;
+  editorKey: number;
+  readonly?: boolean;
+}
+
+const SkillContentField: React.FC<SkillContentFieldProps> = ({
+  value,
+  onChange,
+  viewMode,
+  editorKey,
+  readonly,
+}) => {
+  const { token } = theme.useToken();
+
+  if (viewMode === 'markdown') {
+    return (
+      <Input.TextArea
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+        readOnly={readonly}
+        placeholder="在此编写 Skill 指令..."
+        spellCheck={false}
+        style={{
+          minHeight: 360,
+          fontFamily: token.fontFamilyCode,
+        }}
+      />
+    );
+  }
+
+  return (
+    <MilkdownCrepeEditor
+      value={value}
+      onChange={onChange}
+      editorKey={editorKey}
+      readonly={readonly}
+      placeholder="在此编写 Skill 指令..."
+      minHeight={360}
+    />
+  );
+};
+
 interface SkillFormPageProps {
   mode: SkillPageMode;
 }
@@ -108,6 +160,8 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
   const [toolOptions, setToolOptions] = useState<{ label: string; value: string }[]>([]);
   const [applicationOptions, setApplicationOptions] = useState<{ label: string; value: string }[]>([]);
   const [editorKey, setEditorKey] = useState(0);
+  const [contentViewMode, setContentViewMode] = useState<ContentViewMode>('editor');
+  const { token } = theme.useToken();
   const { addReference } = useChatReference();
 
   const readOnly = mode === 'view';
@@ -184,6 +238,10 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
     form,
     reloadDetail: loadDetail,
   });
+
+  useEffect(() => {
+    setContentViewMode('editor');
+  }, [id, mode]);
 
   useEffect(() => {
     if (mode === 'create') {
@@ -283,7 +341,6 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
           </Button>
         ) : (
           <Space>
-            <Button onClick={() => navigate(listPath)}>取消</Button>
             <Button onClick={handleAutoOptimize}>自动优化</Button>
             <Button type="primary" loading={saving} onClick={handleSubmit}>
               保存
@@ -341,11 +398,19 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
             }}
             placeholder={'{\n  "terminationStrictness": "strict",\n  "requiredTools": []\n}'}
           />
-          <Form.Item
-            name="contentMarkdown"
-            label={
+          <div style={{ marginBottom: token.marginLG }}>
+            <Flex justify="space-between" align="center" gap={8} style={{ marginBottom: token.marginXS }}>
               <Space size={4} align="center">
-                <span>Skill 内容</span>
+                <span
+                  style={{
+                    color: token.colorText,
+                    fontSize: token.fontSize,
+                    fontWeight: token.fontWeightStrong,
+                    lineHeight: token.lineHeight,
+                  }}
+                >
+                  Skill 内容
+                </span>
                 <ChatReferenceTarget
                   onClick={() => {
                     const values = form.getFieldsValue();
@@ -353,15 +418,29 @@ const SkillFormPage: React.FC<SkillFormPageProps> = ({ mode }) => {
                   }}
                 />
               </Space>
-            }
-          >
-            <MilkdownCrepeEditor
-              editorKey={editorKey}
-              readonly={readOnly}
-              placeholder="在此编写 Skill 指令..."
-              minHeight={360}
-            />
-          </Form.Item>
+              <Radio.Group
+                size="small"
+                optionType="button"
+                buttonStyle="solid"
+                value={contentViewMode}
+                options={CONTENT_VIEW_OPTIONS}
+                onChange={(event) => {
+                  const nextMode = event.target.value as ContentViewMode;
+                  if (nextMode === 'editor') {
+                    setEditorKey(Date.now());
+                  }
+                  setContentViewMode(nextMode);
+                }}
+              />
+            </Flex>
+            <Form.Item name="contentMarkdown" noStyle>
+              <SkillContentField
+                viewMode={contentViewMode}
+                editorKey={editorKey}
+                readonly={readOnly}
+              />
+            </Form.Item>
+          </div>
         </ProForm>
       </Spin>
     </PageContainer>

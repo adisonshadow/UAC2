@@ -1,6 +1,6 @@
 {
   "name": "@eadaf/ai-base",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "EADAF AI 助手基础库（React 前端组件 + 对接 EADAF AI runtime 的对话/Skill/Tool 能力）。",
   "license": "UNLICENSED",
   "repository": {
@@ -37,7 +37,7 @@
   ],
   "scripts": {
     "dev": "tsup --watch",
-    "build": "tsup && cp src/ui/AIChatPanel.css dist/style.css && cat src/a2ui/NextStepA2uiDeck.css >> dist/style.css && cat src/ui/UserChoiceCard.css >> dist/style.css",
+    "build": "tsup && cp src/ui/AIChatPanel.css dist/style.css && cat src/a2ui/NextStepA2uiDeck.css >> dist/style.css && cat src/ui/UserChoiceCard.css >> dist/style.css && cat src/ui/ToolResultSurface.css >> dist/style.css && cat src/ui/invocation/InvocationCard.css >> dist/style.css",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
@@ -51,7 +51,9 @@
     "react-dom": "^19.0.0"
   },
   "dependencies": {
-    "@antv/gpt-vis": "^1.0.0"
+    "@antv/gpt-vis": "^1.0.0",
+    "@cordisjs/core": "^3.18.1",
+    "ajv": "^8.20.0"
   },
   "devDependencies": {
     "@ant-design/icons": "^6.2.5",

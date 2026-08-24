@@ -7,6 +7,7 @@ import type {
   ToolInvokeResult,
 } from '../types';
 import { extractAiChatErrorMessage } from '../utils/formatAiChatError';
+import { getActiveTurnId } from '../observability/turnTrace';
 
 function resolveBaseUrl(baseUrl?: string) {
   return (baseUrl || '/api').replace(/\/$/, '');
@@ -27,6 +28,10 @@ export class AIBaseClient {
     const token = this.getToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
+    }
+    const turnId = getActiveTurnId();
+    if (turnId && !headers.has('X-AIBase-TurnId')) {
+      headers.set('X-AIBase-TurnId', turnId);
     }
 
     const response = await fetch(`${this.baseUrl}${path}`, {

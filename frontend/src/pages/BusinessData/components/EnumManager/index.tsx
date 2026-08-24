@@ -19,6 +19,7 @@ import {
 } from 'antd';
 import React, { useMemo, useState } from 'react';
 import { deleteBusinessDataEnum } from '@/services/UAC/api/businessData';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import MetadataEditor from '../MetadataEditor';
 import EnumFormModal from './EnumFormModal';
 import EnumOptionsPreview from './EnumOptionsPreview';
@@ -42,6 +43,8 @@ function OptionsPreview({ record }: { record: API.BusinessDataEnum }) {
 }
 
 const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefresh }) => {
+  const { initialState } = useInitialState();
+  const metadataEnabled = Boolean(initialState?.systemFeatures?.metadataEnabled);
   const [searchText, setSearchText] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'tree'>('list');
   const [formOpen, setFormOpen] = useState(false);
@@ -114,9 +117,11 @@ const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefre
           <Tooltip title="编辑">
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
           </Tooltip>
-          <Button type="link" size="small" onClick={() => setMetadataEnum(r)}>
-            元数据
-          </Button>
+          {metadataEnabled ? (
+            <Button type="link" size="small" onClick={() => setMetadataEnum(r)}>
+              元数据
+            </Button>
+          ) : null}
           <Popconfirm title="确定删除该枚举？" onConfirm={() => handleDelete(r.id!)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -164,9 +169,11 @@ const EnumManager: React.FC<EnumManagerProps> = ({ enums, open, onClose, onRefre
             <Tooltip title="编辑">
               <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
             </Tooltip>
-            <Button type="link" size="small" onClick={() => setMetadataEnum(r)}>
-              元数据
-            </Button>
+            {metadataEnabled ? (
+              <Button type="link" size="small" onClick={() => setMetadataEnum(r)}>
+                元数据
+              </Button>
+            ) : null}
             <Popconfirm title="确定删除该枚举？" onConfirm={() => handleDelete(r.id!)}>
               <Button type="link" size="small" danger icon={<DeleteOutlined />} />
             </Popconfirm>

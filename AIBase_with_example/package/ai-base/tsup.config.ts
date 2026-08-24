@@ -15,5 +15,7 @@ export default defineConfig({
     '@ant-design/x-sdk',
     '@ant-design/x-markdown',
     '@ant-design/x-card',
+    '@cordisjs/core',
+    'ajv',
   ],
 });

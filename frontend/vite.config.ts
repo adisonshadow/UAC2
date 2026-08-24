@@ -1,9 +1,29 @@
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { defineConfig } from 'vite';
 import { APP_ENV } from './config/env';
 
 const DEV_LOG_PATH = '/__dev/ai-tool-log';
+
+/** pnpm 隔离下 frontend 解析不到 lodash-es，从仓库 .pnpm store 取已安装副本 */
+function resolveLodashEs(): string {
+  const hoisted = path.resolve(__dirname, 'node_modules/lodash-es');
+  if (fs.existsSync(hoisted)) return hoisted;
+  const pnpmRoot = path.resolve(__dirname, '../node_modules/.pnpm');
+  if (fs.existsSync(pnpmRoot)) {
+    const dirs = fs.readdirSync(pnpmRoot).filter((name) => name.startsWith('lodash-es@'));
+    dirs.sort();
+    const latest = dirs.at(-1);
+    if (latest) {
+      const candidate = path.join(pnpmRoot, latest, 'node_modules/lodash-es');
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return 'lodash-es';
+}
+
+const lodashEsDir = resolveLodashEs();
 
 export default defineConfig({
   plugins: [
@@ -75,11 +95,20 @@ export default defineConfig({
         find: '@',
         replacement: path.resolve(__dirname, 'src'),
       },
+      // lodash UMD 无静态 named export；Vite 8 会编成 (0, import_lodash.memoize) 并在 plots 运行时炸掉
+      { find: /^lodash$/, replacement: lodashEsDir },
+      { find: /^lodash\/(.*)$/, replacement: `${lodashEsDir}/$1` },
     ],
   },
   optimizeDeps: {
     exclude: ['@eadaf/ai-base', 'constrained-editor-plugin'],
-    include: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-is'],
+    include: [
+      'react',
+      'react-dom',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-is',
+    ],
   },
   server: {
     port: APP_ENV.port,
@@ -90,6 +119,8 @@ export default defineConfig({
       '/api/v1': {
         target: APP_ENV.devApiBaseUrl,
         changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
     },
   },

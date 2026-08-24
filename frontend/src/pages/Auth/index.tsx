@@ -1,18 +1,15 @@
-import { Footer } from '@/components';
 import { getHealth } from '@/services/UAC/api/health';
 import { getAuthCheck, postAuthLogin } from '@/services/UAC/api/auth';
 import { getApplicationsSsoId } from '@/services/UAC/api/applicationsSso';
 import { getCaptcha } from '@/services/UAC/api/captcha';
 import { history } from '@/utils/navigation';
 import { useInitialState } from '@/providers/InitialStateProvider';
-import { Helmet } from '@/components/Helmet';
 import { Modal, Form, Input, Button, Card, Space, Spin, Result } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import Lottie from 'react-lottie-player';
 import React, { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import SliderCaptchaComponent, { SliderCaptchaRef } from '@/components/SliderCaptcha';
-import bigdataLottie from '@/assets/lotties/bigdata-2.json';
 import loadingLottie from '@/assets/lotties/loading.json';
 import './index.scss';
 import { saveAuth, checkAuth, checkTokenValid, parseAuthUser } from '@/utils/auth';
@@ -23,6 +20,7 @@ import {
   resolveLoginPageDescription,
   resolveSsoBrandingDisplay,
 } from '@/utils/appBranding';
+import AuthPageFrame from '@/components/AuthPageFrame';
 // import { useAIChatDisplayMode } from '@eadaf/ai-base';
 
 interface LoginParams {
@@ -66,6 +64,7 @@ interface ApplicationInfo {
     client_secret?: string;
     issuer?: string;
     frontend_url?: string;
+    login_page?: API.SsoLoginPageStyle;
   };
 }
 
@@ -554,6 +553,7 @@ const LoginPage: React.FC = () => {
               client_secret: ssoInfo.sso_config?.client_secret,
               issuer: ssoInfo.sso_config?.issuer,
               frontend_url: ssoInfo.sso_config?.frontend_url,
+              login_page: ssoInfo.sso_config?.login_page || applicationInfo?.sso_config?.login_page,
             }
           });
           
@@ -650,40 +650,21 @@ const LoginPage: React.FC = () => {
   const { name: pageTitle, shortName: pageShortName, logo: pageLogo } = isSsoLogin
     ? resolveSsoBrandingDisplay(applicationInfo)
     : resolveBrandingDisplay(branding);
-  const pageDescription = resolveLoginPageDescription(
-    branding,
-    isSsoLogin ? true : applicationInfo?.sso_enabled,
-  );
   const isLoadingSsoContext = isCheckingAuth || (isSsoLogin && !isApplicationInfoLoaded);
+  const loginPageStyle = isSsoLogin ? applicationInfo?.sso_config?.login_page : undefined;
+  const loginSubtitle = isSsoLogin
+    ? loginPageStyle?.subtitle?.trim() || undefined
+    : resolveLoginPageDescription(false);
 
-  // 背景组件
-  const AuthBackground = () => (
-    <div className="auth-bg">
-      <img src="/images/bg.svg" alt="background" className="bg-image" />
-      <div className="bg-text">
-        <div className="title">{pageShortName}</div>
-      </div>
-      <Lottie
-        className="lottie-bg"
-        animationData={bigdataLottie}
-        loop
-        play
-      />
-    </div>
-  );
-
-  // 页面容器组件
   const AuthPageContainer = ({ children }: { children: React.ReactNode }) => (
-    <div className="auth-page">
-      <Helmet>
-        <title>登录- {pageTitle}</title>
-      </Helmet>
-      <AuthBackground />
-      <div className="auth-content">
-        {children}
-        <Footer />
-      </div>
-    </div>
+    <AuthPageFrame
+      shortName={pageShortName}
+      loginPage={loginPageStyle}
+      asidePending={isSsoLogin && !isApplicationInfoLoaded}
+      helmetTitle={`登录- ${pageTitle}`}
+    >
+      {children}
+    </AuthPageFrame>
   );
 
   const renderSsoError = () => (
@@ -708,7 +689,7 @@ const LoginPage: React.FC = () => {
         <Card className="auth-card" variant="borderless">
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Spin size="large" />
-            <div style={{ marginTop: '20px', color: '#666' }}>
+            <div className="auth-status-text" style={{ marginTop: 20 }}>
               {appIdFromUrl ? '正在加载 SSO 应用配置...' : '正在检查登录状态...'}
             </div>
           </div>
@@ -737,10 +718,10 @@ const LoginPage: React.FC = () => {
               loop
               play
             />
-            <div style={{ fontSize: '16px', color: '#333', marginBottom: '10px' }}>
+            <div className="auth-status-title" style={{ marginBottom: 10 }}>
               {redirectMessage}
             </div>
-            <div style={{ fontSize: '14px', color: '#666' }}>
+            <div className="auth-status-text">
               请稍候，正在为您跳转...
             </div>
           </div>
@@ -756,7 +737,7 @@ const LoginPage: React.FC = () => {
           <div className="auth-header">
             <img src={pageLogo} alt={pageTitle} className="logo" />
             <div className="title">{pageTitle}</div>
-            <div className="description">请使用统一身份认证登录</div>
+            {loginSubtitle ? <div className="description">{loginSubtitle}</div> : null}
           </div>
 
           <Form

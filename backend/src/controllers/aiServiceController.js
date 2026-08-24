@@ -24,14 +24,26 @@ function formatPublicModel(model) {
   };
 }
 
-async function writeRequestLog({ traceId, slug, statusCode, durationMs, errorCode }) {
+async function writeRequestLog({
+  traceId,
+  slug,
+  statusCode,
+  durationMs,
+  errorCode,
+  turnId,
+  toolFunctionName,
+  toolExecutionType,
+}) {
   try {
     await ApiRequestLog.create({
       trace_id: traceId,
       slug: slug || null,
       status_code: statusCode,
       duration_ms: durationMs,
-      error_code: errorCode || null
+      error_code: errorCode || null,
+      turn_id: turnId || null,
+      tool_function_name: toolFunctionName || null,
+      tool_execution_type: toolExecutionType || null,
     });
   } catch (error) {
     logger.error('写入 AI 请求日志失败', { error: error.message, traceId });
@@ -115,6 +127,7 @@ class AiServiceController {
 
   static async chatCompletions(ctx) {
     const traceId = ctx.state.traceId;
+    const turnId = ctx.get('x-aibase-turnid') || null;
     const startedAt = Date.now();
     const body = ctx.request.body || {};
     const slug = body.slug;
@@ -148,6 +161,7 @@ class AiServiceController {
         releaseSlotOnce();
         await writeRequestLog({
           traceId,
+          turnId,
           slug: resolved.slug,
           statusCode: 429,
           durationMs,
@@ -170,6 +184,7 @@ class AiServiceController {
         });
         await writeRequestLog({
           traceId,
+          turnId,
           slug: resolved.slug,
           statusCode: response.status,
           durationMs,
@@ -201,6 +216,7 @@ class AiServiceController {
           });
           await writeRequestLog({
             traceId,
+            turnId,
             slug: resolved.slug,
             statusCode: response.status,
             durationMs,
@@ -240,6 +256,7 @@ class AiServiceController {
             passThrough.end();
             await writeRequestLog({
               traceId,
+              turnId,
               slug: resolved.slug,
               statusCode: 200,
               durationMs: Date.now() - startedAt,
@@ -249,6 +266,7 @@ class AiServiceController {
             passThrough.destroy(error);
             await writeRequestLog({
               traceId,
+              turnId,
               slug: resolved.slug,
               statusCode: 502,
               durationMs: Date.now() - startedAt,
@@ -264,6 +282,7 @@ class AiServiceController {
       const result = await response.json();
       await writeRequestLog({
         traceId,
+        turnId,
         slug: resolved.slug,
         statusCode: 200,
         durationMs,
@@ -279,6 +298,7 @@ class AiServiceController {
       if (error instanceof AIBaseError) {
         await writeRequestLog({
           traceId,
+          turnId,
           slug,
           statusCode: error.httpStatus,
           durationMs,
@@ -296,6 +316,7 @@ class AiServiceController {
       logger.error('AI 对话请求失败', { error: error.message, traceId });
       await writeRequestLog({
         traceId,
+        turnId,
         slug,
         statusCode: 500,
         durationMs,

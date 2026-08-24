@@ -54,6 +54,7 @@ const ModelsPage: React.FC = () => {
         rowKey="id"
         scroll={{ x: 'max-content' }}
         search={search}
+        headerTitle="AI 模型列表"
         columns={[
           ...augmentColumnsWithChatReference(modelTableColumns, 'displayName', buildAIModelReference),
           {

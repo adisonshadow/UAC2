@@ -124,7 +124,6 @@ const ApplicationTopLevelSkillPage: React.FC = () => {
       }
       extra={
         <Space>
-          <Button onClick={() => navigate(listPath)}>取消</Button>
           <Button type="primary" loading={saving} onClick={handleSubmit}>
             保存
           </Button>

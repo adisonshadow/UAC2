@@ -1,12 +1,30 @@
+import type { NextStepItem } from '../a2ui/parseA2uiCommands';
+import type { ToolDisplay } from '../types/toolResponse';
+import type { InvocationPresentation } from '../runtime/surfacesTypes';
+
 export type ChatToolStepStatus = 'loading' | 'success' | 'error' | 'business_error';
 
 export interface ChatToolStep {
   id: string;
   functionName: string;
+  /**
+   * 兼容旧复制/回放：通常为 `title · subtitle`。
+   * 新 UI 优先用 title / subtitle。
+   */
   displayName: string;
+  /** 标题栏主标题（静态动词，如「加载 Skill」） */
+  title?: string;
+  /** 标题栏副标题（动态，如 Skill 名 / HTTP path） */
+  subtitle?: string;
   status: ChatToolStepStatus;
   durationMs?: number;
   error?: string;
+  /** 用户可见 Surface（与模型上下文解耦） */
+  display?: ToolDisplay;
+  /** 壳配置快照（折叠/高度/内容模式） */
+  presentation?: InvocationPresentation;
+  /** 调用参数（IN / request 侧） */
+  args?: Record<string, unknown>;
 }
 
 export interface AssistantChatMessage {
@@ -70,11 +88,19 @@ export type UserChoiceSegment = {
   submitted?: boolean;
 };
 
+/** 阶段完成后的可选快捷动作（由 task_complete.next_steps 写入） */
+export type NextStepsSegment = {
+  kind: 'next_steps';
+  id: string;
+  steps: NextStepItem[];
+};
+
 export type AssistantSegment =
   | { kind: 'text'; id: string; content: string }
   | { kind: 'tool'; id: string; step: ChatToolStep }
   | PlanningNextMovesSegment
-  | UserChoiceSegment;
+  | UserChoiceSegment
+  | NextStepsSegment;
 
 /**
  * 按 id upsert 一个 segment：
@@ -98,4 +124,44 @@ export function upsertSegment(
     return list;
   }
   return [...list, segment];
+}
+
+/** 按 id 移除 segment（Planning 过程态隐藏等） */
+export function removeSegment(
+  segments: AssistantSegment[] | undefined,
+  id: string,
+): AssistantSegment[] {
+  if (!segments?.length) return segments || [];
+  return segments.filter((item) => item.id !== id);
+}
+
+/**
+ * 新 Tool 开始时：把先前 transient Surface 按 presentation 收起（保留标题栏）。
+ * collapsedPreviewLines：0 全收；>0 留 N 行预览。
+ */
+export function collapseTransientToolSurfaces(
+  segments: AssistantSegment[] | undefined,
+): AssistantSegment[] {
+  if (!segments?.length) return segments || [];
+  return segments.map((seg) => {
+    if (seg.kind !== 'tool') return seg;
+    const display = seg.step.display;
+    if (!display || display.visibility !== 'transient') return seg;
+    const previewLines =
+      seg.step.presentation?.collapsedPreviewLines ?? display.previewLines ?? 2;
+    if (display.collapsed && (display.previewLines ?? previewLines) === previewLines) {
+      return seg;
+    }
+    return {
+      ...seg,
+      step: {
+        ...seg.step,
+        display: {
+          ...display,
+          collapsed: true,
+          previewLines,
+        },
+      },
+    };
+  });
 }

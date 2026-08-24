@@ -56,11 +56,12 @@ const ToolsPage: React.FC = () => {
         rowKey="id"
         scroll={{ x: 'max-content' }}
         search={search}
+        headerTitle="Tool 列表"
         columns={[
           ...augmentColumnsWithChatReference(toolTableColumns, 'name', buildAIToolReference),
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 120,
+            width: 70,
             render: (_, record) => (
               <TableActions>
                 <TableActionButton

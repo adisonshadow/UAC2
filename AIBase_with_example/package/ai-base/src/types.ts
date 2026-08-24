@@ -6,6 +6,12 @@
  */
 export type AIChatDisplayMode = 'sidebar' | 'float' | 'hidden';
 
+/** AI 助手外观模式：auto 跟随系统 prefers-color-scheme */
+export type AIBaseThemeMode = 'light' | 'dark' | 'auto';
+
+/** 解析后的实际外观（不含 auto） */
+export type AIBaseResolvedTheme = 'light' | 'dark';
+
 export interface AIChatPromptItem {
   key: string;
   description: string;
@@ -59,13 +65,111 @@ export interface AIChatConfig {
   roundDelayMs?: number;
   /**
    * 灰度开关：开启结构化终止（task_complete / update_plan）机制。
-   * - false（默认）：保持现有 auto-continue 行为不变（text-only round 默认 STOP）。
-   * - true：注入 task_complete / update_plan 两个 harness Tool；text-only round
-   *   反转为「默认续命」，只有 task_complete 返回 verified=true 才终止。
-   * 详见 docs/AIBase 成熟闭环与 Planning next moves 统一方案.md。
+   * - true（默认）：注入 task_complete / update_plan；text-only 默认续命直至验收。
+   * - false：回退旧 auto-continue（text-only 默认 STOP）。
    */
   enableStructuredTermination?: boolean;
+  /**
+   * 语义化路由清单（业务页面事实源的 AI 侧精简视图，由前端 semanticRegistry 派生）。
+   */
+  semanticRoutes?: SemanticRoute[];
+  /**
+   * 当前页优先注入的语义路由 domain（MS2：未激活域仅摘要）。
+   * 例：['bizdata', 'api_services']
+   */
+  semanticRouteDomains?: string[];
+  /**
+   * 「自动跳转」开关默认值（默认 true）。
+   * 仅约束 harness `navigate_to_page`；业务 `*_navigate` 工具不受此开关约束。
+   * 用户一旦在设置面板关闭过，userHabit 覆盖此默认值（关过一次不回弹）。
+   */
+  autoNavigate?: boolean;
+  /**
+   * 同一步内最多同时运行的并行 Tool 数（默认 10，范围 1–32）。
+   * 用户设置经 userHabit 覆盖。
+   */
+  toolConcurrency?: number;
+  /**
+   * 面临抉择时倾向（默认 user）：
+   * - user：优先 ask_user 让用户选
+   * - ai：优先由 AI 自行决断（危险/不可逆仍建议 ask_user）
+   * 用户设置经 userHabit 覆盖。
+   */
+  decisionPreference?: 'user' | 'ai';
+  /**
+   * 思考内容显示方式（默认 collapsed）：
+   * - collapsed：只显示思考标题（blink），正文折叠，点击展开
+   * - preview3：只滚动显示最后 3 行，点击展开全部
+   * - full：流式过程展开全文（结束后自动折叠）
+   * 用户设置经 userHabit 覆盖。
+   */
+  reasoningDisplayMode?: 'collapsed' | 'preview3' | 'full';
+  /**
+   * 业务 / 宿主 Tool 语义化展示名（functionName → 中文短标题）。
+   * 注入后优先于内核 harness 默认表；用于 InvocationCard 标题栏。
+   * 典型：EADAF 传入 bizdata_* / apiservice_* 映射。
+   */
+  toolDisplayNames?: Record<string, string>;
+  /**
+   * AI 助手外观主题（默认 light）。
+   * - light / dark：固定外观
+   * - auto：跟随系统 prefers-color-scheme
+   * 仅作用于 AI 侧栏 / 浮钮，不影响宿主应用。
+   * 用户一旦在设置面板切换过，userHabit 覆盖此默认值（切过一次不回弹）。
+   */
+  theme?: AIBaseThemeMode;
+  /**
+   * 跳转执行器：接收语义 path + params，做白名单校验并执行 history.push。
+   * 由前端 AIChatProvider 在 mount 时经 registerNavigationHandler 注入。
+   * ai-base 不依赖 react-router，跳转完全由该 handler 完成。
+   */
+  navigate?: (req: NavigationRequest) => NavigationResult | Promise<NavigationResult>;
 }
+
+/* -------------------------------------------------------------------------- */
+/* 语义化路由（AI 决策跳转）                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** 页面路径参数声明（供 AI 理解与参数类型校验） */
+export interface SemanticRouteParam {
+  type: 'string' | 'number';
+  description: string;
+  example?: string;
+}
+
+/**
+ * 业务页语义条目（AI 侧精简消费类型；与前端 AppSemanticRoute 对齐可映射）。
+ * 前端 toAIChatSemanticRoutes() 负责过滤 redirect、映射 hiddenFromAI → hidden。
+ */
+export interface SemanticRoute {
+  path: string;
+  title: string;
+  /** AI 决策依据，1~2 句 */
+  description: string;
+  /** 业务域分组（prompt 中按此分组展示，如 member_org / bizdata） */
+  domain: string;
+  /** 可选动作词（AI 可据此判断何时适合跳转） */
+  actions?: string[];
+  keywords?: string[];
+  /** 路径参数声明（如 { id: { type: 'string', description: '成员 id' } }） */
+  params?: Record<string, SemanticRouteParam>;
+  /** true：不进 AI prompt，仍可进白名单（若需要可跳） */
+  hidden?: boolean;
+}
+
+/** AI 请求跳转的语义化目标（path 必须是清单中的模板，参数经 params 携带） */
+export interface NavigationRequest {
+  path: string;
+  params?: Record<string, unknown>;
+}
+
+export type NavigationResult =
+  | { navigated: true; path: string }
+  | {
+      navigated: false;
+      reason: 'no_handler' | 'invalid_target' | 'disabled';
+      message?: string;
+    };
 
 export interface ResolvedAIChatConfig {
   apiBase: string;
@@ -88,8 +192,26 @@ export interface ResolvedAIChatConfig {
   maxToolResultChars: number;
   /** 续接循环每轮 LLM 请求之间的最小间隔（毫秒），默认 600 */
   roundDelayMs: number;
-  /** 是否开启结构化终止（task_complete / update_plan）机制，默认 false */
+  /** 是否开启结构化终止（task_complete / update_plan）机制，默认 true */
   enableStructuredTermination: boolean;
+  /** 语义化路由清单（非空时注入可用页面 prompt 与 navigate_to_page 工具） */
+  semanticRoutes: SemanticRoute[];
+  /** 当前页优先的语义路由 domain（未激活域仅摘要） */
+  semanticRouteDomains: string[];
+  /** 「自动跳转」开关默认值（true），用户设置经 userHabit 覆盖 */
+  autoNavigate: boolean;
+  /** 同一步并行 Tool 上限默认值（10），用户设置经 userHabit 覆盖 */
+  toolConcurrency: number;
+  /** 抉择倾向默认值（user），用户设置经 userHabit 覆盖 */
+  decisionPreference: 'user' | 'ai';
+  /** 思考内容显示方式默认值（collapsed），用户设置经 userHabit 覆盖 */
+  reasoningDisplayMode: 'collapsed' | 'preview3' | 'full';
+  /** 宿主注入的 Tool 展示名（functionName → 中文） */
+  toolDisplayNames: Record<string, string>;
+  /** AI 助手外观主题默认值（light），用户设置经 userHabit 覆盖 */
+  theme: AIBaseThemeMode;
+  /** 跳转执行器（白名单 + history.push），由前端注入 */
+  navigate?: (req: NavigationRequest) => NavigationResult | Promise<NavigationResult>;
 }
 
 export interface AIBaseScope {
@@ -255,4 +377,32 @@ export interface FunctionCallDef<TArgs = Record<string, unknown>, TResult = unkn
   resultBudget?: { maxChars: number };
   /** 写操作 Tool：verified 不为 true 时规范为 business_error */
   requiresVerification?: boolean;
+  /**
+   * 调用卡片壳配置（写入 ctx.surfaces presentation 清单）。
+   * 未声明时走内核 builtin / 名称启发式。
+   */
+  presentation?: {
+    category?: 'technical' | 'business';
+    icon?: 'skill' | 'http' | 'code' | 'plan' | 'table' | 'write' | 'nav' | 'generic';
+    title?: string;
+    contentMode?: 'in_out' | 'name_output' | 'request_response';
+    collapseDuring?: boolean;
+    collapseAfter?: boolean;
+    collapsedPreviewLines?: number;
+    maxHeight?: number;
+  };
+  /** 自定义调用时标题栏（args → title/subtitle） */
+  presentCall?: (args: TArgs) => { title?: string; subtitle?: string } | void;
+  /** 自定义结果展示；可返回 ToolDisplay 或覆盖 chrome */
+  presentResult?: (
+    args: TArgs,
+    envelope: import('./types/toolResponse').ToolResponse,
+  ) =>
+    | import('./types/toolResponse').ToolDisplay
+    | {
+        title?: string;
+        subtitle?: string;
+        display?: import('./types/toolResponse').ToolDisplay;
+      }
+    | void;
 }

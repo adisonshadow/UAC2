@@ -55,6 +55,7 @@ const BizdataCollectionPipelineApplication = require('./bizdata_collection_pipel
 const BizdataCollectionPipelineRun = require('./bizdata_collection_pipeline_run');
 const StorageBucket = require('./storage_bucket');
 const StorageObject = require('./storage_object');
+const StorageUploadSession = require('./storage_upload_session');
 
 // 设置模型关联关系
 User.belongsTo(Department, { foreignKey: 'department_id' });
@@ -180,6 +181,10 @@ StorageObject.belongsTo(StorageBucket, { foreignKey: 'bucket_id', as: 'StorageBu
 StorageBucket.hasMany(StorageObject, { foreignKey: 'bucket_id', as: 'objects' });
 StorageObject.belongsTo(Application, { foreignKey: 'application_id', as: 'Application' });
 StorageObject.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+StorageUploadSession.belongsTo(StorageBucket, { foreignKey: 'bucket_id', as: 'StorageBucket' });
+StorageUploadSession.belongsTo(StorageObject, { foreignKey: 'object_id', as: 'StorageObject' });
+StorageUploadSession.belongsTo(Application, { foreignKey: 'application_id', as: 'Application' });
+StorageUploadSession.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
 OutboundWebhook.hasMany(OutboundWebhookRun, { foreignKey: 'webhook_id', as: 'runs' });
 OutboundWebhookRun.belongsTo(OutboundWebhook, { foreignKey: 'webhook_id', as: 'webhook' });
@@ -238,6 +243,7 @@ module.exports = {
   BizdataCollectionPipelineRun,
   StorageBucket,
   StorageObject,
+  StorageUploadSession,
   OutboundWebhook,
   OutboundWebhookRun,
 }; 

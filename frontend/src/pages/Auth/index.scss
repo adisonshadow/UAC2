@@ -1,18 +1,79 @@
 .auth-page {
+  --auth-sidebar-bg: #212747;
+  --auth-content-bg: #ffffff;
+  --auth-title-color: #1f1f1f;
+  --auth-desc-color: rgba(0, 0, 0, 0.45);
+  --auth-sidebar-title: #ffffff9c;
+  --auth-status-title: #1f1f1f;
+  --auth-status-text: rgba(0, 0, 0, 0.45);
+
   position: relative;
   min-height: 100vh;
   display: flex;
+  color-scheme: light;
+
+  &[data-theme='dark'] {
+    --auth-sidebar-bg: #141414;
+    --auth-content-bg: #141414;
+    --auth-title-color: rgba(255, 255, 255, 0.88);
+    --auth-desc-color: rgba(255, 255, 255, 0.45);
+    --auth-sidebar-title: #ffffff9c;
+    --auth-status-title: rgba(255, 255, 255, 0.88);
+    --auth-status-text: rgba(255, 255, 255, 0.45);
+    color-scheme: dark;
+  }
+
+  &.auth-page--large-text {
+    .auth-bg .bg-text .title {
+      font-size: 104px;
+    }
+
+    .auth-content .auth-card .auth-header {
+      .title {
+        font-size: 30px;
+        line-height: 38px;
+      }
+
+      .description {
+        font-size: 16px;
+        line-height: 24px;
+      }
+    }
+
+    .auth-status-title {
+      font-size: 18px;
+    }
+
+    .auth-status-text {
+      font-size: 16px;
+    }
+  }
 
   .auth-bg {
-    width: 40%;
+    width: fit-content;
     height: 100vh;
-    background-color: #212747;
+    background-color: var(--auth-sidebar-bg);
     position: relative;
+
+    &.auth-bg--pending {
+      /* SSO 配置未回前占位，避免侧栏先塌成 0 再撑开 */
+      min-width: min(42vw, 560px);
+      flex: 0 0 auto;
+    }
 
     .bg-image {
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    .aside-media {
+      // position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      z-index: 1;
     }
 
     .lottie-bg {
@@ -42,11 +103,11 @@
       .title {
         font-size: 88px;
         font-weight: 200;
-        color: #ffffff9c;
-        transform: rotate(-90deg);         /* 旋转90度 */
-        letter-spacing: 20px;             /* 文字间距拉大 */
-        display: inline-block;            /* 确保旋转正常工作 */
-        white-space: nowrap;              /* 防止文字换行 */
+        color: var(--auth-sidebar-title);
+        transform: rotate(-90deg);
+        letter-spacing: 20px;
+        display: inline-block;
+        white-space: nowrap;
       }
 
       .description {
@@ -68,12 +129,24 @@
     padding: 0;
     overflow: auto;
     height: 100vh;
+    background-color: var(--auth-content-bg);
+
+    .auth-status-title {
+      font-size: 16px;
+      color: var(--auth-status-title);
+    }
+
+    .auth-status-text {
+      font-size: 14px;
+      color: var(--auth-status-text);
+    }
 
     .auth-card {
       width: 100%;
       max-width: 500px;
       margin: 0 auto;
       box-shadow: none;
+      background: transparent;
 
       .auth-header {
         text-align: center;
@@ -87,13 +160,13 @@
 
         .title {
           margin: 10px 0 8px;
-          color: #000000;
+          color: var(--auth-title-color);
           font-size: 24px;
           font-weight: 600;
         }
 
         .description {
-          color: rgba(0, 0, 0, 0.45);
+          color: var(--auth-desc-color);
         }
       }
 
@@ -101,7 +174,7 @@
         margin-top: 24px;
         padding: 16px;
         background: #f5f5f5;
-        border-radius: 4px;
+        border-radius: 8px;
 
         p {
           margin-bottom: 8px;
@@ -112,4 +185,8 @@
       }
     }
   }
-} 
+}
+
+.auth-page[data-theme='dark'] .auth-content .auth-card .help {
+  background: rgba(255, 255, 255, 0.08);
+}

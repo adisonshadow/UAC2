@@ -249,7 +249,6 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
 
         {mode === 'edit' && id && (
           <div style={{ marginBottom: 16, maxWidth: 1000 }}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>元数据</div>
             <MetadataEditor
               targetType="metric"
               targetId={id}
@@ -262,7 +261,6 @@ const MetricFormPage: React.FC<MetricFormPageProps> = ({ mode }) => {
           <Button type="primary" loading={saving} onClick={handleSubmit}>
             保存
           </Button>
-          <Button onClick={() => navigate(listPath)}>取消</Button>
         </Space>
       </Spin>
     </PageContainer>

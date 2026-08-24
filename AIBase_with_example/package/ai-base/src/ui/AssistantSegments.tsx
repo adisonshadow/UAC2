@@ -3,11 +3,20 @@ import { useCallback, useMemo, type ReactNode } from 'react';
 import NextStepA2uiDeck, { NextStepStreamingPlaceholder } from '../a2ui/NextStepA2uiDeck';
 import { extractA2uiCommandsPayload } from '../a2ui/parseA2uiCommands';
 import type { AssistantSegment } from '../chat/chatToolSteps';
+import { pickNextStepsForRender } from '../chat/emitTaskCompleteDelivery';
 import { sendMockUserMessage } from '../utils/aiChatBridge';
 import AssistantMarkdown from './AssistantMarkdown';
+import AssistantReasoning from './AssistantReasoning';
+import PlanningNextMovesBlock from './PlanningNextMovesBlock';
 import ToolInvokeSteps from './ToolInvokeSteps';
 import UserChoiceCard from './UserChoiceCard';
-import { planningNextMovesToMarkdown } from './planningNextMovesToMarkdown';
+
+const LOADING_PLACEHOLDERS = new Set(['正在思考中...', '正在生成回复...']);
+
+function hasRealText(text: string | undefined): boolean {
+  const trimmed = text?.trim() ?? '';
+  return Boolean(trimmed) && !LOADING_PLACEHOLDERS.has(trimmed);
+}
 
 export interface AssistantSegmentsProps {
   segments?: AssistantSegment[];
@@ -29,7 +38,7 @@ interface TextSegmentView {
 
 /**
  * 按 AI 输出顺序渲染 assistant 回复：遍历 segments，文本段渲染为 Markdown，
- * 工具段渲染为单条 ThoughtChain，二者自然交错。
+ * 工具段渲染为单条 InvocationCard，二者自然交错。
  *
  * 与旧实现（所有 Tool 堆在文字上方）的区别：顺序由 segments 数组决定，
  * 不再由「先 ToolInvokeSteps 后 AssistantMarkdown」的固定布局决定。
@@ -86,12 +95,28 @@ export default function AssistantSegments({
     return extractA2uiCommandsPayload(text);
   }, [segments, fallbackContent]);
 
+  const hasVisibleContent = useMemo(() => {
+    if (hasRealText(fallbackParsed?.displayText)) return true;
+    if (textViews.some((view) => hasRealText(view.displayText))) return true;
+    return (segments ?? []).some(
+      (seg) => seg.kind === 'text' && 'content' in seg && hasRealText(seg.content),
+    );
+  }, [fallbackParsed, textViews, segments]);
+
+  const reasoning = (
+    <AssistantReasoning
+      reasoningContent={reasoningContent}
+      status={status}
+      contentStarted={hasVisibleContent}
+    />
+  );
+
   if (fallbackParsed) {
     return (
       <>
+        {reasoning}
         <AssistantMarkdown
           content={fallbackParsed.displayText}
-          reasoningContent={reasoningContent}
           status={status}
           contentStreaming={status === 'updating' && !hasActiveTool}
         />
@@ -103,43 +128,52 @@ export default function AssistantSegments({
     );
   }
 
-  // 末条文本段的 a2ui 步骤（NextStep 仅在结尾渲染一次）
+  // next_steps segment 优先；无则降级解析末条文本 a2ui-commands（历史/未开结构化终止）
   const lastText = textViews[textViews.length - 1];
+  const picked = pickNextStepsForRender(
+    segments,
+    !lastText?.isStreamingBlock && lastText?.hasSteps ? lastText.steps : undefined,
+  );
+  const showStreamingPlaceholder =
+    picked.source == null && Boolean(lastText?.isStreamingBlock);
 
   return (
     <>
+      {reasoning}
       {(segments ?? []).map((segment) => {
         if (segment.kind === 'tool') {
           return <ToolInvokeSteps key={segment.id} step={segment.step} />;
         }
         if (segment.kind === 'planning') {
-          return (
-            <AssistantMarkdown
-              key={segment.id}
-              content={planningNextMovesToMarkdown(segment)}
-              reasoningContent={reasoningContent}
-              status={status}
-              contentStreaming={false}
-            />
-          );
+          return <PlanningNextMovesBlock key={segment.id} segment={segment} />;
         }
         if (segment.kind === 'user_choice') {
           return <UserChoiceCard key={segment.id} segment={segment} />;
+        }
+        if (segment.kind === 'next_steps') {
+          // 统一在末尾渲染一次 Deck，避免与围栏降级重复
+          return null;
+        }
+        if (segment.id === 'context-prep' && 'content' in segment) {
+          return (
+            <div key={segment.id} className="aibase-context-prep">
+              <span className="aibase-text-shine">{segment.content}</span>
+            </div>
+          );
         }
         const view = textViews.find((v) => v.id === segment.id);
         return (
           <AssistantMarkdown
             key={segment.id}
             content={view?.displayText ?? ('content' in segment ? segment.content : '')}
-            reasoningContent={reasoningContent}
             status={status}
             contentStreaming={status === 'updating' && !hasActiveTool}
           />
         );
       })}
-      {lastText?.isStreamingBlock ? <NextStepStreamingPlaceholder /> : null}
-      {lastText && !lastText.isStreamingBlock && lastText.hasSteps ? (
-        <NextStepA2uiDeck steps={lastText.steps} onAction={handleNextStepAction} />
+      {showStreamingPlaceholder ? <NextStepStreamingPlaceholder /> : null}
+      {picked.steps.length > 0 ? (
+        <NextStepA2uiDeck steps={picked.steps} onAction={handleNextStepAction} />
       ) : null}
     </>
   );

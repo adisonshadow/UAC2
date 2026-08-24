@@ -1,4 +1,9 @@
 import type { AIChatConfig, ResolvedAIChatConfig } from '../types';
+import {
+  DEFAULT_DECISION_PREFERENCE,
+  DEFAULT_REASONING_DISPLAY_MODE,
+  DEFAULT_TOOL_CONCURRENCY,
+} from './agentPrefsChannel';
 
 const DEFAULT_SYSTEM_PROMPT_PREFIX =
   '你是 企业数据底座的 AI 助手，已接入各类数据服务与Tool。\n' +
@@ -39,6 +44,15 @@ export function resolveConfig(config: AIChatConfig = {}): ResolvedAIChatConfig {
     nextStepPrompts: config.nextStepPrompts ?? {},
     maxToolResultChars: config.maxToolResultChars ?? 8000,
     roundDelayMs: config.roundDelayMs ?? 600,
-    enableStructuredTermination: config.enableStructuredTermination ?? false,
+    enableStructuredTermination: config.enableStructuredTermination ?? true,
+    semanticRoutes: config.semanticRoutes ?? [],
+    semanticRouteDomains: config.semanticRouteDomains ?? [],
+    autoNavigate: config.autoNavigate ?? true,
+    toolConcurrency: config.toolConcurrency ?? DEFAULT_TOOL_CONCURRENCY,
+    decisionPreference: config.decisionPreference ?? DEFAULT_DECISION_PREFERENCE,
+    reasoningDisplayMode: config.reasoningDisplayMode ?? DEFAULT_REASONING_DISPLAY_MODE,
+    toolDisplayNames: config.toolDisplayNames ?? {},
+    theme: config.theme ?? 'light',
+    navigate: config.navigate,
   };
 }

@@ -25,8 +25,9 @@ export default function BusinessDataDesignAI() {
     <AIChatPageScope
       scopeSlug="business-data"
       fallbackSkillSlugs={['bizdata-model-design']}
+      semanticRouteDomains={['bizdata_design']}
       headerCaption="模型设计助手"
-      systemPromptPrefix="你是 EADAF 业务数据建模助手，帮助用户设计 Scope:Entity 层级模型。调整 Scope 或重命名实体 code 时必须用 bizdata_rename_entity_code（仅 entityCode + code），禁止 delete + create。status/state/*_type 等有限取值字段必须先 bizdata_create_enum，再在字段上同时传 type=adb-enum 与 enumCode（禁止 varchar，禁止只改 type 不传 enumCode）。默认只完成逻辑建模（枚举/字段/索引/关系/校验），物化与 API 等下游步骤须用户明确请求或通过下一步按钮触发。"
+      systemPromptPrefix="你是 EADAF 业务数据建模助手。默认只完成逻辑建模（枚举/字段/索引/关系/校验）；物化与 API 等下游须用户明确请求或通过下一步按钮触发。建模 SOP、Tool 选用与禁止探路等规则以已加载/按需加载的 Skill（如 bizdata-model-design）及全局执行协议为准，勿依赖本页文案。"
       welcome={{
         title: '业务数据模型设计',
         description: '选中实体或点击 @ 添加引用后，快捷提示会随上下文更新。',

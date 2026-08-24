@@ -34,6 +34,7 @@ const { bindNamedSqlParams, sqlHasNamedParams } = require('./namedSqlBindings');
 const { createHandlerSdk } = require('./handlerSdk');
 const { assertHandlerScriptValid } = require('./handlerTypeCheck');
 const { buildPaginationMeta, normalizeListResult } = require('./paginationMeta');
+const { serializeWriteRow } = require('./pgWriteSerialize');
 
 function pickDefaultOperation(enabledOperations) {
   const enabled = Array.isArray(enabledOperations) ? enabledOperations : [];
@@ -290,6 +291,7 @@ async function executeCreatePg(client, service, parameters, execContext = {}) {
   }
   // 防御：仅写入实体已建模字段（拒绝未建模列）
   body = normalizeWriteBody(body, execContext.entity, 'body') || body;
+  body = serializeWriteRow(body, execContext.entity);
   const keys = Object.keys(body);
   if (!keys.length) {
     throw Object.assign(new Error('create 操作需要 body 字段'), { status: 400 });
@@ -306,6 +308,7 @@ async function executeUpdateOnePg(client, service, parameters, execContext = {})
   const table = qualifiedTable(service);
   let patch = parameters.set || parameters.body || {};
   patch = normalizeWriteBody(patch, execContext.entity, parameters.set ? 'set' : 'body') || patch;
+  patch = serializeWriteRow(patch, execContext.entity);
   const keys = Object.keys(patch || {});
   if (!keys.length) {
     throw Object.assign(new Error('updateOne 操作需要 set 或 body 字段'), { status: 400 });

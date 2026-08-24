@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
 const { hasSsoSigningSecret, resolveSsoSigningSecret } = require('../utils/ssoSecret');
+const { mergeSsoLoginPage, normalizeSsoLoginPage } = require('../utils/ssoLoginPage');
 const { getPublicApiCatalog } = require('../services/applicationApiCatalogService');
 const { getPublicApiOpenApi } = require('../services/applicationApiOpenApiService');
 const { existsBuiltinApiCode } = require('../services/builtinApi/catalog');
@@ -260,13 +261,23 @@ class ApplicationController {
         }
       }
 
+      const loginPage = sso_config
+        ? mergeSsoLoginPage(undefined, sso_config.login_page)
+        : undefined;
+      const normalizedSsoConfig = sso_config
+        ? {
+            ...sso_config,
+            ...(loginPage ? { login_page: loginPage } : {}),
+          }
+        : sso_config;
+
       const createPayload = {
         name,
         code,
         logo_url: logo_url || null,
         status,
         sso_enabled,
-        sso_config,
+        sso_config: normalizedSsoConfig,
         description
       };
       if (requestedApplicationId) {
@@ -501,7 +512,14 @@ class ApplicationController {
       }
 
       const mergedSsoConfig = sso_config !== undefined
-        ? { ...(application.sso_config || {}), ...sso_config }
+        ? {
+            ...(application.sso_config || {}),
+            ...sso_config,
+            login_page: mergeSsoLoginPage(
+              application.sso_config?.login_page,
+              sso_config.login_page,
+            ),
+          }
         : application.sso_config;
 
       if (sso_enabled && mergedSsoConfig) {
@@ -897,13 +915,15 @@ class ApplicationController {
           ? application.sso_config.redirect_mode
           : config.api.sso.redirectMode.default;
 
-      // 构建SSO配置信息
+      // 构建SSO配置信息（不含密钥；login_page 供登录页换肤）
+      const loginPage = normalizeSsoLoginPage(application.sso_config?.login_page);
       const ssoConfig = {
         currentTimestamp,
         secret,
         protocol: application.sso_config.protocol || "OIDC",
         redirect_uri: application.sso_config.redirect_uri,
-        redirect_mode: redirectMode
+        redirect_mode: redirectMode,
+        ...(loginPage ? { login_page: loginPage } : {}),
       };
 
       // 构建返回数据

@@ -92,7 +92,7 @@ function createCustomTagChart(defaultType: string) {
     }, [streamStatus, props.children, axisXTitle, axisYTitle, title]);
 
     if (!config && streamStatus === 'done') {
-      return <div style={{ color: '#999' }}>图表数据解析失败</div>;
+      return <div className="aibase-chart-parse-error">图表数据解析失败</div>;
     }
 
     return <GptVisContainer config={config} streamStatus={streamStatus} />;

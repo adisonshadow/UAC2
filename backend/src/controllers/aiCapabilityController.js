@@ -1,4 +1,4 @@
-const { Scope, Tool, Skill, Application } = require('../models');
+const { Scope, Tool, Skill, Application, ApiRequestLog } = require('../models');
 const SkillController = require('./skillController');
 const { invokeTool, formatOpenAITool } = require('../services/ai/toolInvokeService');
 const { executeHttpRequest } = require('../services/ai/httpRequestToolService');
@@ -148,6 +148,8 @@ class AiCapabilityController {
 
   static async invokeTool(ctx) {
     const { functionName, arguments: toolArgs } = ctx.request.body;
+    const turnId = ctx.get('x-aibase-turnid') || null;
+    const startedAt = Date.now();
 
     if (!functionName) {
       ctx.status = 400;
@@ -189,9 +191,37 @@ class AiCapabilityController {
       };
 
       const result = await invokeTool(tool, toolArgs || {}, logContext);
+      try {
+        await ApiRequestLog.create({
+          trace_id: ctx.state.traceId,
+          slug: null,
+          status_code: 200,
+          duration_ms: Date.now() - startedAt,
+          error_code: null,
+          turn_id: turnId,
+          tool_function_name: functionName,
+          tool_execution_type: tool.execution_type || null,
+        });
+      } catch (logError) {
+        logger.error('写入 Tool 调用日志失败', { error: logError.message, functionName });
+      }
       ctx.body = { data: result };
     } catch (error) {
       logger.error('Tool 调用失败', { error: error.message, functionName });
+      try {
+        await ApiRequestLog.create({
+          trace_id: ctx.state.traceId,
+          slug: null,
+          status_code: 500,
+          duration_ms: Date.now() - startedAt,
+          error_code: 'TOOL_INVOKE_FAILED',
+          turn_id: turnId,
+          tool_function_name: functionName,
+          tool_execution_type: null,
+        });
+      } catch (logError) {
+        logger.error('写入 Tool 调用日志失败', { error: logError.message, functionName });
+      }
       ctx.status = 500;
       ctx.body = {
         error: { code: 'TOOL_INVOKE_FAILED', message: error.message, traceId: ctx.state.traceId },

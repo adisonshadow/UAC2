@@ -56,6 +56,7 @@ const SkillsPage: React.FC = () => {
         rowKey="id"
         scroll={{ x: 'max-content' }}
         search={search}
+        headerTitle="Skill 列表"
         columns={[
           ...augmentColumnsWithChatReference(skillTableColumns, 'name', buildAISkillListReference),
           {

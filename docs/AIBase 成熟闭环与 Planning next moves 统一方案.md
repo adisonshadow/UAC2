@@ -1,5 +1,9 @@
 # AIBase 成熟闭环与 Planning next moves 统一方案
 
+> **状态：已被取代，勿再按本文单独实施。**  
+> **继任文档**：[`docs/TODOs/新Agent架构方案/`](./TODOs/新Agent架构方案/README.md) — 闭环与终止见 [06](./TODOs/新Agent架构方案/06-闭环与终止.md)，Planning / Surface 见 [05](./TODOs/新Agent架构方案/05-展示协议.md)。  
+> 下文保留作六阶段方法论与历史 TODO 归档。
+
 ## 背景
 
 本文件用于描述 AIBase 的成熟闭环执行方法、以及结构化终止/自动续调改造的工程落地；同时补充一个用户可感知的过程态输出目标（类似 Cursor 的 `Planning next moves`）。

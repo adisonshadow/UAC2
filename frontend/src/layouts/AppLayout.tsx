@@ -44,6 +44,7 @@ export default function AppLayout() {
   const { initialState } = useInitialState();
   const routeMeta = findRouteMeta(location.pathname);
   const currentUser = initialState?.currentUser;
+  const metadataEnabled = Boolean(initialState?.systemFeatures?.metadataEnabled);
   const menuData = decorateMenuIcons(
     buildMenuData(
       initialState?.systemFeatures,
@@ -63,6 +64,11 @@ export default function AppLayout() {
       {...initialState?.settings}
       location={location}
       route={{ routes: menuData }}
+      menu={{
+        ...defaultSettings.menu,
+        ...initialState?.settings?.menu,
+        params: { metadataEnabled },
+      }}
       menuDataRender={() => menuData}
       menuItemRender={(item, dom) =>
         item.path ? <Link to={item.path}>{dom}</Link> : dom

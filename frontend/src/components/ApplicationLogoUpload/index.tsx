@@ -14,7 +14,7 @@ const ApplicationLogoUpload: React.FC<ApplicationLogoUploadProps> = (props) => (
     {...props}
     maxEdge={LOGO_MAX_EDGE}
     uploadLabel="上传 Logo"
-    hint={`位图先裁剪再上传，长边超过 ${LOGO_MAX_EDGE}px 会自动压缩；SVG 不裁剪。存储于「${SYSTEM_STORAGE_BUCKET_CODE}」`}
+    hint={`位图先裁剪再上传，长边超过 ${LOGO_MAX_EDGE}px 会自动压缩；PNG 保留透明通道；SVG 不裁剪。存储于「${SYSTEM_STORAGE_BUCKET_CODE}」`}
   />
 );
 

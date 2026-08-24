@@ -29,7 +29,7 @@ export const modelTableColumns: ProColumns<API.AdminAiModel>[] = [
     dataIndex: 'capabilities',
     width: 220,
     render: (_, record) => (
-      <Space wrap size={[0, 4]}>
+      <Space wrap size={[4, 4]}>
         {(record.capabilities || []).map((item) => (
           <Tag key={item}>{item}</Tag>
         ))}

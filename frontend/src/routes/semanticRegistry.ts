@@ -1,0 +1,881 @@
+import type { SemanticRoute } from '@eadaf/ai-base';
+
+/**
+ * 全站业务页「语义路由清单」—— 唯一事实源（纯数据 + 纯函数，无 JSX）。
+ *
+ * 设计（见 docs/TODOs/AIBase-语义化路由与AI决策跳转方案-v2.md）：
+ * - 语义文件不挂 React 组件，只描述「是什么页、什么 mode、干什么」；
+ * - 菜单（config.ts buildAppRouteMeta）与业务 <Route>（index.tsx buildBusinessRoutes）
+ *   由本清单**派生**，保证改路由只改一处；
+ * - `toAIChatSemanticRoutes()` 把清单映射为 ai-base 消费的精简视图，
+ *   注入 AIChatConfig.semanticRoutes（prompt「可用页面」+ navigate_to_page 白名单）。
+ *
+ * 不负责：懒加载组件、菜单 icon、noContentPadding、具体 element（由派生层补充）。
+ */
+
+/** 与 AIChatPageScope wrapper 对齐的分组（用于 index 派生嵌套） */
+export type RouteScopeGroup =
+  | 'member_org'
+  | 'service_provider'
+  | 'file_storage'
+  | 'bizdata_design'
+  | 'bizdata_materialize'
+  | 'bizdata_metadata'
+  | 'system'
+  | 'api_services'
+  | 'ai_management';
+
+/** 页面模式：派生 FormPage/Test 等 element props，并帮助 AI 理解页面形态 */
+export type SemanticRouteMode =
+  | 'list'
+  | 'create'
+  | 'edit'
+  | 'view'
+  | 'test'
+  | 'dashboard'
+  | 'graph'
+  | 'schema'
+  | 'data'
+  | 'browser'
+  | 'execute'
+  | 'settings'
+  | 'other';
+
+export interface SemanticRouteParamDef {
+  type: 'string' | 'number';
+  description: string;
+  example?: string;
+}
+
+/**
+ * 业务页语义条目。
+ * pageKey：与 element 工厂映射键；同一 pageKey 可多 path（create/edit/view）。
+ */
+export interface AppSemanticRoute {
+  path: string;
+  /** 派生 element 与理解页面形态；列表类可省略或标 list */
+  mode?: SemanticRouteMode;
+  /** element 工厂键，如 'member' | 'memberForm' | 'providerForm' */
+  pageKey: string;
+  title: string;
+  /** AI 决策依据，1~2 句 */
+  description: string;
+  domain: string;
+  scopeGroup: RouteScopeGroup;
+  actions?: string[];
+  keywords?: string[];
+  params?: Record<string, SemanticRouteParamDef>;
+  /** true：不进 AI prompt，仍可进白名单（若需要可跳） */
+  hiddenFromAI?: boolean;
+}
+
+export interface AppSemanticRedirect {
+  path: string;
+  to: string;
+  scopeGroup: RouteScopeGroup;
+}
+
+export type AppSemanticEntry = AppSemanticRoute | AppSemanticRedirect;
+
+export function isSemanticRedirect(e: AppSemanticEntry): e is AppSemanticRedirect {
+  return 'to' in e;
+}
+
+/* ========================================================================== */
+/* 语义路由清单（对照 routes/index.tsx 业务路由全量覆盖）                          */
+/* ========================================================================== */
+
+export const EADAF_SEMANTIC_ROUTES: AppSemanticEntry[] = [
+  /* ------------------------------ member_org ------------------------------ */
+  { path: '/member_org', to: '/member_org/member', scopeGroup: 'member_org' },
+  {
+    path: '/member_org/member',
+    mode: 'list',
+    pageKey: 'member',
+    title: '成员管理',
+    description: '成员列表与查询',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['list'],
+    keywords: ['成员', '用户'],
+  },
+  {
+    path: '/member_org/member/create',
+    mode: 'create',
+    pageKey: 'memberForm',
+    title: '新建成员',
+    description: '创建新成员（departmentId 必填）',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['create'],
+    keywords: ['新建成员', '创建用户'],
+  },
+  {
+    path: '/member_org/member/:id/edit',
+    mode: 'edit',
+    pageKey: 'memberForm',
+    title: '编辑成员',
+    description: '编辑已有成员',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['edit'],
+    keywords: ['编辑成员', '修改用户'],
+    params: { id: { type: 'string', description: '成员 id' } },
+  },
+  {
+    path: '/member_org/organization',
+    mode: 'list',
+    pageKey: 'organization',
+    title: '组织架构管理',
+    description: '部门树与组织架构维护',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['list'],
+    keywords: ['组织', '部门'],
+  },
+  {
+    path: '/member_org/organization/create',
+    mode: 'create',
+    pageKey: 'organizationForm',
+    title: '新建部门',
+    description: '创建新部门',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['create'],
+    keywords: ['新建部门'],
+  },
+  {
+    path: '/member_org/organization/:id/edit',
+    mode: 'edit',
+    pageKey: 'organizationForm',
+    title: '编辑部门',
+    description: '编辑已有部门',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['edit'],
+    keywords: ['编辑部门'],
+    params: { id: { type: 'string', description: '部门 id' } },
+  },
+  {
+    path: '/member_org/role',
+    mode: 'list',
+    pageKey: 'role',
+    title: '角色管理',
+    description: '角色与数据权限维护',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['list'],
+    keywords: ['角色'],
+  },
+  { path: '/permissions', to: '/permissions/menu', scopeGroup: 'member_org' },
+  {
+    path: '/permissions/menu',
+    mode: 'list',
+    pageKey: 'permissionsMenu',
+    title: '菜单权限',
+    description: '菜单权限项维护',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['list'],
+    keywords: ['菜单权限'],
+  },
+  {
+    path: '/permissions/button',
+    mode: 'list',
+    pageKey: 'permissionsButton',
+    title: '按钮权限',
+    description: '按钮权限项维护',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['list'],
+    keywords: ['按钮权限'],
+  },
+  {
+    path: '/permissions/api',
+    mode: 'list',
+    pageKey: 'permissionsApi',
+    title: '内置 API 权限',
+    description: '内置 API 权限项维护',
+    domain: 'member_org',
+    scopeGroup: 'member_org',
+    actions: ['list'],
+    keywords: ['API 权限'],
+  },
+
+  /* ---------------------------- service_provider ---------------------------- */
+  {
+    path: '/service_provider',
+    mode: 'list',
+    pageKey: 'applications',
+    title: '应用',
+    description: '业务应用列表与顶层 Skill 配置',
+    domain: 'service_provider',
+    scopeGroup: 'service_provider',
+    actions: ['list'],
+    keywords: ['应用', 'service provider'],
+  },
+  {
+    path: '/service_provider/create',
+    mode: 'create',
+    pageKey: 'applicationForm',
+    title: '新建应用',
+    description: '创建新业务应用',
+    domain: 'service_provider',
+    scopeGroup: 'service_provider',
+    actions: ['create'],
+    keywords: ['新建应用'],
+  },
+  {
+    path: '/service_provider/:id/edit',
+    mode: 'edit',
+    pageKey: 'applicationForm',
+    title: '编辑应用',
+    description: '编辑已有应用',
+    domain: 'service_provider',
+    scopeGroup: 'service_provider',
+    actions: ['edit'],
+    keywords: ['编辑应用'],
+    params: { id: { type: 'string', description: '应用 id' } },
+  },
+  {
+    path: '/service_provider/:id/top-level-skill',
+    mode: 'view',
+    pageKey: 'applicationTopLevelSkill',
+    title: '应用顶层 Skill',
+    description: '查看/配置应用顶层 Skill 说明',
+    domain: 'service_provider',
+    scopeGroup: 'service_provider',
+    actions: ['view'],
+    keywords: ['顶层 skill', 'top-level-skill'],
+    params: { id: { type: 'string', description: '应用 id' } },
+  },
+
+  /* ------------------------------ file_storage ------------------------------ */
+  { path: '/file_storage', to: '/file_storage/buckets', scopeGroup: 'file_storage' },
+  {
+    path: '/file_storage/buckets',
+    mode: 'list',
+    pageKey: 'fileStorageBuckets',
+    title: 'Bucket 管理',
+    description: '对象存储 Bucket 列表',
+    domain: 'file_storage',
+    scopeGroup: 'file_storage',
+    actions: ['list'],
+    keywords: ['bucket', '存储桶'],
+  },
+  {
+    path: '/file_storage/browser',
+    mode: 'browser',
+    pageKey: 'fileStorageBrowser',
+    title: '文件浏览器',
+    description: '浏览 Bucket 内文件',
+    domain: 'file_storage',
+    scopeGroup: 'file_storage',
+    actions: ['browse'],
+    keywords: ['文件', 'browser'],
+  },
+
+  /* ----------------------------- bizdata_design ----------------------------- */
+  { path: '/business_data', to: '/business_data/model-design', scopeGroup: 'bizdata_design' },
+  {
+    path: '/business_data/model-design',
+    mode: 'graph',
+    pageKey: 'modelDesigner',
+    title: '数据模型设计',
+    description: '实体/枚举/关系/索引/校验的图形化建模',
+    domain: 'bizdata_design',
+    scopeGroup: 'bizdata_design',
+    actions: ['create', 'update', 'delete', 'validate'],
+    keywords: ['模型设计', '实体', '建模'],
+  },
+  {
+    path: '/business_data/model-design/relations-graph',
+    mode: 'graph',
+    pageKey: 'relationsGraph',
+    title: '关系图谱',
+    description: '模型实体关系可视化图谱',
+    domain: 'bizdata_design',
+    scopeGroup: 'bizdata_design',
+    actions: ['view'],
+    keywords: ['关系图谱'],
+  },
+
+  /* --------------------------- bizdata_materialize --------------------------- */
+  {
+    path: '/business_data/materialization',
+    to: '/business_data/materialization/execute',
+    scopeGroup: 'bizdata_materialize',
+  },
+  {
+    path: '/business_data/materialization/execute',
+    mode: 'execute',
+    pageKey: 'materializationExecute',
+    title: '执行物化',
+    description: '执行/预览物化任务',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['execute'],
+    keywords: ['物化', 'materialization'],
+  },
+  {
+    path: '/business_data/metrics',
+    mode: 'list',
+    pageKey: 'metricsList',
+    title: '指标管理',
+    description: '指标列表与维护',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['list'],
+    keywords: ['指标'],
+  },
+  {
+    path: '/business_data/metrics/create',
+    mode: 'create',
+    pageKey: 'metricsForm',
+    title: '新建指标',
+    description: '创建新指标',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['create'],
+    keywords: ['新建指标'],
+  },
+  {
+    path: '/business_data/metrics/:id/edit',
+    mode: 'edit',
+    pageKey: 'metricsForm',
+    title: '编辑指标',
+    description: '编辑已有指标',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['edit'],
+    keywords: ['编辑指标'],
+    params: { id: { type: 'string', description: '指标 id' } },
+  },
+  {
+    path: '/business_data/metrics/dashboard',
+    mode: 'dashboard',
+    pageKey: 'metricsDashboard',
+    title: '指标看板',
+    description: '指标数据可视化看板',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['view'],
+    keywords: ['指标看板', 'dashboard'],
+  },
+  {
+    path: '/business_data/database-connections',
+    mode: 'list',
+    pageKey: 'databaseConnections',
+    title: '数据库连接',
+    description: '管理数据库连接',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['list'],
+    keywords: ['数据库连接'],
+  },
+  {
+    path: '/business_data/database',
+    mode: 'browser',
+    pageKey: 'materializedDatabase',
+    title: '数据库预览',
+    description: '浏览物化数据库与表',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['browse'],
+    keywords: ['数据库预览', '物化结果'],
+  },
+  {
+    path: '/business_data/database/tables/:entityId/schema',
+    mode: 'schema',
+    pageKey: 'materializedTableSchema',
+    title: '表结构',
+    description: '查看物化表结构（Schema）',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['view'],
+    keywords: ['表结构', 'schema'],
+    params: { entityId: { type: 'string', description: '实体 id' } },
+  },
+  {
+    path: '/business_data/database/tables/:entityId/data',
+    mode: 'data',
+    pageKey: 'materializedTableData',
+    title: '表数据',
+    description: '浏览物化表数据',
+    domain: 'bizdata_materialize',
+    scopeGroup: 'bizdata_materialize',
+    actions: ['browse'],
+    keywords: ['表数据', '浏览数据'],
+    params: { entityId: { type: 'string', description: '实体 id' } },
+  },
+
+  /* ---------------------------- bizdata_metadata ---------------------------- */
+  {
+    path: '/business_data/data-standards',
+    mode: 'list',
+    pageKey: 'dataStandards',
+    title: '数据标准',
+    description: '数据标准维护（需开通元数据功能）',
+    domain: 'bizdata_metadata',
+    scopeGroup: 'bizdata_metadata',
+    actions: ['list'],
+    keywords: ['数据标准', 'data-standards'],
+  },
+  {
+    path: '/business_data/metadata',
+    mode: 'list',
+    pageKey: 'metadataCatalog',
+    title: '元数据',
+    description: '元数据目录浏览（需开通元数据功能）',
+    domain: 'bizdata_metadata',
+    scopeGroup: 'bizdata_metadata',
+    actions: ['list'],
+    keywords: ['元数据', 'metadata'],
+  },
+
+  /* --------------------------------- system --------------------------------- */
+  {
+    path: '/system/settings',
+    mode: 'settings',
+    pageKey: 'systemSettings',
+    title: '系统设置',
+    description: '系统级设置',
+    domain: 'system',
+    scopeGroup: 'system',
+    actions: ['settings'],
+    keywords: ['系统设置'],
+  },
+
+  /* ------------------------------ api_services ------------------------------ */
+  { path: '/api_services', to: '/api_services/list', scopeGroup: 'api_services' },
+  {
+    path: '/api_services/create',
+    mode: 'create',
+    pageKey: 'apiServiceCreate',
+    title: '新建 API 服务',
+    description: '从数据模型创建 SQL API 服务',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['create'],
+    keywords: ['新建 api', '创建服务'],
+  },
+  {
+    path: '/api_services/list',
+    mode: 'list',
+    pageKey: 'apiServiceList',
+    title: 'API 服务列表',
+    description: 'API 服务列表与发布管理',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['list'],
+    keywords: ['api 服务', 'apiservice'],
+  },
+  {
+    path: '/api_services/:id/edit',
+    mode: 'edit',
+    pageKey: 'apiServiceEdit',
+    title: '编辑 API 服务',
+    description: '编辑 API 服务的 SQL/配置',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['edit'],
+    keywords: ['编辑 api'],
+    params: { id: { type: 'string', description: 'API 服务 id' } },
+  },
+  {
+    path: '/api_services/:id/test',
+    mode: 'test',
+    pageKey: 'apiServiceTest',
+    title: '测试 API',
+    description: '运行 API 服务测试与自动修复',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['test'],
+    keywords: ['测试 api'],
+    params: { id: { type: 'string', description: 'API 服务 id' } },
+  },
+  {
+    path: '/api_services/exception-responses',
+    mode: 'list',
+    pageKey: 'exceptionResponses',
+    title: '异常响应',
+    description: 'API 异常响应规则维护',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['list'],
+    keywords: ['异常响应'],
+  },
+  {
+    path: '/api_services/collection-pipelines',
+    mode: 'list',
+    pageKey: 'collectionPipelines',
+    title: '采集数据结构化',
+    description: '采集管道列表',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['list'],
+    keywords: ['采集管道', 'collection-pipeline'],
+  },
+  {
+    path: '/api_services/collection-pipelines/create',
+    mode: 'create',
+    pageKey: 'collectionPipelineForm',
+    title: '新建采集管道',
+    description: '创建采集管道并配置解析脚本',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['create'],
+    keywords: ['新建采集管道'],
+  },
+  {
+    path: '/api_services/collection-pipelines/:id/edit',
+    mode: 'edit',
+    pageKey: 'collectionPipelineForm',
+    title: '编辑采集管道',
+    description: '编辑采集管道配置与脚本',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['edit'],
+    keywords: ['编辑采集管道'],
+    params: { id: { type: 'string', description: '采集管道 id' } },
+  },
+  {
+    path: '/api_services/collection-pipelines/:id/test',
+    mode: 'test',
+    pageKey: 'collectionPipelineTest',
+    title: '测试采集管道',
+    description: '运行采集管道样本测试',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['test'],
+    keywords: ['测试采集管道'],
+    params: { id: { type: 'string', description: '采集管道 id' } },
+  },
+  {
+    path: '/api_services/outbound-webhooks',
+    mode: 'list',
+    pageKey: 'outboundWebhooks',
+    title: '提交外部 API',
+    description: '外部 API 提交列表',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['list'],
+    keywords: ['外部 api', 'outbound'],
+  },
+  {
+    path: '/api_services/outbound-webhooks/create',
+    mode: 'create',
+    pageKey: 'outboundWebhookForm',
+    title: '新建外部 API 提交',
+    description: '创建外部 API 提交配置',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['create'],
+    keywords: ['新建外部 api'],
+  },
+  {
+    path: '/api_services/outbound-webhooks/:id/edit',
+    mode: 'edit',
+    pageKey: 'outboundWebhookForm',
+    title: '编辑外部 API 提交',
+    description: '编辑外部 API 提交配置',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['edit'],
+    keywords: ['编辑外部 api'],
+    params: { id: { type: 'string', description: '外部 API 提交 id' } },
+  },
+  {
+    path: '/api_services/outbound-webhooks/:id/test',
+    mode: 'test',
+    pageKey: 'outboundWebhookTest',
+    title: '测试外部 API 提交',
+    description: '测试外部 API 提交配置',
+    domain: 'api_services',
+    scopeGroup: 'api_services',
+    actions: ['test'],
+    keywords: ['测试外部 api'],
+    params: { id: { type: 'string', description: '外部 API 提交 id' } },
+  },
+  /* ----------------------------- ai_management ----------------------------- */
+  { path: '/ai_management', to: '/ai_management/providers', scopeGroup: 'ai_management' },
+  {
+    path: '/ai_management/providers',
+    mode: 'list',
+    pageKey: 'aiProviders',
+    title: 'AI 服务商',
+    description: 'AI Provider（服务商）列表与配置',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['list'],
+    keywords: ['服务商', 'provider', 'openai', 'deepseek'],
+  },
+  {
+    path: '/ai_management/providers/create',
+    mode: 'create',
+    pageKey: 'providerForm',
+    title: '新建 AI 服务商',
+    description: '创建 AI Provider（服务商）',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['create'],
+    keywords: ['新建服务商', '新建 provider'],
+  },
+  {
+    path: '/ai_management/providers/:id/edit',
+    mode: 'edit',
+    pageKey: 'providerForm',
+    title: '编辑 AI 服务商',
+    description: '编辑 AI Provider 配置',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['edit'],
+    keywords: ['编辑服务商'],
+    params: { id: { type: 'string', description: 'AI 服务商 id' } },
+  },
+  {
+    path: '/ai_management/providers/:id',
+    mode: 'view',
+    pageKey: 'providerForm',
+    title: 'AI 服务商详情',
+    description: '查看 AI Provider 详情',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['view'],
+    keywords: ['服务商详情'],
+    params: { id: { type: 'string', description: 'AI 服务商 id' } },
+  },
+  {
+    path: '/ai_management/models',
+    mode: 'list',
+    pageKey: 'aiModels',
+    title: 'AI 模型',
+    description: 'AI 模型列表与启用配置',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['list'],
+    keywords: ['模型', 'model'],
+  },
+  {
+    path: '/ai_management/models/create',
+    mode: 'create',
+    pageKey: 'modelForm',
+    title: '新建 AI 模型',
+    description: '创建 AI 模型',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['create'],
+    keywords: ['新建模型'],
+  },
+  {
+    path: '/ai_management/models/:id/edit',
+    mode: 'edit',
+    pageKey: 'modelForm',
+    title: '编辑 AI 模型',
+    description: '编辑 AI 模型配置',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['edit'],
+    keywords: ['编辑模型'],
+    params: { id: { type: 'string', description: 'AI 模型 id' } },
+  },
+  {
+    path: '/ai_management/models/:id',
+    mode: 'view',
+    pageKey: 'modelForm',
+    title: 'AI 模型详情',
+    description: '查看 AI 模型详情',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['view'],
+    keywords: ['模型详情'],
+    params: { id: { type: 'string', description: 'AI 模型 id' } },
+  },
+  {
+    path: '/ai_management/scopes',
+    mode: 'list',
+    pageKey: 'aiScopes',
+    title: 'Scopes',
+    description: 'AI Scope（业务域）管理',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['list'],
+    keywords: ['scope', '业务域'],
+  },
+  {
+    path: '/ai_management/scopes/create',
+    mode: 'create',
+    pageKey: 'scopeForm',
+    title: '新建 Scope',
+    description: '创建 AI Scope',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['create'],
+    keywords: ['新建 scope'],
+  },
+  {
+    path: '/ai_management/scopes/:id/edit',
+    mode: 'edit',
+    pageKey: 'scopeForm',
+    title: '编辑 Scope',
+    description: '编辑 AI Scope',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['edit'],
+    keywords: ['编辑 scope'],
+    params: { id: { type: 'string', description: 'AI Scope id' } },
+  },
+  {
+    path: '/ai_management/scopes/:id',
+    mode: 'view',
+    pageKey: 'scopeForm',
+    title: 'Scope 详情',
+    description: '查看 AI Scope 详情',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['view'],
+    keywords: ['scope 详情'],
+    params: { id: { type: 'string', description: 'AI Scope id' } },
+  },
+  {
+    path: '/ai_management/tools',
+    mode: 'list',
+    pageKey: 'aiTools',
+    title: 'Tools',
+    description: 'AI Tool（工具）管理',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['list'],
+    keywords: ['工具', 'tool'],
+  },
+  {
+    path: '/ai_management/tools/create',
+    mode: 'create',
+    pageKey: 'toolForm',
+    title: '新建 Tool',
+    description: '创建 AI Tool',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['create'],
+    keywords: ['新建工具'],
+  },
+  {
+    path: '/ai_management/tools/:id/edit',
+    mode: 'edit',
+    pageKey: 'toolForm',
+    title: '编辑 Tool',
+    description: '编辑 AI Tool',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['edit'],
+    keywords: ['编辑工具'],
+    params: { id: { type: 'string', description: 'AI Tool id' } },
+  },
+  {
+    path: '/ai_management/tools/:id',
+    mode: 'view',
+    pageKey: 'toolForm',
+    title: 'Tool 详情',
+    description: '查看 AI Tool 详情',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['view'],
+    keywords: ['工具详情'],
+    params: { id: { type: 'string', description: 'AI Tool id' } },
+  },
+  {
+    path: '/ai_management/skills',
+    mode: 'list',
+    pageKey: 'aiSkills',
+    title: 'Skills',
+    description: 'AI Skill（技能）管理',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['list'],
+    keywords: ['技能', 'skill'],
+  },
+  {
+    path: '/ai_management/skills/create',
+    mode: 'create',
+    pageKey: 'skillForm',
+    title: '新建 Skill',
+    description: '创建 AI Skill',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['create'],
+    keywords: ['新建技能'],
+  },
+  {
+    path: '/ai_management/skills/:id/edit',
+    mode: 'edit',
+    pageKey: 'skillForm',
+    title: '编辑 Skill',
+    description: '编辑 AI Skill',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['edit'],
+    keywords: ['编辑技能'],
+    params: { id: { type: 'string', description: 'AI Skill id' } },
+  },
+  {
+    path: '/ai_management/skills/:id',
+    mode: 'view',
+    pageKey: 'skillForm',
+    title: 'Skill 详情',
+    description: '查看 AI Skill 详情',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['view'],
+    keywords: ['技能详情'],
+    params: { id: { type: 'string', description: 'AI Skill id' } },
+  },
+  {
+    path: '/ai_management/request-logs',
+    mode: 'list',
+    pageKey: 'requestLogs',
+    title: '请求日志',
+    description: 'AI 请求日志查询',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['list'],
+    keywords: ['请求日志', 'request-logs'],
+  },
+  {
+    path: '/ai_management/chat-demo',
+    mode: 'test',
+    pageKey: 'chatDemo',
+    title: 'AI Chat Demo',
+    description: 'AI 聊天演示页',
+    domain: 'ai_management',
+    scopeGroup: 'ai_management',
+    actions: ['test'],
+    keywords: ['chat demo', '聊天演示'],
+  },
+];
+
+/* ========================================================================== */
+/* 映射给 AIBase                                                               */
+/* ========================================================================== */
+
+/**
+ * 语义清单 → ai-base SemanticRoute[]：
+ * - 过滤 redirect（跳转是派生层行为，不给 AI）；
+ * - 不传 pageKey / mode / scopeGroup（AI 不需要实现细节）；
+ * - `hiddenFromAI → hidden`（不进 prompt，仍可进白名单）。
+ */
+export function toAIChatSemanticRoutes(
+  entries: AppSemanticEntry[] = EADAF_SEMANTIC_ROUTES,
+): SemanticRoute[] {
+  return entries
+    .filter((entry): entry is AppSemanticRoute => !isSemanticRedirect(entry))
+    .map((route) => ({
+      path: route.path,
+      title: route.title,
+      description: route.description,
+      domain: route.domain,
+      ...(route.actions?.length ? { actions: route.actions } : {}),
+      ...(route.keywords?.length ? { keywords: route.keywords } : {}),
+      ...(route.params ? { params: route.params } : {}),
+      ...(route.hiddenFromAI ? { hidden: true } : {}),
+    }));
+}

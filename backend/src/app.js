@@ -11,6 +11,8 @@ const { koaSwagger } = require('koa2-swagger-ui');
 const swaggerJSDoc = require('swagger-jsdoc');
 const healthRoutes = require('./routes/healthRoutes');
 const collectionIngestRoutes = require('./routes/collectionIngestRoutes');
+const { createTusKoaMiddleware } = require('./services/storage/tusKoaMiddleware');
+const { TUS_EXPOSE_HEADERS } = require('./services/storage/tusServer');
 
 // Swagger 配置
 const swaggerDefinition = {
@@ -100,11 +102,18 @@ app.use(async (ctx, next) => {
 });
 
 // 中间件配置
-app.use(cors());
+app.use(cors({
+  credentials: true,
+  allowMethods: ['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
+  exposeHeaders: TUS_EXPOSE_HEADERS,
+}));
 
 // 采集 API 须在 bodyParser 之前注册，以保留原始 body
 app.use(collectionIngestRoutes.routes());
 app.use(collectionIngestRoutes.allowedMethods({ throw: true }));
+
+// tus 须在 bodyParser 之前，PATCH 体直接流式写盘
+app.use(createTusKoaMiddleware());
 
 app.use(bodyParser());
 
@@ -193,8 +202,16 @@ if (process.env.NODE_ENV !== 'test') {
 
       const { connectRedis } = require('./utils/redisClient');
       const { startMetricScheduler } = require('./services/metrics/metricScheduler');
+      const { startAutoBackupScheduler } = require('./services/system/autoBackupScheduler');
+      const { startTusCleanupScheduler } = require('./services/storage/tusCleanupScheduler');
+      const { recoverPendingFinalizes } = require('./services/storage/finalizeTusUpload');
       const { attachApiServiceWebSocket } = require('./services/apiService/apiServiceWebSocket');
       attachApiServiceWebSocket(server);
+      startAutoBackupScheduler();
+      startTusCleanupScheduler();
+      recoverPendingFinalizes().catch((error) => {
+        logger.warn('tus finalize 启动回收推迟', { message: error.message });
+      });
       connectRedis()
         .then(() => startMetricScheduler())
         .catch((error) => {

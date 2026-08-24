@@ -3,6 +3,8 @@ const materializationService = require('../businessData/materializationService')
 const materializedTableBrowseService = require('../businessData/materializedTableBrowseService');
 const { executeToolWithEnvelope } = require('./executeToolWithEnvelope');
 const { executeHttpRequest } = require('./httpRequestToolService');
+const { validateToolArgs } = require('../../utils/validateToolArgs');
+const { normalizeToolResult } = require('../../utils/normalizeToolResult');
 
 const BUILTIN_HANDLERS = {
   /** 公共 HTTP 请求（类 curl）；context.userToken 用于受信主机鉴权 */
@@ -81,7 +83,36 @@ const BUILTIN_HANDLERS = {
     connectionId: args.connectionId || args.connection_id,
     rows: args.rows || [],
     rowCount: args.rowCount || args.row_count
-  })
+  }),
+  /**
+   * MS3：服务端 JS 编排占位。完整 tools 桥接后续接 toolInvoke；
+   * 当前仅做受限表达式计算（无 tools），Python 返回明确不支持说明。
+   */
+  run_code: async (args) => {
+    const language = String(args.language || 'javascript').toLowerCase();
+    const source = String(args.source || '').trim();
+    if (!source) {
+      throw Object.assign(new Error('source 不能为空'), { status: 400 });
+    }
+    if (language === 'python') {
+      return {
+        ok: false,
+        message: 'Python 运行时尚未启用；请使用 javascript 或直接调用业务 Tool',
+      };
+    }
+    if (language !== 'javascript' && language !== 'js') {
+      throw Object.assign(new Error(`不支持的 language: ${language}`), { status: 400 });
+    }
+    // 安全默认：服务端暂不执行任意用户脚本（防 RCE）。仅回显校验通过。
+    return {
+      ok: true,
+      language: 'javascript',
+      accepted: true,
+      message:
+        '服务端 run_code 已登记；请在浏览器侧使用 harness run_code（client Tool）编排已注册 client Tool。',
+      sourceChars: source.length,
+    };
+  },
 };
 
 const EXECUTION_TYPES = ['client', 'server_http', 'server_builtin'];
@@ -133,6 +164,29 @@ async function invokeTool(tool, args = {}, logContext = {}) {
     userId: logContext.userId || null,
     traceId: logContext.traceId || null,
   };
+
+  const parametersSchema = tool.parameters_schema || tool.parametersSchema;
+  const validation = validateToolArgs(args && typeof args === 'object' ? args : {}, parametersSchema);
+  if (!validation.valid) {
+    const message = `参数校验失败: ${validation.message}`;
+    return normalizeToolResult({
+      tool: functionName,
+      rawResult: {
+        ok: false,
+        kind: 'business_error',
+        error: {
+          code: 'INVALID_ARGS',
+          message,
+          hint: '请按 error.message 修正参数后重试',
+          category: 'invalid_args',
+          retryable: true,
+        },
+        agentHint: '请按 error.message 修正参数后重试',
+        meta: { tool: functionName },
+      },
+      requiresVerification,
+    });
+  }
 
   if (tool.execution_type === 'client') {
     return executeToolWithEnvelope({

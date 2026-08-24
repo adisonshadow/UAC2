@@ -297,14 +297,34 @@ async function executeHttpRequest(args = {}, context = {}) {
     });
 
     return {
-      status: finalResponse.status,
-      ok: finalResponse.ok,
-      contentType,
-      headers: responseHeaders,
-      body: parsed.body,
-      truncated: parsed.truncated,
-      url: finalResponse.url || url.toString(),
-      trusted,
+      ok: true,
+      kind: 'success',
+      data: {
+        status: finalResponse.status,
+        ok: finalResponse.ok,
+        method,
+        contentType,
+        headers: responseHeaders,
+        body: parsed.body,
+        truncated: parsed.truncated,
+        url: finalResponse.url || url.toString(),
+        path: url.pathname + url.search,
+        trusted,
+      },
+      display: {
+        kind: 'json',
+        title: `查看响应 · ${finalResponse.status}`,
+        payload: {
+          status: finalResponse.status,
+          ok: finalResponse.ok,
+          method,
+          path: url.pathname + url.search,
+          body: parsed.body,
+        },
+        collapsed: true,
+        visibility: 'transient',
+      },
+      meta: { tool: 'http_request' },
     };
   } catch (error) {
     if (error.name === 'AbortError') {

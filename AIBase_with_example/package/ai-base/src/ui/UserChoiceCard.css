@@ -1,9 +1,22 @@
 .eadaf-user-choice-card {
+  --aibase-choice-border: #f0f0f0;
+  --aibase-choice-bg: #fafafa;
+  --aibase-choice-text: rgba(0, 0, 0, 0.88);
+  --aibase-choice-text-tertiary: rgba(0, 0, 0, 0.45);
+
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--aibase-choice-border);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--aibase-choice-bg);
+}
+
+.aibase-chat-panel[data-aibase-theme='dark'] .eadaf-user-choice-card,
+[data-aibase-theme='dark'] .eadaf-user-choice-card {
+  --aibase-choice-border: #303030;
+  --aibase-choice-bg: rgba(255, 255, 255, 0.04);
+  --aibase-choice-text: rgba(255, 255, 255, 0.85);
+  --aibase-choice-text-tertiary: rgba(255, 255, 255, 0.45);
 }
 
 .eadaf-user-choice-card.is-submitted {
@@ -13,7 +26,7 @@
 .eadaf-user-choice-question {
   display: block;
   margin-bottom: 10px;
-  color: rgba(0, 0, 0, 0.88);
+  color: var(--aibase-choice-text);
 }
 
 .eadaf-user-choice-options {
@@ -28,7 +41,7 @@
 .eadaf-user-choice-desc {
   display: block;
   margin-top: 2px;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--aibase-choice-text-tertiary);
   font-size: 12px;
   font-weight: 400;
   white-space: normal;

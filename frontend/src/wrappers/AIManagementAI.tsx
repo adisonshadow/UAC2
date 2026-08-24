@@ -87,7 +87,11 @@ export default function AIManagementAI() {
   const pageScope = useMemo(() => resolvePageScope(location.pathname), [location.pathname]);
 
   return (
-    <AIChatPageScope scopeSlug="ai-management" {...pageScope}>
+    <AIChatPageScope
+      scopeSlug="ai-management"
+      semanticRouteDomains={['ai_management']}
+      {...pageScope}
+    >
       <Outlet />
     </AIChatPageScope>
   );

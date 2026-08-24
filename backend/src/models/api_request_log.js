@@ -27,6 +27,18 @@ const ApiRequestLog = sequelize.define('ApiRequestLog', {
     type: DataTypes.STRING(50),
     allowNull: true
   },
+  turn_id: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
+  tool_function_name: {
+    type: DataTypes.STRING(128),
+    allowNull: true
+  },
+  tool_execution_type: {
+    type: DataTypes.STRING(32),
+    allowNull: true
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW

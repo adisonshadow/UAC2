@@ -1,6 +1,4 @@
-# EADAF
-
-**EADAF** 企业智能数据应用底座（Enterprise AI-Driven Data Application Foundation）是一套面向企业应用的数据智能应用平台，由统一身份权限、三方应用接入、业务数据建模、API服务与 AI 能力编排组成。
+企业智能数据应用底座（Enterprise AI-Driven Data Application Foundation）是一套面向企业应用的数据智能应用平台，由统一身份权限、三方应用接入、业务数据建模、API服务与 AI 能力编排组成。
 
 本仓库为 **pnpm monorepo**，主要包含：
 

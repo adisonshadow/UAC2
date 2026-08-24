@@ -5,7 +5,7 @@ import { AIChatProvider } from '@eadaf/ai-base';
 import '@eadaf/ai-base/style.css';
 import { BrowserRouter } from 'react-router-dom';
 import { NuqsAdapter } from 'nuqs/adapters/react-router/v7';
-import AIChatClientToolsRegistrar from '@/components/AIChatClientToolsRegistrar';
+import { eadafHostToolsPlugin } from '@/ai/eadafHostToolsPlugin';
 import { ChatSessionGroupProvider } from '@/ai/ChatSessionGroupProvider';
 import { createAIChatConfig } from '@/config/aiChat';
 import { InitialStateProvider } from '@/providers/InitialStateProvider';
@@ -14,7 +14,6 @@ import { setupAIMutationRouter } from '@/ai/toolMutation';
 import { AntdAppApiBridge } from '@/utils/antdAppApis';
 import { setupAiToolDevLogger } from '@/utils/aiToolDevLogger';
 import { setupAiToolInvokeFileLogger } from '@/utils/toolInvokeFileLogger';
-import { getAuth } from '@/utils/auth';
 
 setupAiToolDevLogger();
 setupAiToolInvokeFileLogger();
@@ -36,7 +35,8 @@ console.error = (...args) => {
   originalError.call(console, ...args);
 };
 
-const aiChatConfig = createAIChatConfig(() => getAuth().token || null);
+/** AI getToken 高频调用，勿走带 console.log 的 getAuth */
+const aiChatConfig = createAIChatConfig(() => localStorage.getItem('token'));
 
 export default function App() {
   return (
@@ -55,8 +55,7 @@ export default function App() {
             <BrowserRouter>
               <NuqsAdapter>
                 <ChatSessionGroupProvider>
-                <AIChatProvider config={aiChatConfig}>
-                  <AIChatClientToolsRegistrar />
+                <AIChatProvider config={aiChatConfig} plugins={[eadafHostToolsPlugin]}>
                   <Suspense
                     fallback={
                       <div

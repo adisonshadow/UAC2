@@ -21,10 +21,11 @@ import {
   ProFormSelect,
   ProFormSwitch,
   ProFormDependency,
+  ProFormRadio,
 } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useSetState } from "ahooks";
-import { Button, Modal, Space, Form, Typography, Tabs } from 'antd';
+import { Button, Modal, Space, Form, Typography, Tabs, Checkbox } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import { LinkOutlined } from '@ant-design/icons';
 import React, { useRef, useState, useMemo, useEffect } from "react";
@@ -32,6 +33,7 @@ import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildApplicationPrompts } from '@/ai/pageChatPrompts';
 import { useNavigate } from 'react-router-dom';
 import { tableColumns, SYSTEM_APPLICATION_CODE } from "./Schemas";
+import SsoLoginAsideUpload from '@/components/SsoLoginAsideUpload';
 import { BizdataScopePickerModal } from '@/components/BizdataScopePicker';
 import AppSecretUsageModal from './AppSecretUsageModal';
 import {
@@ -95,6 +97,19 @@ function buildOutboundWebhookScopePayload(
     ...(payload.serviceCodes?.length ? { webhookCodes: payload.serviceCodes } : { webhookCodes: [] }),
   };
 }
+
+const SsoAsideAssetField: React.FC = () => {
+  const kind = Form.useWatch(['sso_config', 'login_page', 'aside_kind']) === 'image' ? 'image' : 'lottie';
+  return (
+    <ProForm.Item
+      name={['sso_config', 'login_page', kind === 'image' ? 'aside_image' : 'aside_lottie']}
+      label={kind === 'image' ? '侧边栏图片' : '侧边栏 Lottie 动画'}
+      colProps={{ span: 24 }}
+    >
+      <SsoLoginAsideUpload kind={kind} />
+    </ProForm.Item>
+  );
+};
 
 const Page: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
@@ -279,6 +294,12 @@ const Page: React.FC = () => {
             base_url: window.location.origin,
             client_id: record.code,
             issuer: window.location.origin,
+            login_page: {
+              theme: 'light',
+              aside_kind: 'lottie',
+              large_text: false,
+              ...record.sso_config?.login_page,
+            },
           },
         });
 
@@ -661,6 +682,49 @@ const Page: React.FC = () => {
                     initialValue="POST_REDIRECT"
                     tooltip="POST跳转模式：JWT信息在请求体中传递；302重定向模式：JWT信息在URL参数中传递"
                   />
+
+                  <ProForm.Item colProps={{ span: 24 }} style={{ marginBottom: 0 }}>
+                    <Typography.Text strong>登录页样式</Typography.Text>
+                  </ProForm.Item>
+                  <ProFormText
+                    name={['sso_config', 'login_page', 'subtitle']}
+                    label="登录页副标题"
+                    placeholder="选填，不填则不显示"
+                    tooltip="显示在应用名称下方。不填写则不展示副标题，不会使用应用描述。"
+                    colProps={{ span: 24 }}
+                    fieldProps={{ maxLength: 80, showCount: true }}
+                  />
+                  <ProFormRadio.Group
+                    name={['sso_config', 'login_page', 'theme']}
+                    label="页面主题"
+                    radioType="button"
+                    options={[
+                      { label: '浅色', value: 'light' },
+                      { label: '深色', value: 'dark' },
+                      { label: '跟随系统', value: 'system' },
+                    ]}
+                    tooltip="SSO 登录页的配色：浅色、深色，或跟随设备系统外观"
+                    colProps={{ span: 24 }}
+                  />
+                  <ProFormRadio.Group
+                    name={['sso_config', 'login_page', 'aside_kind']}
+                    label="左侧侧边栏素材"
+                    radioType="button"
+                    options={[
+                      { label: 'Lottie 动画', value: 'lottie' },
+                      { label: '图片（含 SVG）', value: 'image' },
+                    ]}
+                    tooltip="选择上传 Lottie JSON 动画，或静态图片（支持 SVG）"
+                    colProps={{ span: 24 }}
+                  />
+                  <SsoAsideAssetField />
+                  <ProForm.Item
+                    name={['sso_config', 'login_page', 'large_text']}
+                    valuePropName="checked"
+                    colProps={{ span: 24 }}
+                  >
+                    <Checkbox>使用更大的文字（适合 Pad 显示，文字放大一号）</Checkbox>
+                  </ProForm.Item>
 
                   {/* 额外参数 */}
                   <ProFormTextArea

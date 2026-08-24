@@ -147,6 +147,11 @@ const storage = {
       process.env.SYSTEM_STORAGE_BUCKET_DESCRIPTION
       || 'EADAF业务系统自用资源（用户头像、应用 Logo 等），公开访问，不可编辑或删除',
   },
+  tus: {
+    maxSize: parseInt(process.env.STORAGE_TUS_MAX_SIZE, 5 * 1024 * 1024 * 1024),
+    expirationMs: parseInt(process.env.STORAGE_TUS_EXPIRATION_MS, 24 * 60 * 60 * 1000),
+    dirName: process.env.STORAGE_TUS_DIR_NAME || '.tus',
+  },
 };
 
 module.exports = {

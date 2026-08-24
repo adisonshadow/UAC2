@@ -137,62 +137,62 @@ export const saveAuth = (token: string, refreshToken?: string) => {
   console.log('认证信息保存完成');
 };
 
-// 获取认证信息
+// 获取认证信息（高频路径：勿打日志；调试设 localStorage DEBUG_AUTH=1）
 export const getAuth = () => {
   const token = localStorage.getItem('token');
   const refreshToken = localStorage.getItem('refresh_token');
-  
-  console.log('获取认证信息:', {
-    hasToken: !!token,
-    tokenLength: token?.length,
-    hasRefreshToken: !!refreshToken,
-    refreshTokenLength: refreshToken?.length,
-  });
-  
+
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_AUTH') === '1') {
+    console.log('获取认证信息:', {
+      hasToken: !!token,
+      tokenLength: token?.length,
+      hasRefreshToken: !!refreshToken,
+      refreshTokenLength: refreshToken?.length,
+    });
+  }
+
   return { token, refreshToken };
 };
 
 // 路由守卫
 export const checkAuth = async (setInitialState?: (callback: (state: any) => any) => void) => {
-  console.log('开始路由守卫检查...');
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_AUTH') === '1') {
+    console.log('开始路由守卫检查...');
+  }
   const { token } = getAuth();
   const currentPath = location.pathname + location.search;
   const isCurrentAuthPage = isAuthPage(location.pathname);
   const hasCurrentAppParam = hasAppParam();
 
-  console.log('当前页面状态:', {
-    path: currentPath,
-    isAuthPage: isCurrentAuthPage,
-    hasAppParam: hasCurrentAppParam,
-    hasToken: !!token,
-    tokenLength: token?.length,
-  });
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_AUTH') === '1') {
+    console.log('当前页面状态:', {
+      path: currentPath,
+      isAuthPage: isCurrentAuthPage,
+      hasAppParam: hasCurrentAppParam,
+      hasToken: !!token,
+      tokenLength: token?.length,
+    });
+  }
 
   // 如果是认证页面且有 app 参数，允许访问
   if (isCurrentAuthPage && hasCurrentAppParam) {
-    console.log('认证页面且有 app 参数，允许访问');
     return true;
   }
 
   // 如果没有 token 且不是认证页面，跳转到登录页
   if (!token && !isCurrentAuthPage) {
-    console.log('未登录且不是认证页面，准备跳转到登录页');
     const redirectUrl = getRedirectUrl(currentPath);
-    console.log('重定向 URL:', redirectUrl);
     history.push(redirectUrl);
     return false;
   }
 
   // 如果有 token，验证其有效性
   if (token && !isCurrentAuthPage) {
-    console.log('有 token，开始验证有效性...');
     try {
       const response = await getAuthCheck({}, { skipErrorHandler: true });
       const currentUser = parseAuthUser(response);
-      console.log('Token 验证响应:', { hasUser: !!currentUser });
 
       if (currentUser) {
-        console.log('Token 有效，更新用户信息');
         if (setInitialState) {
           setInitialState((s) => ({
             ...s,
@@ -213,7 +213,6 @@ export const checkAuth = async (setInitialState?: (callback: (state: any) => any
         }));
       }
       const redirectUrl = getRedirectUrl(currentPath);
-      console.log('Token 无效，准备跳转到登录页:', redirectUrl);
       history.push(redirectUrl);
       return false;
     }
@@ -221,12 +220,10 @@ export const checkAuth = async (setInitialState?: (callback: (state: any) => any
 
   // 如果已登录且在认证页面，跳转到首页
   if (token && isCurrentAuthPage) {
-    console.log('已登录且在认证页面，准备跳转到首页');
     history.push('/');
     return false;
   }
 
-  console.log('路由守卫检查完成，允许访问');
   return true;
 };
 

@@ -106,6 +106,7 @@ export function serializeToolResultForContext(
         error: result.error,
         meta: result.meta,
         data,
+        ...(result.agentHint ? { agentHint: result.agentHint } : {}),
       },
       budgetChars,
     );
@@ -121,6 +122,7 @@ export function serializeToolResultForContext(
         error: result.error,
         meta: result.meta,
         data: JSON.parse(dataCut),
+        ...(result.agentHint ? { agentHint: result.agentHint } : {}),
       });
       if (wrapped.length <= budgetChars) return wrapped;
     }
@@ -133,6 +135,7 @@ export function serializeToolResultForContext(
       meta: result.meta,
       data: '[truncated]',
       hint: `结果超预算（${serialized.length}>${budgetChars}），已省略 data；请缩小查询或分页`,
+      ...(result.agentHint ? { agentHint: result.agentHint } : {}),
     });
     if (compact.length <= budgetChars) return compact;
   } else {

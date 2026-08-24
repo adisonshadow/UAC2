@@ -1,9 +1,20 @@
 .eadaf-next-step-deck {
+  --aibase-next-step-title: #858585;
+  --aibase-next-step-muted: rgba(0, 0, 0, 0.45);
+  --aibase-next-step-icon: #999999;
+
   margin-top: 12px;
 }
 
+.aibase-chat-panel[data-aibase-theme='dark'] .eadaf-next-step-deck,
+[data-aibase-theme='dark'] .eadaf-next-step-deck {
+  --aibase-next-step-title: rgba(255, 255, 255, 0.45);
+  --aibase-next-step-muted: rgba(255, 255, 255, 0.45);
+  --aibase-next-step-icon: rgba(255, 255, 255, 0.45);
+}
+
 .eadaf-next-step-title {
-  color: #858585;
+  color: var(--aibase-next-step-title);
   font-size: 12px;
   margin-bottom: 4px;
 }
@@ -19,8 +30,13 @@
   max-width: 100%;
 }
 
+.eadaf-next-step-btn-icon {
+  margin-left: 10px;
+  color: var(--aibase-next-step-icon);
+}
+
 .eadaf-next-step-streaming {
   margin-top: 8px;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--aibase-next-step-muted);
   font-size: 12px;
 }

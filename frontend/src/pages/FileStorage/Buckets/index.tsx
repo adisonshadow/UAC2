@@ -146,8 +146,9 @@ const BucketsPage: React.FC = () => {
         actionRef={actionRef}
         rowKey="bucketId"
         scroll={{ x: 'max-content' }}
+        headerTitle="Bucket 管理"
         search={search}
-        {...DEFAULT_PRO_TABLE_OPTIONS}
+        options={DEFAULT_PRO_TABLE_OPTIONS}
         toolBarRender={() => [
           <Button key="create" type="primary" className="btn-gradient-primary" icon={<PlusOutlined />} onClick={openCreate}>
             新建 Bucket

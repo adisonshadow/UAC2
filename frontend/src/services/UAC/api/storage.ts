@@ -65,3 +65,31 @@ export function getStoragePreviewUrl(objectId: string) {
 export function getStorageDownloadUrl(objectId: string) {
   return `${BASE}/objects/${objectId}/download`;
 }
+
+export async function postStorageObjectDedupCheck(body: { bucketCode: string; md5: string }) {
+  return request<{
+    code: number;
+    message: string;
+    data: { duplicate: boolean; object?: API.StorageObject | null };
+  }>(`${BASE}/objects/dedup-check`, {
+    method: 'POST',
+    data: body,
+  });
+}
+
+export async function getStorageTusResult(uploadId: string) {
+  return request<{
+    code: number;
+    message: string;
+    data: {
+      status: string;
+      uploadId?: string;
+      offset?: number;
+      uploadLength?: number;
+      object?: API.StorageObject | null;
+    };
+  }>(`${BASE}/tus/${encodeURIComponent(uploadId)}/result`, {
+    method: 'GET',
+    skipErrorHandler: true,
+  });
+}

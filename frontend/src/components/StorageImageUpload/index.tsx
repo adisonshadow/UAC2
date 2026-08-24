@@ -125,7 +125,13 @@ const StorageImageUpload: React.FC<StorageImageUploadProps> = ({
   };
 
   const uploadNode = (
-    <ImgCrop rotationSlider aspect={aspect} quality={0.9} beforeCrop={(file) => !isSvgFile(file)}>
+    <ImgCrop
+      rotationSlider
+      aspect={aspect}
+      quality={0.9}
+      fillColor="transparent"
+      beforeCrop={(file) => !isSvgFile(file)}
+    >
       <Upload
         listType="picture-card"
         fileList={fileList}

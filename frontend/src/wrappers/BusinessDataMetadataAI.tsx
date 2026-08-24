@@ -12,6 +12,7 @@ export default function BusinessDataMetadataAI() {
       fallbackSkillSlugs={
         isStandards ? ['bizdata-data-standards'] : ['bizdata-metadata-catalog']
       }
+      semanticRouteDomains={['bizdata_metadata']}
       headerCaption={isStandards ? '数据标准助手' : '逻辑元数据助手'}
       systemPromptPrefix={
         isStandards

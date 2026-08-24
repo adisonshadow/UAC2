@@ -93,6 +93,41 @@ const router = new Router();
  *           format: uri
  *           description: 前端应用URL
  *           example: "https://your-app.com"
+ *         login_page:
+ *           type: object
+ *           description: SSO 登录页样式（启用 SSO 后可配置）
+ *           properties:
+ *             theme:
+ *               type: string
+ *               enum: [light, dark, system]
+ *               default: light
+ *               description: 登录页主题。light 浅色、dark 深色、system 跟随系统
+ *               example: light
+ *             aside_kind:
+ *               type: string
+ *               enum: [lottie, image]
+ *               default: lottie
+ *               description: 左侧侧边栏素材类型。lottie 为 Lottie JSON 动画，image 为图片（含 SVG）
+ *               example: lottie
+ *             aside_lottie:
+ *               type: string
+ *               nullable: true
+ *               description: 侧边栏 Lottie 文件（存储对象 ID 或 URL）
+ *             aside_image:
+ *               type: string
+ *               nullable: true
+ *               description: 侧边栏图片（存储对象 ID 或 URL，支持 SVG）
+ *             large_text:
+ *               type: boolean
+ *               default: false
+ *               description: 使用更大的文字，适合 Pad 显示
+ *               example: false
+ *             subtitle:
+ *               type: string
+ *               nullable: true
+ *               maxLength: 80
+ *               description: 登录页副标题，显示在应用名称下方；不填则不显示，不会使用应用描述
+ *               example: "请使用统一身份认证登录"
  *         additional_params:
  *           type: object
  *           description: 其他SSO协议特定的参数

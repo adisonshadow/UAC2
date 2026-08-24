@@ -1,7 +1,7 @@
-import { DownloadOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, EyeOutlined, PauseCircleOutlined, PlayCircleOutlined, UploadOutlined } from '@ant-design/icons';
 import { ActionType, PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Image, Modal, Space, Upload, Tooltip } from 'antd';
+import { Button, Image, Modal, Progress, Space, Upload, Tooltip, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
@@ -13,13 +13,13 @@ import {
   getStorageDownloadUrl,
   getStorageObjects,
   getStoragePreviewUrl,
-  postStorageObjectUpload,
 } from '@/services/UAC/api/storage';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
 import { TABLE_ACTION_COLUMN_BASE, TableActionButton, TableActions } from '@/components/TableActions';
-import { isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
+import { parseApiListResponse } from '@/utils/apiResponse';
 import { request } from '@/utils/request';
+import { startStorageTusUpload, type TusUploadHandle } from '@/utils/tusStorageUpload';
 
 type ObjectRecord = API.StorageObject;
 
@@ -27,7 +27,8 @@ function formatSize(size?: number) {
   if (!size) return '-';
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 async function fetchStorageBlob(objectId: string, preview: boolean): Promise<Blob> {
@@ -65,6 +66,10 @@ const BrowserPage: React.FC = () => {
   const [previewName, setPreviewName] = useState<string>();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploadingBucketCode, setUploadingBucketCode] = useState<string>();
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [uploadFilename, setUploadFilename] = useState<string>();
+  const [uploadPaused, setUploadPaused] = useState(false);
+  const uploadHandleRef = useRef<TusUploadHandle | null>(null);
   const { references } = useChatReference();
   const chatPrompts = useMemo(() => buildStorageBrowserPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
@@ -185,10 +190,50 @@ const BrowserPage: React.FC = () => {
         title="上传文件"
         open={uploadOpen}
         footer={null}
-        onCancel={() => setUploadOpen(false)}
+        onCancel={() => {
+          if (uploadingBucketCode) {
+            message.warning('正在上传，请等待完成或暂停后再关闭');
+            return;
+          }
+          setUploadOpen(false);
+        }}
         destroyOnHidden
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Typography.Text type="secondary">
+            支持断点续传；超过 100MB 必须走此通道。刷新页面后可继续未完成的同一文件。
+          </Typography.Text>
+          {uploadingBucketCode ? (
+            <div>
+              <Typography.Text ellipsis>{uploadFilename} 上传中</Typography.Text>
+              <Progress percent={uploadPercent} status={uploadPaused ? 'exception' : 'active'} />
+              <Space>
+                {uploadPaused ? (
+                  <Button
+                    size="small"
+                    icon={<PlayCircleOutlined />}
+                    onClick={() => {
+                      uploadHandleRef.current?.start();
+                      setUploadPaused(false);
+                    }}
+                  >
+                    继续
+                  </Button>
+                ) : (
+                  <Button
+                    size="small"
+                    icon={<PauseCircleOutlined />}
+                    onClick={() => {
+                      uploadHandleRef.current?.pause();
+                      setUploadPaused(true);
+                    }}
+                  >
+                    暂停
+                  </Button>
+                )}
+              </Space>
+            </div>
+          ) : null}
           <ProTable
             search={false}
             options={false}
@@ -218,27 +263,33 @@ const BrowserPage: React.FC = () => {
                             onError?.(new Error('missing bucketCode'));
                             return;
                           }
+                          const raw = file as File;
                           setUploadingBucketCode(row.code);
+                          setUploadFilename(raw.name);
+                          setUploadPercent(0);
+                          setUploadPaused(false);
                           try {
-                            const fd = new FormData();
-                            fd.append('file', file as File);
-                            fd.append('bucketCode', row.code);
-                            const res = await postStorageObjectUpload(fd);
-                            if (isApiSuccess(res)) {
-                              message.success('上传成功');
-                              setUploadOpen(false);
-                              actionRef.current?.reload();
-                              onSuccess?.(res);
-                            } else {
-                              const err = new Error('upload failed');
-                              message.error('上传失败');
-                              onError?.(err);
-                            }
+                            const { handle, done } = startStorageTusUpload({
+                              file: raw,
+                              bucketCode: row.code,
+                              onProgress: (progress) => setUploadPercent(progress.percent),
+                            });
+                            uploadHandleRef.current = handle;
+                            handle.start();
+                            const object = await done;
+                            message.success(object.name ? `上传成功：${object.name}` : '上传成功');
+                            setUploadOpen(false);
+                            actionRef.current?.reload();
+                            onSuccess?.(object);
                           } catch (e) {
                             message.error(e instanceof Error ? e.message : '上传失败');
                             onError?.(e as Error);
                           } finally {
+                            uploadHandleRef.current = null;
                             setUploadingBucketCode(undefined);
+                            setUploadPercent(0);
+                            setUploadFilename(undefined);
+                            setUploadPaused(false);
                           }
                         }}
                       >

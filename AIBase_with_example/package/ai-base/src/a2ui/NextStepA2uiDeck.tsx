@@ -43,7 +43,7 @@ const ActionButton = ({
     }}
   >
     {text}
-    <ArrowRightOutlined style={{ marginLeft: 10, color: '#999' }} />
+    <ArrowRightOutlined className="eadaf-next-step-btn-icon" />
   </Button>
 );
 

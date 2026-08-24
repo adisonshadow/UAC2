@@ -188,7 +188,12 @@ const MetadataEditor: React.FC<MetadataEditorProps> = ({
     );
   }
 
-  return formContent;
+  return (
+    <Collapse
+      defaultActiveKey={collapsed ? undefined : ['metadata']}
+      items={[{ key: 'metadata', label: '元数据', children: formContent }]}
+    />
+  );
 };
 
 export default MetadataEditor;

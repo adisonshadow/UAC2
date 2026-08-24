@@ -1,22 +1,58 @@
 import { readAllAISurfaces } from './aiSurfaceRegistry';
-import { registerFunctionCalls, unregisterFunctionCalls } from './functionRegistry';
+import {
+  getFunctionCallDef,
+  registerFunctionCalls,
+  unregisterFunctionCalls,
+} from './functionRegistry';
 import { getCurrent, getPlan, setPlan } from './agentPlanState';
-import type { PlanItem } from '../types';
+import { getToolContract } from './toolContractRegistry';
+import { navigateToPage } from '../navigation/navigationChannel';
+import { loadSkillBodyBySlug } from './skillBodyChannel';
+import { runJavaScriptCode } from '../runtime/runJavaScript';
+import { runSubagentFanout, runSubagentSequence } from '../runtime/runSubagent';
+import { resolveRunnableClientToolNames } from '../runtime/resolveRunnableClientTools';
+import {
+  getActiveConversationKey,
+  getActiveTurnId,
+} from '../observability/turnTrace';
+import type { PlanItem, NavigationRequest } from '../types';
 import type { ToolResponse } from '../types/toolResponse';
+import { formatPlanListDisplayName } from '../utils/toolDisplayName';
+import { validateToolArgs } from '../utils/validateToolArgs';
 import {
   ASK_USER_TOOL,
   type AskUserArgs,
   type UserChoiceOption,
   type UserChoiceRequest,
 } from '../chat/userChoice';
+import {
+  buildTaskCompleteDeliveryData,
+  type TaskCompleteDeliveryData,
+} from '../chat/emitTaskCompleteDelivery';
 
 const BUILTIN_TOOL_NAME = 'aibase_read_surfaces';
 
 /** 结构化终止机制注入的 harness Tool 名 */
 export const TASK_COMPLETE_TOOL = 'task_complete';
 export const UPDATE_PLAN_TOOL = 'update_plan';
+/** AI 决策跳转 harness Tool 名（语义路由清单非空时注入） */
+export const NAVIGATE_TO_PAGE_TOOL = 'navigate_to_page';
+/** 按需加载 Skill 正文 */
+export const SKILL_TOOL = 'skill';
+/** 编排已注册 Tool 的脚本执行（JS；Python 走后端） */
+export const RUN_CODE_TOOL = 'run_code';
+/** 批量 fan-out / 顺序委托（隔离 Turn 轨迹） */
+export const RUN_SUBAGENT_TOOL = 'run_subagent';
 export { ASK_USER_TOOL };
-export const HARNESS_TOOL_NAMES = new Set([TASK_COMPLETE_TOOL, UPDATE_PLAN_TOOL, ASK_USER_TOOL]);
+export const HARNESS_TOOL_NAMES = new Set([
+  TASK_COMPLETE_TOOL,
+  UPDATE_PLAN_TOOL,
+  ASK_USER_TOOL,
+  NAVIGATE_TO_PAGE_TOOL,
+  SKILL_TOOL,
+  RUN_CODE_TOOL,
+  RUN_SUBAGENT_TOOL,
+]);
 
 /* -------------------------------------------------------------------------- */
 /* update_plan —— 结构化任务清单维护                                            */
@@ -63,16 +99,17 @@ function mergePlan(current: PlanItem[], incoming: PlanItem[]): PlanItem[] {
 function handleUpdatePlan(args: {
   plan?: PlanItem[];
   merge?: boolean;
-}): ToolResponse<{ plan: PlanItem[] }> {
+}): ToolResponse<{ plan: PlanItem[]; mode: 'create' | 'update' }> {
   const incoming = Array.isArray(args.plan) ? args.plan : [];
   const error = validatePlan(incoming);
   if (error) {
+    const existing = getPlan();
     return {
       ok: true,
       verified: false,
       kind: 'business_error',
       error: { code: 'INVALID_PLAN', message: error },
-      data: { plan: getPlan() },
+      data: { plan: existing, mode: existing.length > 0 ? 'update' : 'create' },
       meta: { tool: UPDATE_PLAN_TOOL },
     };
   }
@@ -82,11 +119,27 @@ function handleUpdatePlan(args: {
   const next = merge && current.length ? mergePlan(current, incoming) : incoming;
   setPlan(next);
 
+  const isUpdate = current.length > 0;
+  const mode = isUpdate ? 'update' : 'create';
+  const items = next.map((p) => ({
+    id: p.id,
+    label: p.content,
+    status: p.status,
+  }));
+  const title = formatPlanListDisplayName(next, mode);
+
   return {
     ok: true,
     verified: true,
     kind: 'success',
-    data: { plan: next },
+    data: { plan: next, mode },
+    display: {
+      kind: 'planning',
+      payload: { items, message: title },
+      // 首次生成展开；后续更新默认折叠（标题栏由 InvocationCard 负责）
+      collapsed: isUpdate,
+      visibility: isUpdate ? 'transient' : 'sticky',
+    },
     meta: { tool: UPDATE_PLAN_TOOL },
   };
 }
@@ -177,7 +230,8 @@ function handleTaskComplete(args: {
   summary?: string;
   next_steps?: Array<{ id: string; label: string }>;
   criteriaSatisfied?: boolean;
-}): ToolResponse<{ incomplete?: string[] }> {
+}): ToolResponse<{ incomplete?: string[] } | TaskCompleteDeliveryData> {
+  const delivery = buildTaskCompleteDeliveryData(args);
   const ctx = getCurrent();
   if (!ctx) {
     // 非活跃 turn 调用（理论上不应发生）：宽松放行，避免阻塞
@@ -185,7 +239,7 @@ function handleTaskComplete(args: {
       ok: true,
       verified: true,
       kind: 'success',
-      data: {},
+      data: delivery,
       meta: { tool: TASK_COMPLETE_TOOL },
     };
   }
@@ -210,7 +264,7 @@ function handleTaskComplete(args: {
     ok: true,
     verified: true,
     kind: 'success',
-    data: {},
+    data: delivery,
     meta: { tool: TASK_COMPLETE_TOOL },
   };
 }
@@ -290,6 +344,480 @@ function handleAskUser(args: AskUserArgs): ToolResponse<UserChoiceRequest> {
     data: normalized.request,
     meta: { tool: ASK_USER_TOOL },
   };
+}
+
+/**
+ * navigate_to_page 的 OpenAI function 定义。
+ * 注意：**不进入** HARNESS_OPENAI_TOOLS —— 它在 `AIChatConfig.semanticRoutes` 非空时
+ * 由 useAIBaseChat 与 harness 并列单独注入（不依赖 Skill、不依赖结构化终止开关）。
+ */
+export const NAVIGATE_TO_PAGE_OPENAI_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: NAVIGATE_TO_PAGE_TOOL,
+    description:
+      '按语义路由清单跳转到业务页面。写操作成功且结果需在另一页呈现时必须立刻调用' +
+      '（创建后进带 id 的编辑/详情；跨步骤工作流如实体→API 每完成一个里程碑跳一次）。' +
+      'path 必须使用「可用页面」清单中的模板路径（含 :param 占位符时用 params 传参，禁止拼接 URL）。' +
+      '仅当已在目标页、或同类型批量创建尚未收尾时不要跳。禁止因为「后面还有步骤」而整段不跳。' +
+      '若返回 navigated=false（reason=disabled/invalid_target），不要重试本工具，向用户说明原因。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: '语义清单中的页面路径模板，如 /member_org/member/:id/edit',
+        },
+        params: {
+          type: 'object',
+          description: '路径参数（按清单中该路径声明的 params 提供），如 { id: "u-42" }',
+          additionalProperties: true,
+        },
+      },
+      required: ['path'],
+    },
+  },
+};
+
+/* -------------------------------------------------------------------------- */
+/* navigate_to_page —— AI 决策跳转（替代旧硬编码跳转桥）                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 跳转请求 → Tool 信封。
+ * disabled / invalid_target / no_handler 一律返回 `kind: success`（verified=true）的
+ * 信封并在 data 中携带拒绝原因：
+ * - 不触发 auto-continue 把跳转失败当作「关键 Tool 未通过验证」重试；
+ * - AI 读取 data.reason / data.message 向用户说明（如提示开启自动跳转）。
+ */
+async function handleNavigateToPage(args: NavigationRequest): Promise<ToolResponse> {
+  const result = await navigateToPage(args);
+  if (result.navigated) {
+    return {
+      ok: true,
+      verified: true,
+      kind: 'success',
+      data: { navigated: true, path: result.path },
+      meta: { tool: NAVIGATE_TO_PAGE_TOOL },
+    };
+  }
+  return {
+    ok: true,
+    verified: true,
+    kind: 'success',
+    data: {
+      navigated: false,
+      reason: result.reason,
+      message: result.message,
+    },
+    meta: { tool: NAVIGATE_TO_PAGE_TOOL },
+  };
+}
+
+async function handleSkillLoad(args: {
+  slug?: string;
+  name?: string;
+}): Promise<ToolResponse> {
+  const slug = String(args.slug || args.name || '').trim();
+  if (!slug) {
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: 'INVALID_ARGS',
+        message: '缺少 slug（或 name）',
+        category: 'invalid_args',
+        retryable: true,
+        hint: '请传入目录中的精确 skill slug',
+      },
+      agentHint: '请按 Skill 目录中的 slug 调用 skill 工具',
+      meta: { tool: SKILL_TOOL },
+    };
+  }
+  try {
+    const body = await loadSkillBodyBySlug(slug);
+    if (!body) {
+      return {
+        ok: false,
+        kind: 'business_error',
+        error: {
+          code: 'NOT_FOUND',
+          message: `未找到 Skill：${slug}`,
+          category: 'not_found',
+          retryable: false,
+        },
+        meta: { tool: SKILL_TOOL },
+      };
+    }
+    const grantedTools = (body.skill?.tools || [])
+      .map((t) => String(t.functionName || '').trim())
+      .filter(Boolean);
+    const wrapped = `<skill_content name="${body.slug}">\n# ${body.name}\n\n${body.contentMarkdown}\n</skill_content>`;
+    return {
+      ok: true,
+      kind: 'success',
+      data: {
+        slug: body.slug,
+        name: body.name,
+        description: body.description,
+        content: wrapped,
+        /** 本 Skill 授予的 Tool；后续 round 已同步扩展 schema，请直接 native 调用，勿用 run_code 探路 */
+        grantedTools,
+      },
+      agentHint:
+        grantedTools.length > 0
+          ? `Skill 已加载；已授予 Tool：${grantedTools.slice(0, 20).join(', ')}${grantedTools.length > 20 ? '…' : ''}。请直接调用这些业务 Tool，禁止用 run_code/run_subagent 探测可用 Tool。`
+          : 'Skill 已加载；请按 SOP 直接调用已可见的业务 Tool，禁止用 run_code 探路。',
+      display: {
+        kind: 'status',
+        payload: { message: body.name || body.slug },
+        visibility: 'result_hidden',
+      },
+      meta: { tool: SKILL_TOOL },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      kind: 'system_error',
+      error: {
+        code: 'SYSTEM_ERROR',
+        message: err instanceof Error ? err.message : '加载 Skill 失败',
+        category: 'unknown',
+        retryable: true,
+      },
+      meta: { tool: SKILL_TOOL },
+    };
+  }
+}
+
+async function handleRunCode(args: {
+  language?: string;
+  source?: string;
+  timeoutMs?: number;
+}): Promise<ToolResponse> {
+  const language = String(args.language || 'javascript').toLowerCase();
+  const source = String(args.source || '');
+
+  if (language === 'python') {
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: 'UNSUPPORTED',
+        message: '浏览器侧暂不执行 Python；请改用 language=javascript，或直接调用业务 Tool',
+        category: 'invalid_args',
+        retryable: true,
+        hint: '复杂编排优先用 javascript + await tools.xxx(args)',
+      },
+      agentHint: '请改用 javascript，或直接调用已注册的业务 Tool',
+      meta: { tool: RUN_CODE_TOOL },
+    };
+  }
+
+  if (language !== 'javascript' && language !== 'js' && language !== 'typescript' && language !== 'ts') {
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: 'INVALID_ARGS',
+        message: `不支持的 language: ${language}`,
+        category: 'invalid_args',
+        retryable: true,
+      },
+      meta: { tool: RUN_CODE_TOOL },
+    };
+  }
+
+  try {
+    // 与 native / subagent 同源：授权 ∩ 已注册 client Tool（不含调不了的 http_request）
+    const { toolNames, contracts } = resolveRunnableClientToolNames(
+      getCurrent()?.availableToolNames,
+    );
+
+    const { value } = await runJavaScriptCode(
+      source,
+      async (name, toolArgs) => {
+        if (!toolNames.includes(name)) {
+          throw new Error(
+            `未授权或不在沙箱内的 Tool: ${name}。请直接 native 调用业务 Tool，或 tools.list() 查看可编排名。`,
+          );
+        }
+        const def = getFunctionCallDef(name);
+        if (!def) {
+          throw new Error(
+            `未注册的 client Tool: ${name}（run_code 当前仅能编排浏览器已注册的 client Tool）`,
+          );
+        }
+        const parameters =
+          getToolContract(name)?.parameters ||
+          (def.parameters as Record<string, unknown> | undefined);
+        const validation = validateToolArgs(toolArgs || {}, parameters);
+        if (!validation.valid) {
+          throw new Error(`参数校验失败: ${validation.message}`);
+        }
+        return def.handler(toolArgs);
+      },
+      {
+        timeoutMs: typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined,
+        toolNames,
+        contracts: contracts.map((c) => ({
+          name: c.name,
+          description: c.description,
+          parameters: c.parameters,
+        })),
+      },
+    );
+    return {
+      ok: true,
+      kind: 'success',
+      data: { language: 'javascript', value },
+      display: {
+        kind: 'json',
+        payload: value,
+        collapsed: true,
+      },
+      agentHint:
+        toolNames.length === 0
+          ? '沙箱内暂无可编排 client Tool。请直接调用 native 业务 Tool（勿用 run_code 探路）。'
+          : undefined,
+      meta: { tool: RUN_CODE_TOOL },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'run_code 执行失败';
+    const isInvalidArgs = message.includes('参数校验失败');
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: isInvalidArgs ? 'INVALID_ARGS' : 'RUN_CODE_FAILED',
+        message,
+        category: isInvalidArgs ? 'invalid_args' : 'unknown',
+        retryable: true,
+        hint: isInvalidArgs
+          ? '请 tools.schema(toolName) 查看必填参数后重试'
+          : '有专用业务 Tool 请直接 native 调用；run_code 仅编排已授权 client Tool',
+      },
+      agentHint: isInvalidArgs
+        ? '参数错误：先 tools.schema(name) 读取 required，修正后再 await tools.name(args)。'
+        : 'run_code 失败：请直接调用业务 Tool，或 tools.list() 后编排已授权名。禁止用本工具探路。',
+      meta: { tool: RUN_CODE_TOOL },
+    };
+  }
+}
+
+export const SKILL_OPENAI_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: SKILL_TOOL,
+    description:
+      '按需加载某个 Skill 的完整正文（SOP）。目录中仅有摘要；当任务匹配某 Skill 描述或用户点名时，先调用本工具再执行业务动作。' +
+      '成功后返回 grantedTools，且同回合后续轮次已扩展可见 Tool schema——请直接 native 调用业务 Tool，禁止再用 run_code 探测。' +
+      'slug 必须与目录中的精确名称一致。',
+    parameters: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Skill slug，如 bizdata-model-design' },
+        name: { type: 'string', description: '同 slug（兼容别名）' },
+      },
+    },
+  },
+};
+
+export const RUN_CODE_OPENAI_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: RUN_CODE_TOOL,
+    description:
+      '可选：用短脚本编排多个已授权 client Tool 或做数据计算（默认 javascript）。' +
+      '有专用业务 Tool 时必须直接 native 调用，禁止用本工具探路或 tools.list()「发现」能力。' +
+      '脚本内：await tools.tool_name(args)、tools.list()、tools.schema(name?)。调用前 tools.schema 读必填字段。' +
+      'tools 不是数组：禁止 tools.filter/map/find。禁止重新声明 tools。禁止任意网络与磁盘访问。',
+    parameters: {
+      type: 'object',
+      properties: {
+        language: {
+          type: 'string',
+          enum: ['javascript', 'python'],
+          description: '脚本语言；浏览器侧当前仅 javascript',
+        },
+        source: {
+          type: 'string',
+          description: '脚本正文。JS 示例：const r = await tools.uac_list_users({}); return r;',
+        },
+        timeoutMs: { type: 'integer', description: '可选超时毫秒，默认 12000' },
+      },
+      required: ['source'],
+    },
+  },
+};
+
+export const RUN_SUBAGENT_OPENAI_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: RUN_SUBAGENT_TOOL,
+    description:
+      '批量 fan-out 或顺序委托：在隔离子 Turn 内编排**已授权** client Tool（不启动嵌套 LLM）。' +
+      'mode=fanout：对 items 并发调用同一 tool；mode=sequence：按 steps 串行调用。' +
+      '适合「为每个实体创建 API」类批量任务。禁止用本工具探测或绕过 Skill 授权；有专用业务 Tool 时优先直接 native 调用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          enum: ['fanout', 'sequence'],
+          description: 'fanout=批量并发；sequence=顺序步骤',
+        },
+        goal: { type: 'string', description: '子任务目标（写入回放轨迹）' },
+        tool: {
+          type: 'string',
+          description: 'fanout：要对每项调用的 Tool functionName',
+        },
+        items: {
+          type: 'array',
+          description: 'fanout：每项为 tool 参数对象（可与 baseArgs 合并）',
+          items: { type: 'object' },
+        },
+        baseArgs: {
+          type: 'object',
+          description: 'fanout：合并到每项参数上的公共字段',
+        },
+        maxConcurrency: {
+          type: 'integer',
+          description: 'fanout 并发上限，默认 4，最大 8',
+        },
+        steps: {
+          type: 'array',
+          description: 'sequence：有序步骤',
+          items: {
+            type: 'object',
+            properties: {
+              tool: { type: 'string' },
+              args: { type: 'object' },
+            },
+            required: ['tool'],
+          },
+        },
+      },
+      required: ['mode', 'goal'],
+    },
+  },
+};
+
+async function handleRunSubagent(args: {
+  mode?: string;
+  goal?: string;
+  tool?: string;
+  items?: Record<string, unknown>[];
+  baseArgs?: Record<string, unknown>;
+  maxConcurrency?: number;
+  steps?: Array<{ tool: string; args?: Record<string, unknown> }>;
+}): Promise<ToolResponse> {
+  const mode = String(args.mode || '').trim();
+  const goal = String(args.goal || '').trim();
+  if (!goal) {
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: 'INVALID_ARGS',
+        message: 'goal 不能为空',
+        category: 'invalid_args',
+        retryable: true,
+      },
+      meta: { tool: RUN_SUBAGENT_TOOL },
+    };
+  }
+
+  const parentTurnId = getActiveTurnId() || undefined;
+  const conversationKey = getActiveConversationKey();
+
+  try {
+    if (mode === 'fanout') {
+      const data = await runSubagentFanout({
+        goal,
+        tool: String(args.tool || ''),
+        items: Array.isArray(args.items) ? args.items : [],
+        baseArgs: args.baseArgs,
+        maxConcurrency: args.maxConcurrency,
+        parentTurnId,
+        conversationKey,
+      });
+      return {
+        ok: data.failCount === 0,
+        kind: data.failCount === 0 ? 'success' : 'business_error',
+        verified: data.failCount === 0,
+        data,
+        display: {
+          kind: 'status',
+          title: `subagent fanout：成功 ${data.okCount} / 失败 ${data.failCount}`,
+          payload: { message: data.childTurnId },
+        },
+        error:
+          data.failCount > 0
+            ? {
+                code: 'SUBAGENT_PARTIAL_FAILURE',
+                message: `${data.failCount} 项失败，详见 results`,
+                category: 'unknown',
+                retryable: true,
+              }
+            : undefined,
+        meta: { tool: RUN_SUBAGENT_TOOL },
+      };
+    }
+
+    if (mode === 'sequence') {
+      const data = await runSubagentSequence({
+        goal,
+        steps: Array.isArray(args.steps) ? args.steps : [],
+        parentTurnId,
+        conversationKey,
+      });
+      return {
+        ok: data.ok,
+        kind: data.ok ? 'success' : 'business_error',
+        verified: data.ok,
+        data,
+        display: {
+          kind: 'status',
+          title: data.ok ? 'subagent sequence 完成' : 'subagent sequence 中断',
+          payload: { message: data.childTurnId },
+        },
+        error: data.ok
+          ? undefined
+          : {
+              code: 'SUBAGENT_STEP_FAILED',
+              message: '顺序步骤未全部成功',
+              category: 'unknown',
+              retryable: true,
+            },
+        meta: { tool: RUN_SUBAGENT_TOOL },
+      };
+    }
+
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: 'INVALID_ARGS',
+        message: `非法 mode=${mode}，期望 fanout|sequence`,
+        category: 'invalid_args',
+        retryable: true,
+      },
+      meta: { tool: RUN_SUBAGENT_TOOL },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      kind: 'business_error',
+      error: {
+        code: 'SUBAGENT_FAILED',
+        message: err instanceof Error ? err.message : 'run_subagent 失败',
+        category: 'unknown',
+        retryable: true,
+      },
+      meta: { tool: RUN_SUBAGENT_TOOL },
+    };
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -489,9 +1017,54 @@ export function registerBuiltinTools(): void {
       parameters: ASK_USER_OPENAI_TOOL.function.parameters,
       handler: async (args) => handleAskUser(args as AskUserArgs),
     },
+    {
+      name: NAVIGATE_TO_PAGE_TOOL,
+      description: NAVIGATE_TO_PAGE_OPENAI_TOOL.function.description,
+      parameters: NAVIGATE_TO_PAGE_OPENAI_TOOL.function.parameters,
+      handler: async (args) => handleNavigateToPage(args as unknown as NavigationRequest),
+    },
+    {
+      name: SKILL_TOOL,
+      description: SKILL_OPENAI_TOOL.function.description,
+      parameters: SKILL_OPENAI_TOOL.function.parameters,
+      handler: async (args) => handleSkillLoad(args as { slug?: string; name?: string }),
+    },
+    {
+      name: RUN_CODE_TOOL,
+      description: RUN_CODE_OPENAI_TOOL.function.description,
+      parameters: RUN_CODE_OPENAI_TOOL.function.parameters,
+      handler: async (args) =>
+        handleRunCode(args as { language?: string; source?: string; timeoutMs?: number }),
+    },
+    {
+      name: RUN_SUBAGENT_TOOL,
+      description: RUN_SUBAGENT_OPENAI_TOOL.function.description,
+      parameters: RUN_SUBAGENT_OPENAI_TOOL.function.parameters,
+      handler: async (args) =>
+        handleRunSubagent(
+          args as {
+            mode?: string;
+            goal?: string;
+            tool?: string;
+            items?: Record<string, unknown>[];
+            baseArgs?: Record<string, unknown>;
+            maxConcurrency?: number;
+            steps?: Array<{ tool: string; args?: Record<string, unknown> }>;
+          },
+        ),
+    },
   ]);
 }
 
 export function unregisterBuiltinTools(): void {
-  unregisterFunctionCalls([BUILTIN_TOOL_NAME, UPDATE_PLAN_TOOL, TASK_COMPLETE_TOOL, ASK_USER_TOOL]);
+  unregisterFunctionCalls([
+    BUILTIN_TOOL_NAME,
+    UPDATE_PLAN_TOOL,
+    TASK_COMPLETE_TOOL,
+    ASK_USER_TOOL,
+    NAVIGATE_TO_PAGE_TOOL,
+    SKILL_TOOL,
+    RUN_CODE_TOOL,
+    RUN_SUBAGENT_TOOL,
+  ]);
 }

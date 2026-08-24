@@ -1,14 +1,14 @@
 ---
 name: eadaf-api
-version: 1.2.0
+version: 1.3.0
 description: >-
   指导 AI 与外部系统集成方如何正确调用 EADAF 平台 API（鉴权、业务数据 API、参数 filter、
-  OpenAPI 发现、用户 SSO）。在对接 EADAF、编写调用脚本、解析 api-docs / apis.json 时使用本 Skill。
+  OpenAPI 发现、用户 SSO、文件存储）。在对接 EADAF、编写调用脚本、解析 api-docs / apis.json 时使用本 Skill。
 ---
 
 # EADAF API 调用 Skill
 
-> **版本**：`1.2.0`（见 frontmatter `version`）  
+> **版本**：`1.3.0`（见 frontmatter `version`）  
 > **适用对象**：外部应用后端、AI Agent、自动化集成脚本  
 > **人类可读长文**：`docs/external-app-integration-guide.md`（应用 API）、`docs/sso-integration-guide.md`（用户 SSO）
 
@@ -278,13 +278,27 @@ GET {base_url}/api/v1/departments/tree
 
 ---
 
-## 8. 采集与文件（简述）
+## 8. 采集与文件
 
 | 能力 | 方法 | 路径 |
 |------|------|------|
 | 采集管道 | POST | `/api/v1/ingest/{routePath}`，body 为原始字节，非 JSON |
-| 文件上传 | POST | `/api/v1/storage/objects/upload`（multipart） |
+| 轻量上传（≤100MB） | POST | `/api/v1/storage/objects/upload`（multipart：`file` + `bucketCode`） |
+| 超大文件 / 断点续传 | POST / HEAD / PATCH / DELETE | `/api/v1/storage/tus`（tus 1.0，可传小文件，默认上限 5GB） |
+| 续传结果 | GET | `/api/v1/storage/tus/{id}/result`（轮询至 `completed` / `duplicate`） |
+| MD5 去重预检 | POST | `/api/v1/storage/objects/dedup-check`（JSON：`bucketCode` + `md5`） |
 | 文件下载 | GET | `/api/v1/storage/objects/{objectId}/download` |
+| 文件预览 | GET | `/api/v1/storage/objects/{objectId}/preview` |
+
+上传均需 `Authorization: Bearer {token}`（用户 JWT 或应用 JWT）。业务字段只存返回的 **objectId（UUID）**，不要把文件二进制塞进 DataAPI。
+
+**选择哪条上传通道：**
+
+- **≤100MB**：可用轻量 multipart；超过 **必须** 走 tus。
+- tus 也可传小文件。客户端用 [tus-js-client](https://github.com/tus/tus-js-client)（或任意 tus 1.0 实现）。
+- `Upload-Metadata` 必填 `bucketCode`、`filename`；可选 `contentType`、`md5`、`applicationId`。
+- 最后一次 PATCH 后轮询 `/result`：`uploading` / `pending_finalize` / `finalizing` 继续等；`completed` / `duplicate` 取 `data.object`；`failed` / `expired` 失败。
+- 同 Bucket 内相同内容 MD5 会去重，返回已有 object，不重复落盘。
 
 ---
 
@@ -298,6 +312,7 @@ GET {base_url}/api/v1/departments/tree
 - [ ] GET 参数走 query；复杂对象参考 OpenAPI / api-catalog
 - [ ] 需要机器可读契约时拉取 `apis.json`，需要调用约定时读本 Skill
 - [ ] 列表 `find` 响应含 `data.items` + `data.pagination`（total/page/pageSize/totalPages/hasNext）
+- [ ] 文件：≤100MB 可用 multipart；更大必须 tus；业务只存 objectId
 - [ ] 对照 `parametersSchema` 与 Example，不臆造字段名
 
 ---
@@ -306,6 +321,7 @@ GET {base_url}/api/v1/departments/tree
 
 | 版本 | 说明 |
 |------|------|
+| **1.3.0** | 文件存储：轻量 100MB multipart + tus 断点续传、result 轮询、MD5 去重 |
 | **1.2.0** | 新增用户 SSO 约定（§2.3）；区分应用 Token 与用户 JWT；链到 `docs/sso-integration-guide.md` |
 | **1.1.3** | 写字段名须与 fieldKey 一致（无别名映射）；拒绝未建模列；number 校验避免 NaN 误报 |
 | **1.1.2** | PATCH `body`/`set` 部分更新；GET `filter` 支持 JSON 字符串 / 顶层字段 / `filter[k]` |

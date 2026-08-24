@@ -1,6 +1,6 @@
 {
   "name": "EADAF-monorepo",
-  "version": "0.0.7",
+  "version": "0.0.9",
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev.sh"
@@ -10,5 +10,8 @@
       "@types/react": "^19.2.17",
       "@types/react-dom": "^19.2.3"
     }
+  },
+  "devDependencies": {
+    "tsx": "^4.23.12"
   }
 }

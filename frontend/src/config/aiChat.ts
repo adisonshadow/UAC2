@@ -1,4 +1,8 @@
 import type { AIChatConfig } from '@eadaf/ai-base';
+import { toAIChatSemanticRoutes } from '@/routes/semanticRegistry';
+import { resolveSemanticRoutePath } from '@/ai/semanticRoutes';
+import { EADAF_TOOL_DISPLAY_NAMES } from '@/ai/toolDisplayNames';
+import { history } from '@/utils/navigation';
 
 /** 全站 Tool 成功汇报硬约束；页面 systemPromptPrefix 覆盖根配置时须自行拼接本段 */
 export const AI_CHAT_TOOL_VERIFICATION_RULES = [
@@ -30,6 +34,12 @@ const AI_CHAT_PROMPTS = [
   { key: '4', description: '业务数据模块能做什么？' },
 ];
 
+/**
+ * 语义路由清单（单一事实源）：注入 AIBase 后，
+ * 1) prompt 追加「可用页面」协议；2) 注入 harness Tool navigate_to_page。
+ */
+const semanticRoutes = toAIChatSemanticRoutes();
+
 export function createAIChatConfig(
   getToken: NonNullable<AIChatConfig['getToken']>,
 ): AIChatConfig {
@@ -46,6 +56,28 @@ export function createAIChatConfig(
     // 反转「text-only 默认 STOP」的旧逻辑，治「过早结束 / 迟迟不结束」。
     // 详见 docs/AIBase 成熟闭环与 Planning next moves 统一方案.md。skill 的校验强度由 completion_strategy.terminationStrictness 控制。
     enableStructuredTermination: true,
+    // 语义化路由：清单注入 AIBase + navigate 执行器（白名单 + history.push）。
+    // autoNavigate 默认 true；用户可在面板设置关闭，userHabit 持久化。
+    // toolConcurrency 默认 10；decisionPreference 默认 user（优先 ask_user）。
+    // reasoningDisplayMode 默认 collapsed（思考内容折叠，点击展开）。
+    // toolDisplayNames：EADAF 业务 Tool 中文短标题（不写进 ai-base 内核）。
+    semanticRoutes,
+    autoNavigate: true,
+    toolConcurrency: 10,
+    decisionPreference: 'user',
+    toolDisplayNames: EADAF_TOOL_DISPLAY_NAMES,
+    navigate: async ({ path, params }) => {
+      const target = resolveSemanticRoutePath(path, params, semanticRoutes);
+      if (!target) {
+        return {
+          navigated: false,
+          reason: 'invalid_target',
+          message: `未知或非法页面: ${path}`,
+        };
+      }
+      history.push(target);
+      return { navigated: true, path: target };
+    },
     // topLevelSkillMarkdown: '本应用 Skill 使用说明…', // 开发期硬编码注入，覆盖 DB
   };
 }

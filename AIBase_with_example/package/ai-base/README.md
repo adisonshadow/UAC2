@@ -2,7 +2,8 @@
 
 EADAF AI 聊天基础库。宿主应用通过 `AIChatProvider` 接入侧边栏 / 漂浮按钮式 AI 助手，并可在页面内配置 Skill、Tool、Prompts、Chat 引用等能力。
 
-> 仓库内 `AIBase_with_example` 仅作演示与联调沙箱，正式接入请以本 README 与 `dist/` 为准。
+> 仓库内 `AIBase_with_example` 仅作演示与联调沙箱，正式接入请以本 README 与 `dist/` 为准。  
+> **架构权威文档**（定位、插件内核、多应用扩展）：仓库 [`docs/TODOs/新Agent架构方案/`](../../../docs/TODOs/新Agent架构方案/README.md)（尤其 [08-多应用扩展](../../../docs/TODOs/新Agent架构方案/08-多应用扩展.md)、[05-展示协议](../../../docs/TODOs/新Agent架构方案/05-展示协议.md)）。
 
 ## 宿主接入（读 dist）
 
@@ -31,12 +32,17 @@ import '@eadaf/ai-base/style.css';
   config={{
     apiBase: '/api',
     getToken: () => localStorage.getItem('token'),
-    applicationId: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', // 可选
-    systemPromptPrefix: '你是 EADAF 助手…',
+    applicationId: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', // 可选；业务应用必填
+    systemPromptPrefix: '你是助手…',
     welcome: { title: 'Hi', description: '直接描述需求即可' },
     prompts: [{ key: '1', description: '你可以帮我做什么？' }],
     hiddenPaths: ['/auth/login'],
+    // 业务 Tool 中文短标题（勿写进 ai-base 内核；由宿主 / 业务包注入）
+    toolDisplayNames: {
+      acme_list_orders: '列出订单',
+    },
   }}
+  plugins={[/* 可选：宿主 pack / 业务 pack */]}
 >
   {children}
 </AIChatProvider>
@@ -48,20 +54,140 @@ import '@eadaf/ai-base/style.css';
 import { AIChatPageScope } from '@eadaf/ai-base';
 
 <AIChatPageScope
-  scopeSlug="business-data"
-  fallbackSkillSlugs={['bizdata-model-design']}
-  headerCaption="模型设计助手"
-  systemPromptPrefix="你是业务数据建模助手…"
-  welcome={{ title: '业务数据模型设计', description: '…' }}
+  scopeSlug="orders"
+  fallbackSkillSlugs={['acme-order-ops']}
+  headerCaption="订单助手"
+  systemPromptPrefix="你是订单作业助手…"
+  welcome={{ title: '订单作业', description: '…' }}
 >
   <Outlet />
 </AIChatPageScope>
 ```
 
-### 语音输入
+---
+
+## 第三方 / 业务应用接入（EADAF 支撑的应用）
+
+ai-base 是**内核**；EADAF 是**数据底座宿主**；FMMS 等业务系统是**插件包**。业务应用**不要**把领域 Tool 名硬编码进 `@eadaf/ai-base`。
+
+```text
+业务前端 / EADAF 前端
+  AIChatProvider(applicationId) + PageScope + plugins
+        │
+        ▼
+@eadaf/ai-base（Cordis：tools / surfaces / harness …）
+        │
+   ┌────┼────┐
+EADAF host  业务 pack（如 @fmms/ai-pack）
+```
+
+| 层 | 谁维护 | 放什么 |
+|----|--------|--------|
+| 内核 | `@eadaf/ai-base` | 对话循环、信封校验、InvocationCard、harness Tool、内核展示名 |
+| 宿主 | EADAF frontend | bizdata / apiservice 等 Tool + `toolDisplayNames` |
+| 业务包 | 业务仓库 | 领域 Tool / Skill / 自定义 Surface kind / 展示名 |
+| 治理 DB | aibase | application 可见 Skill、Skill↔Tool **授权名**、启停 |
+
+### 最小业务包
+
+推荐用宿主提供的 `createBusinessPluginPack`（或等价 `AgentPlugin`）：
+
+```tsx
+import { createBusinessPluginPack } from '@/ai/createBusinessPluginPack'; // 宿主模板
+// 或自行实现 AgentPlugin：inject: ['tools']，apply 里 ctx.tools.register / registerToolDisplayNames
+
+export const acmeAiPack = createBusinessPluginPack({
+  name: 'acme-ai-pack',
+  tools: [
+    {
+      name: 'acme_list_orders',
+      description: '列出订单',
+      parameters: { type: 'object', properties: { status: { type: 'string' } } },
+      handler: async (args) => { /* 已鉴权会话内调业务 API */ },
+    },
+  ],
+  toolDisplayNames: {
+    acme_list_orders: '列出订单',
+  },
+});
+
+<AIChatProvider
+  config={{
+    applicationId: ACME_APP_ID,
+    toolDisplayNames: { /* 也可在 config 一次性注入 */ },
+    // …
+  }}
+  plugins={[eadafHostToolsPlugin, acmeAiPack]}
+>
+```
+
+也可仅通过配置注入展示名（不经插件）：
+
+```tsx
+import { registerToolDisplayNames } from '@eadaf/ai-base';
+
+// Provider 会按 config.toolDisplayNames 自动 register；也可手动：
+const dispose = registerToolDisplayNames({ acme_list_orders: '列出订单' });
+// unmount 时 dispose()
+```
+
+### 必须遵守
+
+1. Tool `name` 全局唯一（建议 `acme_` / `fmms_` 前缀）
+2. Skill `slug` 唯一；`is_dedicated` + `skill_applications` 绑定该 `applicationId`
+3. 页面用 `fallbackSkillSlugs` 挂业务 Skill；目录按需 `skill` 加载正文
+4. UI 触发 AI：**只** `sendMockUserMessage`，禁止直连 chat completions / toolInvoke
+5. 参数 schema 以插件 / `registerFunctionCall` 为运行时权威；DB 只做授权（见架构 [03](../../../docs/TODOs/新Agent架构方案/03-Tool与参数契约.md)）
+6. 自定义结果卡：`ctx.surfaces.registerKind('acme_order_table', Comp)`，handler 返回 `display.kind`
+
+> 只要 **REST 数据 API**、不要嵌入 Chat：走仓库 [`docs/external-app-integration-guide.md`](../../../docs/external-app-integration-guide.md)。  
+> 要嵌入同一套 AI Chat 并扩展自动化：走本节插件包 + application 绑定。
+
+---
+
+## 语音输入
 
 Sender 使用 `@ant-design/x` 内置语音录入（麦克风 → 转写进输入框，交互类似 Cursor）。  
 仅当当前选中模型的 `capabilities` 包含 **`audio_input`** 时显示语音按钮；与附件模态 `inputTags: audio`（上传音频文件）相互独立。浏览器需支持 SpeechRecognition，并授予麦克风权限。
+
+## 外观主题（light / dark / auto）
+
+AI 助手侧栏支持独立主题，**只影响 AI 聊天 UI**（侧栏、浮钮、其弹出层），不改变宿主应用的 `ConfigProvider`。
+
+| 模式 | 行为 |
+|------|------|
+| `light` | 固定浅色（**默认**） |
+| `dark` | 固定深色 |
+| `auto` | 跟随系统 `prefers-color-scheme` |
+
+优先级：`userHabit`（用户在设置面板切过一次）覆盖 `config.theme`；切过一次不回弹。
+
+```tsx
+<AIChatProvider
+  config={{
+    // …
+    theme: 'auto', // 可选，默认 'light'
+  }}
+>
+```
+
+运行时切换（模块级 API，与 `setAutoNavigate` 同模式）：
+
+```tsx
+import {
+  setAIBaseTheme,
+  getAIBaseTheme,
+  getResolvedAIBaseTheme,
+  subscribeAIBaseTheme,
+} from '@eadaf/ai-base';
+
+setAIBaseTheme('dark');
+getAIBaseTheme();           // 'light' | 'dark' | 'auto'
+getResolvedAIBaseTheme();   // 'light' | 'dark'（auto 已展开）
+subscribeAIBaseTheme((mode) => { /* … */ });
+```
+
+面板右上角 **设置** 中也可切换「浅色 / 深色 / 自动」。另含：**思考内容显示方式**（折叠 / 只显示3行 / 显示全部，默认折叠）、**并行工具调用数**（默认 10）、**面临抉择时倾向**（让用户抉择 / 让 AI 抉择）、自动跳转。Markdown 渲染会按解析后的主题切换 `x-markdown-light` / `x-markdown-dark`。
 
 ---
 
@@ -83,11 +209,11 @@ Sender 使用 `@ant-design/x` 内置语音录入（麦克风 → 转写进输入
 
 | 来源 | 说明 |
 |------|------|
-| Skill 关联 Tool | 来自已加载 Skill，含 client / server 类型 |
+| Skill 关联 Tool | 来自已加载 Skill，含 client / server / `server_builtin` 类型 |
 | 本地 client Tool | `registerFunctionCall` 注册；可为 Skill 关联的 client Tool 提供 handler，也可注册纯本地 Tool |
-| Harness Tool | `ask_user` 始终注入；`update_plan` / `task_complete` 在 `enableStructuredTermination` 时注入（见下方「Agent 内置 Tool」） |
+| Harness Tool | `ask_user` 始终注入；`update_plan` / `task_complete` 在 `enableStructuredTermination` 时注入；`navigate_to_page` 在 `semanticRoutes` 非空时注入（见下方「Agent 内置 Tool」） |
 
-**合并规则**：`openaiTools` = Skill 关联 Tool + Harness Tool + 本地 `registerFunctionCall`；同名时 **Skill 侧 schema 优先**，本地补充 Skill 未覆盖的 Tool。
+**合并规则**：`openaiTools` = Skill 关联 Tool + Harness Tool（含条件注入的 `navigate_to_page`）+ 本地 `registerFunctionCall`；同名时 **Skill 侧 schema 优先**，本地补充 Skill 未覆盖的 Tool。
 
 ```tsx
 import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
@@ -111,9 +237,14 @@ useEffect(() => {
 
 ### 同一轮 Tool 并行执行
 
-当模型在一轮回复中返回多个 `tool_calls` 时，SDK 会**并发执行**（上限 6 个）而非串行，
-显著降低多工具场景下的端到端延迟。每个工具的 ThoughtChain 步骤仍按输出顺序渲染。
-工具间存在数据依赖时，模型会拆成多轮（下一轮依赖上一轮结果），多轮之间仍为串行。
+当模型在一轮回复中返回多个 `tool_calls` 时，SDK 会**并发执行**（上限由设置 **并行工具调用** 控制，默认 **10**，范围 1–32；`config.toolConcurrency` / `userHabit`）而非串行，降低多工具场景延迟。每个工具以统一 **InvocationCard**（标题栏 + 可折叠内容区）按输出顺序渲染。工具间存在数据依赖时，模型会拆成多轮（下一轮依赖上一轮结果），多轮之间仍为串行。
+
+### Tool 展示：InvocationCard 与 `display`
+
+- 调用行统一为 **InvocationCard**：icon + 标题 + 副标题；执行中扫光；结束后成败反馈；悬停可展开/折叠内容。
+- 结果正文按 `ToolResponse.display.kind` 渲染（`table` / `entity` / `json` / …）；业务可 `registerKind` 自定义。
+- **业务 Tool 中文名**用 `toolDisplayNames` / `registerToolDisplayNames` 注入；内核只带 harness / `aibase_*` 默认名。
+- 折叠策略由 `ctx.surfaces` presentation 清单驱动（技术类默认收起），详见架构 [05](../../../docs/TODOs/新Agent架构方案/05-展示协议.md)。
 
 ### Tool 分派规则（executionType）
 
@@ -127,6 +258,21 @@ useEffect(() => {
 
 > ⚠️ **行为变更**：历史上「只要本地有同名 handler 就拦截 server 工具」的隐式行为已移除。
 > 如需让本地 handler 接管 server 类型工具，必须在 Tool 元数据上显式声明 `allowClientOverride: true`。
+
+### `http_request`（类 curl，server_builtin）
+
+后端内置 Tool **`http_request`**（`executionType: server_builtin`）供 AI 在**没有专用 Tool** 时探查 HTTP API，语义类似 curl，但由后端用 Node `fetch` 执行（**不** `exec curl`，避免命令注入）。
+
+| 场景 | 行为 |
+|------|------|
+| 受信主机（本机 EADAF / `AI_HTTP_TRUSTED_HOSTS`） | **强制注入**当前用户 JWT（依赖宿主 `getToken` 透传） |
+| 相对路径（如 `/api/v1/...`） | 解析为本机 API，按受信主机处理 |
+| 外部 URL | **禁止**附带用户 JWT；可选手动 `headers`（勿填登录态） |
+| 响应体 | 过大时截断并标注 |
+
+参数摘要：`method`（默认 GET）、`url`（必填）、`headers?`、`body?`、`timeoutMs?`。
+
+接入方式：在管理后台 / 种子数据中把 `http_request` 关联到需要该能力的 Skill；前端无需 `registerFunctionCall`——按上表 `server_builtin` 规则走后端 `toolInvoke`。联调也可直接调 `POST /api/v1/ai/http-request`（与 Tool 同一实现）。
 
 ### Tool 结果体积管控
 
@@ -216,15 +362,21 @@ SDK 自身不包含任何业务工具名集合或中文正则，新业务接入�
 | `ask_user` | **始终** | mid-task HITL：向用户展示结构化选择题并挂起循环 |
 | `update_plan` | `enableStructuredTermination: true` | 维护任务清单（Plan） |
 | `task_complete` | `enableStructuredTermination: true` | 显式验收并终止循环 |
+| `navigate_to_page` | `semanticRoutes` **非空** | 按语义路由清单跳转业务页（不依赖结构化终止开关） |
 
 ```tsx
 <AIChatProvider
   config={{
     // …
     enableStructuredTermination: true, // 注入 update_plan / task_complete，并启用「默认续命、task_complete 才停」
+    semanticRoutes,                    // 非空时注入 navigate_to_page +「可用页面」协议
+    autoNavigate: true,                // 默认 true；面板设置可关，userHabit 持久化
+    navigate: async ({ path, params }) => { /* 白名单 + history.push */ },
   }}
 >
 ```
+
+> `navigate_to_page` **不进入** `HARNESS_OPENAI_TOOLS` 常量数组；仅在清单非空时由会话层单独注入，避免空清单时多余暴露。失败（`disabled` / `invalid_target` / `no_handler`）返回 `kind: success` 信封并携带原因，避免被当成「关键 Tool 校验失败」而无限续调。写操作成功后，SDK 会在回灌 LLM 的信封上附加 `agentHint`，并在协议里把「跨步骤工作流每个里程碑跳一次」写成硬约束（同类型批量创建中途仍可暂不跳）。
 
 ### `ask_user`：向用户询问并确认选择
 
@@ -268,9 +420,54 @@ import { formatUserChoiceMessage, ASK_USER_TOOL } from '@eadaf/ai-base';
 > | `ask_user` | 任务**中途**决策门 | Choice Card（单选/多选 + 可选自定义） |
 > | `a2ui-commands` / `task_complete.next_steps` | 阶段**完成后**的可选快捷动作 | A2UI 下一步按钮 |
 >
-> 禁止仅用「请确认后回复」等口头话术代替 `ask_user`（口头等待确认正则仍保留作兜底 hard-stop）。
+> 面板设置 **面临抉择时倾向**：`user`（默认）时协议要求方案取舍走 `ask_user`；`ai` 时常规取舍可由模型自决，危险/不可逆仍建议询问。禁止仅用「请确认后回复」等口头话术代替 `ask_user`（口头等待确认正则仍保留作兜底 hard-stop）。
 
 全局行为约定写在 Framework Skill `aibase-chat-framework`；开启结构化终止时，系统提示还会注入含 `ask_user` 的执行协议。
+
+### `navigate_to_page`：语义化路由跳转
+
+由宿主提供**页面语义清单**与**跳转执行器**；ai-base 不依赖 `react-router`。
+
+```tsx
+import type { AIChatConfig, SemanticRoute } from '@eadaf/ai-base';
+import {
+  setAutoNavigate,
+  getAutoNavigate,
+  navigateToPage,
+  semanticRoutesToMarkdown,
+} from '@eadaf/ai-base';
+
+const semanticRoutes: SemanticRoute[] = [
+  {
+    path: '/member_org/member/:id/edit',
+    title: '编辑成员',
+    description: '打开指定成员的编辑页',
+    domain: 'member_org',
+    params: { id: { type: 'string', description: '成员 id' } },
+  },
+];
+
+const config: AIChatConfig = {
+  semanticRoutes,
+  autoNavigate: true,
+  navigate: async ({ path, params }) => {
+    const target = resolvePath(path, params, semanticRoutes); // 宿主白名单解析
+    if (!target) {
+      return { navigated: false, reason: 'invalid_target', message: `未知页面: ${path}` };
+    }
+    history.push(target);
+    return { navigated: true, path: target };
+  },
+};
+```
+
+| API / 配置 | 说明 |
+|------------|------|
+| `semanticRoutes` | 注入「可用页面」Markdown 协议 + 条件注入 `navigate_to_page` |
+| `autoNavigate` | 默认 `true`；仅约束 harness `navigate_to_page`，业务 `*_navigate` 不受影响 |
+| `navigate` | 白名单校验 + `history.push`；`AIChatProvider` mount 时经 `registerNavigationHandler` 注入 |
+| `setAutoNavigate` / `getAutoNavigate` | 运行时开关；面板「自动跳转」与之同步，`userHabit` 持久化 |
+| `semanticRoutesToMarkdown` | 将清单渲染为 prompt 协议段（按 `domain` 分组） |
 
 ---
 
@@ -465,7 +662,18 @@ setToolInvokeLogger((entry) => {
 | `hiddenPaths` | 否 | 匹配路径下隐藏 AI UI |
 | `exposeAllClientTools` | 否 | 调试：向 LLM 暴露全部本地 client Tool（忽略 Skill 关联限制） |
 | `maxToolResultChars` | 否 | 单次 Tool 结果回灌上下文的字符预算上限，默认 `8000` |
+| `roundDelayMs` | 否 | 续接循环每轮 LLM 请求最小间隔（毫秒），默认 `600`；可设 `0` 关闭 |
 | `enableStructuredTermination` | 否 | 开启后注入 `update_plan` / `task_complete`，并按结构化终止驱动循环（`ask_user` 始终可用，与本开关无关） |
+| `theme` | 否 | 外观：`light` \| `dark` \| `auto`，默认 `light`；仅影响 AI 侧栏 |
+| `semanticRoutes` | 否 | 语义路由清单；非空时注入「可用页面」协议与 `navigate_to_page` |
+| `semanticRouteDomains` | 否 | 当前页优先的语义路由 domain（未激活域仅摘要） |
+| `autoNavigate` | 否 | 「自动跳转」默认值，默认 `true`；用户设置经 `userHabit` 覆盖 |
+| `toolConcurrency` | 否 | 同一步并行 Tool 上限，默认 `10`（1–32）；面板可改，`userHabit` 覆盖 |
+| `decisionPreference` | 否 | `user` \| `ai`，默认 `user`；影响 ask_user 协议措辞；面板可改 |
+| `reasoningDisplayMode` | 否 | `collapsed` \| `preview3` \| `full`，默认 `collapsed`；思考内容折叠 / 只显示最后 3 行 / 显示全部；面板可改，`userHabit` 覆盖 |
+| `toolDisplayNames` | 否 | 宿主/业务 Tool 中文短标题（`functionName → 文案`）；**业务名勿写入内核** |
+| `navigate` | 否 | 跳转执行器（白名单 + `history.push`）；与 `semanticRoutes` 配套 |
+| `plugins`（Provider prop） | 否 | Cordis 插件包列表（宿主 / 业务 `AgentPlugin`） |
 
 ---
 
@@ -476,15 +684,20 @@ setToolInvokeLogger((entry) => {
 | Provider | `AIChatProvider`, `AIChatPageScope`, `AIChatDisplay`, `ChatReferenceProvider` |
 | Hooks | `useAIChatLayout`, `useAIChatDisplayMode`, `useEffectiveAIChatConfig`, `useChatReference`, `useAIChatPrompts`, `useSetAIChatPrompts`, `useAISurface`, `useAIMutationHandler`, `useFunctionCall` |
 | Tool 注册 | `registerFunctionCall`, `unregisterFunctionCall`, `getFunctionCallDef`, `getAllFunctionCalls`, `invokeFunctionCall`, `clearFunctionCalls`, `subscribeFunctionCalls` |
+| 展示名 | `registerToolDisplayNames`, `lookupToolDisplayName`, `clearHostToolDisplayNames`, `CORE_TOOL_DISPLAY_NAMES` |
+| 契约总线 | `registerToolContractSource`, `resolveVisibleContracts`, `getToolContract`, `ensureFunctionRegistryContractSource`, … |
+| Cordis 运行时 | `createAgentContext`, `ToolsService`, `SurfacesService`, `surfacesRegistry`, `registerInvocationPresentation`, `presentToolCall`, `presentToolResult` |
 | Skill 策略 | `registerSkillCompletionPolicy`, `unregisterSkillCompletionPolicy`, `clearSkillCompletionPolicies`, `getSkillCompletionStrategy` |
-| Harness Tool | `ASK_USER_TOOL`, `ASK_USER_OPENAI_TOOL`, `UPDATE_PLAN_TOOL`, `TASK_COMPLETE_TOOL`, `HARNESS_TOOL_NAMES`, `HARNESS_OPENAI_TOOLS` |
+| Harness Tool | `ASK_USER_TOOL`, `ASK_USER_OPENAI_TOOL`, `UPDATE_PLAN_TOOL`, `TASK_COMPLETE_TOOL`, `NAVIGATE_TO_PAGE_TOOL`, `NAVIGATE_TO_PAGE_OPENAI_TOOL`, `SKILL_TOOL`, `RUN_CODE_TOOL`, `RUN_SUBAGENT_TOOL`, `HARNESS_TOOL_NAMES`, `HARNESS_OPENAI_TOOLS` |
 | 用户选择 | `formatUserChoiceMessage`, `isUserChoiceRequestData`；类型 `AskUserArgs`, `UserChoiceRequest`, `UserChoiceSubmission`, … |
+| 主题 / 偏好 | `setAIBaseTheme`, …；`getToolConcurrency`, `setToolConcurrency`, `getDecisionPreference`, `setDecisionPreference`, `getReasoningDisplayMode`, `setReasoningDisplayMode`, … |
+| 语义路由 | `registerNavigationHandler`, `navigateToPage`, `setAutoNavigate`, `getAutoNavigate`, `subscribeAutoNavigate`, `semanticRoutesToMarkdown`, `AUTO_NAVIGATE_HABIT_KEY`；类型 `SemanticRoute`, `NavigationRequest`, `NavigationResult` |
 | 结果预算 | `serializeToolResultForContext`, `resolveToolResultBudget` |
 | 模型能力 | `supportsModelAttachments`, `supportsModelVoiceInput`, `MODEL_CAPABILITY_AUDIO_INPUT` |
 | 消息 / 引用 | `sendMockUserMessage`, `sendAIChatMessage`, `formatMessageWithReferences` |
 | 日志 | `setToolInvokeLogger`, `logToolInvoke`, `formatToolInvokeError` |
 | SDK | `AIBaseClient` |
-| 类型 | `AIChatConfig`, `AIChatPromptItem`, `FunctionCallDef`, `AIBaseSkill`, `AIBaseTool`, `SkillCompletionStrategy`, `ToolResponse`, … |
+| 类型 | `AIChatConfig`, `AIChatPromptItem`, `FunctionCallDef`, `AIBaseSkill`, `AIBaseTool`, `SkillCompletionStrategy`, `ToolResponse`, `DecisionPreference`, `ReasoningDisplayMode`, `AgentPlugin`, … |
 
 ---
 
@@ -524,6 +737,8 @@ src/
   a2ui/         下一步建议 A2UI（NextStep）catalog / deck
   chat/         流式对话、useAIBaseChat、autoContinuePolicy、userChoice
   registry/     client Function Call、builtin harness Tools、Skill 加载
+  theme/        light / dark / auto 主题通道（themeChannel）
+  navigation/   语义路由跳转通道（navigationChannel）、semanticRoutesToMarkdown
   hooks/        useSendAIChatMessage（deprecated，请用 sendMockUserMessage）
   utils/        aiChatBridge、formatChatReferences、toolInvokeLogger
   sdk/          AIBaseClient HTTP 封装

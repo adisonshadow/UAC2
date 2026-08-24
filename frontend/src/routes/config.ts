@@ -1,19 +1,15 @@
 import type { MenuDataItem } from '@ant-design/pro-components';
 import { matchPath } from 'react-router-dom';
-
-export interface AppRouteMeta {
-  path: string;
-  name?: string;
-  icon?: string;
-  hideInMenu?: boolean;
-  hideMenu?: boolean;
-  layout?: false;
-  /** 主内容区无内边距（用于全屏编辑类页面） */
-  noContentPadding?: boolean;
-  redirect?: string;
-  /** 依赖系统功能开关，未开启时不展示菜单 */
-  requiresFeature?: 'metadataEnabled';
-}
+import {
+  EADAF_SEMANTIC_ROUTES,
+  isSemanticRedirect,
+  type AppSemanticEntry,
+} from './semanticRegistry';
+import {
+  ROUTE_UI_BY_PATH,
+  EXTRA_ROUTE_META,
+  type AppRouteMeta,
+} from './routeUi';
 
 function pathSegmentCount(path: string) {
   return path.split('/').filter(Boolean).length;
@@ -41,56 +37,37 @@ function isMenuChildOf(rootPath: string, item: AppRouteMeta, allItems: AppRouteM
   return false;
 }
 
-/** 应用菜单与路由元数据（由 config/routes.ts 迁移） */
-export const appRouteMeta: AppRouteMeta[] = [
-  { path: '/member_org', name: '成员与组织', icon: 'TeamOutlined' },
-  { path: '/member_org/member', name: '成员管理' },
-  { path: '/member_org/organization', name: '组织架构管理' },
-  { path: '/member_org/role', name: '角色管理' },
-  { path: '/permissions', name: '权限', icon: 'AuditOutlined' },
-  { path: '/permissions/menu', name: '菜单权限' },
-  { path: '/permissions/button', name: '按钮权限' },
-  { path: '/permissions/api', name: '内置API权限' },
-  { path: '/service_provider', name: '应用', icon: 'PartitionOutlined' },
-  { path: '/file_storage', name: '文件', icon: 'FolderOutlined' },
-  { path: '/file_storage/buckets', name: 'Bucket 管理' },
-  { path: '/file_storage/browser', name: '文件浏览器' },
-  { path: '/business_data', name: '业务数据', icon: 'DatabaseOutlined' },
-  { path: '/business_data/model-design', name: '数据模型', noContentPadding: true },
-  { path: '/business_data/model-design/relations-graph', name: '关系图谱', hideInMenu: true, noContentPadding: true },
-  { path: '/business_data/materialization/execute', name: '执行物化', noContentPadding: true },
+/**
+ * 菜单元数据派生：语义清单 + UI 补充表（不再手写全表）。
+ * - redirect 条目：默认不进菜单；仅当 UI 表给了 name（分组根）才进 appRouteMeta；
+ * - 页面条目：name = ui.name ?? title，合并 ROUTE_UI_BY_PATH[path]；
+ * - 末尾拼接手写补充（/account/center 等非目标路由）。
+ */
+export function buildAppRouteMeta(
+  entries: AppSemanticEntry[] = EADAF_SEMANTIC_ROUTES,
+  uiByPath: Record<string, Partial<AppRouteMeta>> = ROUTE_UI_BY_PATH,
+): AppRouteMeta[] {
+  const meta: AppRouteMeta[] = [];
+  for (const entry of entries) {
+    const ui = uiByPath[entry.path] ?? {};
+    if (isSemanticRedirect(entry)) {
+      // 分组根（如 /member_org、/permissions）：仅当 UI 表给了 name 才进菜单元数据
+      if (ui.name) {
+        meta.push({ path: entry.path, ...ui });
+      }
+      continue;
+    }
+    meta.push({
+      path: entry.path,
+      name: ui.name ?? entry.title,
+      ...ui,
+    });
+  }
+  return [...meta, ...EXTRA_ROUTE_META];
+}
 
-  { path: '/business_data/metrics', name: '指标管理', noContentPadding: true },
-  { path: '/business_data/metrics/dashboard', name: '指标看板', noContentPadding: true },
-  { path: '/business_data/metrics/create', name: '新建指标', hideInMenu: true },
-  { path: '/business_data/metrics/:id/edit', name: '编辑指标', hideInMenu: true },
-  { path: '/business_data/data-standards', name: '数据标准', requiresFeature: 'metadataEnabled' },
-  { path: '/business_data/metadata', name: '元数据', requiresFeature: 'metadataEnabled', noContentPadding: true },
-  { path: '/business_data/database-connections', name: '数据库连接' },
-  { path: '/business_data/database', name: '数据库预览', noContentPadding: true },
-
-
-  { path: '/api_services', name: 'API', icon: 'ApiOutlined' },
-  { path: '/api_services/create', name: '新建', hideInMenu: true, noContentPadding: true },
-  { path: '/api_services/list', name: 'API服务', noContentPadding: true },
-  { path: '/api_services/collection-pipelines', name: '采集数据结构化', noContentPadding: true },
-  { path: '/api_services/outbound-webhooks', name: '提交外部API' },
-  { path: '/api_services/collection-pipelines/create', name: '新建采集管道', hideInMenu: true, noContentPadding: true },
-  { path: '/api_services/collection-pipelines/:id/edit', name: '编辑采集管道', hideInMenu: true, noContentPadding: true },
-  { path: '/api_services/collection-pipelines/:id/test', name: '测试采集管道', hideInMenu: true, noContentPadding: true },
-  { path: '/api_services/:id/edit', name: '编辑 API 服务', hideInMenu: true, noContentPadding: true },
-  { path: '/api_services/:id/test', name: '测试 API', hideInMenu: true, noContentPadding: true },
-  { path: '/ai_management', name: 'AI管理', icon: 'RobotOutlined' },
-  { path: '/ai_management/providers', name: 'AI服务商' },
-  { path: '/ai_management/models', name: 'AI模型' },
-  { path: '/ai_management/scopes', name: 'Scopes', hideInMenu: true },
-  { path: '/ai_management/tools', name: 'Tools' },
-  { path: '/ai_management/skills', name: 'Skills' },
-  { path: '/ai_management/request-logs', name: '请求日志' },
-  { path: '/ai_management/chat-demo', name: 'AI Chat Demo' },
-  { path: '/account/center', name: '个人中心', icon: 'UserOutlined', hideInMenu: true, hideMenu: true, layout: false },
-  { path: '/system/settings', name: '系统设置', hideInMenu: true },
-];
+/** 应用菜单与路由元数据（由语义清单 + UI 补充表派生） */
+export const appRouteMeta: AppRouteMeta[] = buildAppRouteMeta();
 
 interface MenuAccessContext {
   /** 用户角色 id 列表 */

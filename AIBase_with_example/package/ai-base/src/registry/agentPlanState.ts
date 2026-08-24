@@ -25,6 +25,7 @@ export interface AgentTurnContext {
   /**
    * 本回合 LLM 可见的业务 Tool 名（不含 harness）。
    * 用于忽略 plan.requiresVerification 中模型胡填的、当前页根本不存在的 Tool。
+   * 可被 expandAvailableTools 就地扩展（同回合 skill 懒加载后立即生效）。
    */
   availableToolNames?: Set<string>;
 }
@@ -42,6 +43,18 @@ export function beginTurn(ctx: AgentTurnContext): () => void {
 
 export function getCurrent(): AgentTurnContext | null {
   return current;
+}
+
+/**
+ * 同回合扩展可见业务 Tool 名（skill 懒加载后、不等 React 重渲染）。
+ * 供 run_code / run_subagent / task_complete 与后续 LLM round 同源。
+ */
+export function expandAvailableTools(names: Iterable<string>): void {
+  if (!current?.availableToolNames) return;
+  for (const name of names) {
+    const n = String(name || '').trim();
+    if (n) current.availableToolNames.add(n);
+  }
 }
 
 export function getPlan(): PlanItem[] {

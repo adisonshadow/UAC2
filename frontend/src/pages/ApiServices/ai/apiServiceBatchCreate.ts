@@ -11,6 +11,7 @@ import {
 import {
   API_SERVICE_OPERATION_SUFFIX,
   normalizeApiServiceCode,
+  scopeCodeFromEntityCode,
   suggestApiServiceCodeFromEntity,
 } from './apiServiceCodeUtils';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
@@ -178,7 +179,7 @@ function requireTargetSchema(targetSchema: string | undefined, context: string):
   const schema = targetSchema?.trim();
   if (!schema) {
     throw new Error(
-      `${context}：无法从实体物化记录得到 targetSchema，禁止回落到系统默认 bizdata_mat。请先完成物化或调用 apiservice_resolve_connection。`,
+      `${context}：无法得到 targetSchema（已尝试该实体物化记录及同域已物化实体，禁止回落到系统默认 bizdata_mat）。请先对该域执行物化（bizdata_execute_materialization），或调用 apiservice_resolve_connection。`,
     );
   }
   return schema;
@@ -265,9 +266,13 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
     ...(entities.map((e) => e.code).filter(Boolean) as string[]),
   ];
 
+  const derivedScope =
+    args.scopeCode?.trim() ||
+    entityCodes.map((code) => scopeCodeFromEntityCode(code)).find(Boolean);
+
   const resolved = await resolveApiServiceConnection({
     connectionId: args.connectionId,
-    scopeCode: args.scopeCode,
+    scopeCode: derivedScope,
     entityCodes: entityCodes.length ? entityCodes : undefined,
     entityIds: [
       ...(args.entityId ? [String(args.entityId)] : []),

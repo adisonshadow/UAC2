@@ -30,6 +30,10 @@ StorageObject.init({
     type: DataTypes.STRING(512),
     allowNull: false,
   },
+  content_md5: {
+    type: DataTypes.STRING(32),
+    allowNull: true,
+  },
   application_id: {
     type: DataTypes.UUID,
     allowNull: true,

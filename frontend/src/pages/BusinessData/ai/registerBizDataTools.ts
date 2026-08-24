@@ -62,6 +62,7 @@ async function buildEntityUpdateVerification(
 const TOOL_NAMES = [
   'bizdata_list_entity_summaries',
   'bizdata_get_entity',
+  'bizdata_entity',
   'bizdata_create_entity',
   'bizdata_update_entity',
   'bizdata_rename_entity_code',
@@ -319,6 +320,55 @@ export function registerBizDataTools() {
         throw new Error(getApiErrorMessage(res, '获取实体详情失败'));
       }
       return data;
+    },
+  });
+
+  /**
+   * MS4：资源级读收敛。优先使用本 Tool；旧 list/get 名保留为别名兼容。
+   */
+  registerFunctionCall({
+    name: 'bizdata_entity',
+    description:
+      '业务实体资源读操作。action=list 列出摘要；action=get 取详情。' +
+      '写操作仍用 bizdata_create_entity / update / delete / rename 等显式动词。',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'get'], description: 'list=摘要列表；get=详情' },
+        codePrefix: { type: 'string', description: 'list：按 code 前缀过滤' },
+        entityKind: { type: 'string', enum: ['er_table', 'json_schema'] },
+        page: { type: 'integer' },
+        size: { type: 'integer' },
+        entityId: { type: 'string', description: 'get：实体 UUID' },
+        entityCode: { type: 'string', description: 'get：实体 code' },
+      },
+      required: ['action'],
+    },
+    handler: async (args) => {
+      const action = String(args.action || '');
+      if (action === 'list') {
+        const res = await getBusinessDataEntities({
+          codePrefix: args.codePrefix as string,
+          entityKind: args.entityKind as string,
+          page: (args.page as number) || 1,
+          size: (args.size as number) || 500,
+          summary: true,
+        });
+        const data = getApiData<API.BusinessDataEntityList>(res);
+        if (data) return data;
+        const { items, total, page, size } = parseApiListResponse(res);
+        return { total, page, size, items };
+      }
+      if (action === 'get') {
+        const entityId = await resolveBizDataEntityId(args as Record<string, unknown>);
+        const res = await getBusinessDataEntity(entityId);
+        const data = getApiData<API.BusinessDataEntity>(res);
+        if (!data) {
+          throw new Error(getApiErrorMessage(res, '获取实体详情失败'));
+        }
+        return data;
+      }
+      throw new Error(`非法 action=${action}，期望 list|get`);
     },
   });
 
@@ -1159,6 +1209,7 @@ export function registerBizDataTools() {
       properties: {
         scopeCode: {
           type: 'string',
+          minLength: 1,
           description: 'Scope code，如 IPS 或 IPS:bom（与模型树节点一致）',
         },
       },
@@ -1186,6 +1237,7 @@ export function registerBizDataTools() {
       properties: {
         scopeCode: {
           type: 'string',
+          minLength: 1,
           description: 'Scope code，如 IPS 或 IPS:bom',
         },
         contentMarkdown: {

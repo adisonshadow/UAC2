@@ -65,7 +65,7 @@ const FRAMEWORK_SKILL_SLUG = 'aibase-chat-framework';
 export function resolveTerminationCompletionStrategy(
   skills: AIBaseSkill[],
   preferredSlugs?: string[],
-): SkillCompletionStrategy | undefined {
+): (SkillCompletionStrategy & { sourceSlug?: string }) | undefined {
   if (!skills.length) return undefined;
 
   const entries = skills
@@ -77,10 +77,21 @@ export function resolveTerminationCompletionStrategy(
   if (!entries.length) return undefined;
 
   const preferred = (preferredSlugs || []).filter(Boolean);
-  const primary =
-    entries.find((item) => preferred.includes(item.skill.slug)) ||
-    entries.find((item) => item.skill.slug !== FRAMEWORK_SKILL_SLUG) ||
-    entries[0];
+  // 激活页 Skill：fallbackSkillSlugs 按顺序优先（第一个有策略的激活 Skill）
+  let primary: { skill: AIBaseSkill; strategy: SkillCompletionStrategy } | undefined;
+  if (preferred.length > 0) {
+    for (const slug of preferred) {
+      const hit = entries.find((item) => item.skill.slug === slug);
+      if (hit) {
+        primary = hit;
+        break;
+      }
+    }
+  }
+  if (!primary) {
+    primary =
+      entries.find((item) => item.skill.slug !== FRAMEWORK_SKILL_SLUG) || entries[0];
+  }
 
-  return { ...primary.strategy };
+  return { ...primary.strategy, sourceSlug: primary.skill.slug };
 }
