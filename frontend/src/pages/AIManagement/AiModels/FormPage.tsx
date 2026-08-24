@@ -137,7 +137,6 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
   const buildPayload = (values: Record<string, unknown>) => {
     const maxConcurrent = values.maxConcurrent as number | undefined;
     const requestsPerMinute = values.requestsPerMinute as number | undefined;
-    // 两字段皆空 → undefined（后端视为不传）；否则组装为 rateLimit 对象（空值转 null）
     const rateLimit =
       maxConcurrent || requestsPerMinute
         ? {
@@ -145,9 +144,8 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
             requestsPerMinute: requestsPerMinute ?? null,
           }
         : undefined;
-    return {
+    const base = {
       providerId: values.providerId as string,
-      slug: (values.slug as string | undefined)?.trim() || undefined,
       modelId: values.modelId as string,
       displayName: values.displayName as string,
       defaultParams: parseDefaultParams(values.defaultParams as string | undefined),
@@ -157,6 +155,16 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
       outputTags: values.outputTags as string[] | undefined,
       isActive: values.isActive as boolean | undefined,
     };
+    const slug = (values.slug as string | undefined)?.trim();
+    return { ...base, slug: slug || undefined };
+  };
+
+  const buildCreatePayload = (values: Record<string, unknown>) => {
+    const payload = buildPayload(values);
+    return {
+      ...payload,
+      slug: payload.slug || (values.modelId as string),
+    };
   };
 
   const handleSubmit = async () => {
@@ -165,7 +173,7 @@ const ModelFormPage: React.FC<ModelFormPageProps> = ({ mode }) => {
       setSaving(true);
 
       if (mode === 'create') {
-        const response = await postAdminModels(buildPayload(values));
+        const response = await postAdminModels(buildCreatePayload(values));
         if (!isApiSuccess(response)) {
           message.error(response.message || '创建失败');
           return;

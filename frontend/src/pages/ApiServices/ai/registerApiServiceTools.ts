@@ -404,7 +404,7 @@ export function registerApiServiceTools() {
           accessRestriction,
           enabledOperations,
           transportProtocols: Array.isArray(args.transportProtocols)
-            ? (args.transportProtocols as string[])
+            ? (args.transportProtocols as Array<'http' | 'sse' | 'websocket'>)
             : undefined,
           responseOverrides: ensuredResponseOverrides as API.ApiServiceCreateInput['responseOverrides'],
           requestOverrides: args.requestOverrides as API.ApiServiceCreateInput['requestOverrides'],
@@ -714,7 +714,7 @@ export function registerApiServiceTools() {
           body.enabledOperations = args.enabledOperations as string[];
         }
         if (args.transportProtocols !== undefined) {
-          body.transportProtocols = args.transportProtocols as string[];
+          body.transportProtocols = args.transportProtocols as Array<'http' | 'sse' | 'websocket'>;
         }
 
         const primaryOp = String(

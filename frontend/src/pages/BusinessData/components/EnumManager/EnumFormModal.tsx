@@ -130,7 +130,7 @@ const EnumFormModal: React.FC<EnumFormModalProps> = ({ open, editing, onClose, o
           <Input placeholder="可选" />
         </Form.Item>
 
-        <Divider orientation="left" plain>
+        <Divider titlePlacement="start" plain>
           枚举选项
         </Divider>
 

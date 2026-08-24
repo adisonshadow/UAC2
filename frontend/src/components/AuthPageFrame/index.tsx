@@ -146,7 +146,7 @@ const AuthPageFrame: React.FC<AuthPageFrameProps> = ({
             <Lottie
               key="custom-lottie"
               className="lottie-bg"
-              animationData={customLottieData}
+              animationData={customLottieData ?? undefined}
               loop
               play
             />

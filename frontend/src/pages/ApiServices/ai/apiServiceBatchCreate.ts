@@ -331,7 +331,7 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
 
       let service = getApiData<API.ApiService>(createRes);
       if (!service?.id && createRes && typeof createRes === 'object' && 'id' in createRes) {
-        service = createRes as API.ApiService;
+        service = createRes as unknown as API.ApiService;
       }
 
       if (!service?.id) {
@@ -369,7 +369,12 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
             service = { ...service, status: service.status || 'draft' };
           } else {
             const verified = await verifyApiServicePublished(published.id, draft.code);
-            service = { ...published, status: verified.status || 'published' };
+            const nextStatus = verified.status;
+            const normalizedStatus: API.ApiService['status'] =
+              nextStatus === 'published' || nextStatus === 'disabled' || nextStatus === 'draft'
+                ? nextStatus
+                : 'published';
+            service = { ...published, status: normalizedStatus };
           }
         } catch (pubErr) {
           publishFailed.push({
@@ -378,7 +383,9 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
           });
         }
       }
-      created.push(service);
+      if (service?.id) {
+        created.push(service);
+      }
     } catch (error) {
       const errMsg = getApiErrorMessage(error, error instanceof Error ? error.message : String(error));
       if (isDuplicateError(errMsg)) {

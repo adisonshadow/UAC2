@@ -307,6 +307,8 @@ declare namespace API {
     name?: string;
     /** 权限编码（支持模糊匹配） */
     code?: string;
+    /** 权限类型（与后端 query resource_type 对齐） */
+    resource_type?: 'MENU' | 'BUTTON' | 'API';
     /** 权限类型 */
     type?: 'MENU' | 'BUTTON' | 'API';
     /** 权限状态 */

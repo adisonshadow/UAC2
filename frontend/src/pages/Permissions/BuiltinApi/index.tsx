@@ -37,9 +37,6 @@ function renderRestriction(record: BuiltinApiItem) {
   if (!r) {
     return <Tag color="default">未配置</Tag>;
   }
-  if (r.mode === 'none') {
-    return <Tag color="green">无限制</Tag>;
-  }
   if (r.mode === 'role') {
     return <Tag color="purple">限制角色</Tag>;
   }
@@ -54,12 +51,19 @@ interface BuiltinApiTreeRow extends BuiltinApiItem {
   children?: BuiltinApiTreeRow[];
 }
 
+interface TreeBuildNode {
+  code: string;
+  children: Record<string, TreeBuildNode>;
+  label?: string;
+  isLeaf?: boolean;
+}
+
 /** 把后端 tree + items 合并成带明细的树表行 */
 function buildTreeRows(
   items: BuiltinApiItem[],
 ): BuiltinApiTreeRow[] {
   const itemMap = new Map(items.map((i) => [i.code, i]));
-  const root: { children: Record<string, any> } = { children: {} };
+  const root: TreeBuildNode = { code: '', children: {} };
   items.forEach((item) => {
     const segments = item.code.split(':');
     let node = root;
@@ -74,7 +78,7 @@ function buildTreeRows(
     });
   });
 
-  function toRows(mapNode: { children: Record<string, any> }, parentPath = ''): BuiltinApiTreeRow[] {
+  function toRows(mapNode: TreeBuildNode, parentPath = ''): BuiltinApiTreeRow[] {
     return Object.values(mapNode.children)
       .map((child) => {
         const code = parentPath ? `${parentPath}:${child.code}` : child.code;

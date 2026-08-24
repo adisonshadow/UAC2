@@ -321,7 +321,7 @@ export function registerMetricsTools() {
           return { success: false, error: getApiErrorMessage(res, '执行失败') };
         }
         const data = getApiData<Record<string, unknown>>(res);
-        return { success: true, ...data };
+        return { success: true, ...(data ?? {}) };
       },
     }),
   });
@@ -348,7 +348,8 @@ export function registerMetricsTools() {
         if (!isApiSuccess(res)) {
           return { success: false, error: getApiErrorMessage(res, '批量执行失败') };
         }
-        return { success: true, ...getApiData(res) };
+        const data = getApiData<Record<string, unknown>>(res);
+        return { success: true, ...(data ?? {}) };
       },
     }),
   });

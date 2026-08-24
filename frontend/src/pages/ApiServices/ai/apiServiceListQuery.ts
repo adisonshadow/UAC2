@@ -215,7 +215,8 @@ export async function queryApiServicesForTool(
 
   const data = getApiData<API.ApiServiceListResult>(res);
   const backendTotal = data?.total ?? parseApiListResponse(res).total ?? 0;
-  const rawItems = data?.items ?? parseApiListResponse(res).items;
+  const rawItems: API.ApiService[] =
+    data?.items ?? parseApiListResponse<API.ApiService>(res).items;
   const items = rawItems.map((item) => compactServiceForListTool(item));
 
   const statusDriftWarnings = await collectStatusDriftWarnings(rawItems);

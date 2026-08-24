@@ -27,7 +27,7 @@ export function augmentColumnsWithChatReference<T>(
           ? prevRender(dom, record, index, action, schema)
           : dom ?? (record as Record<string, unknown>)[targetKey];
         return (
-          <ChatReferenceCell label={content} reference={buildReference(record)} />
+          <ChatReferenceCell label={content as ReactNode} reference={buildReference(record)} />
         );
       },
     };

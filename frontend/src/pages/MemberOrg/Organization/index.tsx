@@ -7,7 +7,7 @@ import {
   ActionType,
   PageContainer,
 } from '@ant-design/pro-components';
-import type { ProColumns } from '@ant-design/pro-components';
+import type { ProColumns, ParamsType } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useSetState } from "ahooks";
 import { Button } from 'antd';
@@ -175,7 +175,7 @@ const Page: React.FC = () => {
     return walk(nodes);
   };
 
-  const loadDepartments = useCallback(async (params) => {
+  const loadDepartments = useCallback(async (params: ParamsType) => {
     try {
       const response = await getDepartmentsTree();
       if (!isApiSuccess(response)) {

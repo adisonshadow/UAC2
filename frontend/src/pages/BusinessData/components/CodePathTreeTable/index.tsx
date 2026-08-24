@@ -71,7 +71,7 @@ function mapColumnsForTree<T extends CodePathItem>(
         const leaf = record.data;
         const cellValue = dataIndex ? readLeafValue(leaf) : value;
         // extraColumns 的 render 第二参数为叶子行数据 T（与 ProColumns 一致）
-        return (render as (v: unknown, r: T, i: number) => React.ReactNode)(
+        return (render as unknown as (v: unknown, r: T, i: number) => React.ReactNode)(
           cellValue,
           leaf,
           index,

@@ -115,11 +115,12 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
         navigateToList(LIST_PATH, { replace: true });
         return;
       }
+      const detail = response.data as API.Department;
       const processedData = {
-        ...response.data,
+        ...detail,
         role_ids:
-          response.data.role_ids ||
-          response.data.roles?.map((r: { role_id: string }) => r.role_id) ||
+          detail.role_ids ||
+          detail.roles?.map((r) => r.role_id).filter(Boolean) ||
           [],
       };
       formRef.current?.setFieldsValue(processedData);
@@ -149,7 +150,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
       if (mode === 'create') {
         const response = await postDepartments({
           name: String(value.name || ''),
-          parent_id: (value.parent_id as string) || null,
+          parent_id: (value.parent_id as string) || undefined,
         });
 
         if (!response.code || response.code < 200 || response.code >= 300) {
@@ -177,7 +178,7 @@ const OrganizationFormPage: React.FC<OrganizationFormPageProps> = ({ mode }) => 
         { department_id: id },
         {
           name: String(value.name || ''),
-          parent_id: (value.parent_id as string) || null,
+          parent_id: (value.parent_id as string) || undefined,
         },
       );
 

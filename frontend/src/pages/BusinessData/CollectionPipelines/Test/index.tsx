@@ -43,7 +43,7 @@ const CollectionPipelineTestPage: React.FC = () => {
         return;
       }
       const data = getApiData<API.CollectionPipelineTestProfile>(res);
-      setProfile(data);
+      setProfile(data ?? null);
       setRawInput(data?.sampleData || '');
     } finally {
       setProfileLoading(false);
@@ -91,7 +91,7 @@ const CollectionPipelineTestPage: React.FC = () => {
         return;
       }
       const data = getApiData<API.CollectionPipelineTestResult>(res);
-      setResult(data);
+      setResult(data ?? null);
       message.success(data?.rolledBack ? '测试完成（已回滚）' : '测试完成');
     } catch (error) {
       const err = getApiErrorMessage(error, '测试失败');

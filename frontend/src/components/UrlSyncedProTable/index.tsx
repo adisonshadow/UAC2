@@ -19,12 +19,9 @@ import {
 } from '@/utils/tableUrlHelper';
 import type { TableUrlKeys } from '@/utils/tableUrlState/keys';
 import { stringArrayParser } from '@/utils/tableUrlState/parsers';
+import type { ProTableSearchObjectConfig } from '@/types/proTableSearch';
 
-export type UrlSyncedProTableProps<
-  T extends Record<string, any>,
-  U extends ParamsType = ParamsType,
-  ValueType = 'text',
-> = ProTableProps<T, U, ValueType> & {
+type UrlSyncedProTableExtraProps = {
   defaultPageSize?: number;
   urlPageKey?: string;
   urlPageSizeKey?: string;
@@ -54,7 +51,19 @@ export type UrlSyncedProTableProps<
   sortable?: boolean;
   /** [nuqs] 树表等无分页场景传 false：只同步筛选 */
   syncPagination?: boolean;
+  /** 搜索区配置（与 useProTableSearchCollapse 返回类型一致） */
+  search?: ProTableSearchObjectConfig | false;
 };
+
+export type UrlSyncedProTableProps<
+  T extends Record<string, any>,
+  U extends ParamsType = ParamsType,
+  ValueType = 'text',
+> = {
+  [K in keyof ProTableProps<T, U, ValueType> as K extends 'search'
+    ? never
+    : K]: ProTableProps<T, U, ValueType>[K];
+} & UrlSyncedProTableExtraProps;
 
 const DEFAULT_PAGINATION_PLACEMENT: TablePaginationPlacement[] = ['bottomStart'];
 
@@ -469,6 +478,12 @@ function NuqsUrlSyncedProTable<
   pageRef.current = page;
   pageSizeRef.current = pageSize;
 
+  const requestRef = useRef(request);
+  requestRef.current = request;
+  const hasRequest = Boolean(request);
+  const filterValuesRef = useRef(filterValues);
+  filterValuesRef.current = filterValues;
+
   const requestSeqRef = useRef(0);
 
   const filterKey = filtersSignature(filterValues);
@@ -479,11 +494,12 @@ function NuqsUrlSyncedProTable<
     (instance: ProFormInstance | undefined) => {
       internalFormRef.current = instance;
       assignRef(formRefProp as any, instance);
-      if (instance?.setFieldsValue && syncUrl && Object.keys(filterValues).length) {
-        instance.setFieldsValue(filterValues);
+      const currentFilters = filterValuesRef.current;
+      if (instance?.setFieldsValue && syncUrl && Object.keys(currentFilters).length) {
+        instance.setFieldsValue(currentFilters);
       }
     },
-    [filterValues, formRefProp, syncUrl],
+    [formRefProp, syncUrl],
   );
 
   // 回填：筛选值变化时（URL 变化 → 表单同步）
@@ -503,11 +519,15 @@ function NuqsUrlSyncedProTable<
    * 说明：ProTable 表单提交时内部先发请求，但此时 pageRef 尚未同步（onSubmit 在
    * 内部处理之后调用）且受控分页下 pageInfo 非受控，请求参数不可靠；统一由本 effect
    * 以 URL 权威状态 reload（内部先发请求会被 abort，竞态由 request 序号防护）。
+   *
+   * 不要把页面传入的 `request` 放进依赖：树表等页面常在 request 内 setState
+   *（loading / expandedRowKeys），内联 request 每次 render 都是新引用，会立刻
+   * 再次 reload，形成请求风暴。
    */
   useEffect(() => {
-    if (!syncUrl || !request || manualMode) return;
+    if (!syncUrl || !hasRequest || manualMode) return;
     internalActionRef.current?.reload?.();
-  }, [filterKey, page, pageSize, request, sortKey, syncUrl, manualMode]);
+  }, [filterKey, page, pageSize, sortKey, syncUrl, manualMode, hasRequest]);
 
   const mergedPagination = useMemo(() => {
     if (pagination === false) return false;
@@ -548,16 +568,23 @@ function NuqsUrlSyncedProTable<
   const mergedParams = useMemo(() => params, [params]);
 
   const wrappedRequest = useMemo(() => {
-    if (!request) return undefined;
-    if (!syncUrl) return request;
+    if (!hasRequest) return undefined;
+    if (!syncUrl) {
+      return ((params: U, sortParams: Record<string, any>, filterParams: Record<string, any>) =>
+        requestRef.current!(params, sortParams, filterParams));
+    }
     return async (requestParams: U, sortParams: Record<string, any>, filterParams: Record<string, any>) => {
       const seq = ++requestSeqRef.current;
+      const currentRequest = requestRef.current;
+      if (!currentRequest) {
+        return { data: [], success: false } as unknown as Awaited<ReturnType<NonNullable<typeof request>>>;
+      }
       // URL 筛选为权威：合并进请求参数（表单提交的内部请求可能晚于 URL 更新）
       // 页码以 URL 权威 pageRef 为准（避免 reload 时 ProTable 传旧值）
-      const result = await request(
+      const result = await currentRequest(
         {
           ...(requestParams as Record<string, unknown>),
-          ...filterValues,
+          ...filterValuesRef.current,
           current: pageRef.current,
           pageSize: pageSizeRef.current,
         } as unknown as U,
@@ -566,11 +593,11 @@ function NuqsUrlSyncedProTable<
       );
       if (seq !== requestSeqRef.current) {
         // 过期响应（快速连点/前进后退竞态）：丢弃
-        return { data: [], success: false } as unknown as ReturnType<typeof request>;
+        return { data: [], success: false } as unknown as Awaited<ReturnType<NonNullable<typeof request>>>;
       }
       return result;
     };
-  }, [filterValues, request, syncUrl]);
+  }, [hasRequest, syncUrl]);
 
   const handleSubmit = useCallback(
     (values: U) => {

@@ -117,7 +117,7 @@ const BrowserPage: React.FC = () => {
         rowKey="objectId"
         scroll={{ x: 1280 }}
         search={search}
-        {...DEFAULT_PRO_TABLE_OPTIONS}
+        options={DEFAULT_PRO_TABLE_OPTIONS}
         toolBarRender={() => [
           <Button key="upload" type="primary" className="btn-gradient-primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
             上传文件
@@ -177,7 +177,7 @@ const BrowserPage: React.FC = () => {
           preview={{
             visible: previewOpen,
             src: previewUrl,
-            title: previewName,
+            toolbarRender: () => previewName ? <span style={{ padding: '0 8px' }}>{previewName}</span> : null,
             onVisibleChange: (visible) => {
               if (!visible) closePreview();
               else setPreviewOpen(true);

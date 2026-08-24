@@ -14,6 +14,9 @@ declare namespace NodeJS {
   interface ProcessEnv {
     readonly NODE_ENV: 'development' | 'production' | 'test';
     readonly APP_API_BASE_URL?: string;
+    readonly APP_SYSTEM_STORAGE_BUCKET_CODE?: string;
+    readonly AI_TOOL_LOG_ENABLED?: string;
+    readonly AI_TOOL_LOG_ENDPOINT?: string;
   }
 }
 

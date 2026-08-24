@@ -26,7 +26,7 @@ import { useRoleOptions } from '@/hooks/useRoleOptions';
 const PAGE_SIZE = 30;
 
 interface UserRecord {
-  user_id: string;
+  user_id?: string;
   name: string;
   username: string;
   email: string;
@@ -76,6 +76,7 @@ const Page: React.FC = () => {
                     title: '确认删除',
                     content: '确定要删除该成员吗？',
                     onOk: async () => {
+                      if (!record.user_id) return;
                       try {
                         await deleteUsersUserId({ user_id: record.user_id });
                         message.success('删除成功');
@@ -143,7 +144,7 @@ const Page: React.FC = () => {
 
       if (response.code === 200 && response.data) {
         return {
-          data: response.data.items || [],
+          data: (response.data.items || []) as UserRecord[],
           success: true,
           total: response.data.total || 0,
         };

@@ -96,7 +96,9 @@ const ApplicationFormPage: React.FC<ApplicationFormPageProps> = ({ mode }) => {
     [applicationCode, mode],
   );
 
-  const buildSubmitPayload = (values: Record<string, unknown>): API.Application => {
+  const buildSubmitPayload = (
+    values: Record<string, unknown>,
+  ): Parameters<typeof postApplications>[0] => {
     const payload = { ...values } as API.Application & {
       auto_create_application_id?: boolean;
     };
@@ -106,7 +108,11 @@ const ApplicationFormPage: React.FC<ApplicationFormPageProps> = ({ mode }) => {
     } else if (typeof payload.application_id === 'string') {
       payload.application_id = payload.application_id.trim();
     }
-    return payload;
+    return {
+      ...payload,
+      name: String(values.name ?? ''),
+      code: String(values.code ?? ''),
+    };
   };
 
   const handleFinish = async (values: Record<string, unknown>) => {

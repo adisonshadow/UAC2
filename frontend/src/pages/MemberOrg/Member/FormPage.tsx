@@ -211,16 +211,24 @@ const MemberFormPage: React.FC<MemberFormPageProps> = ({ mode }) => {
 
       if (!id) return false;
 
-      const updateData = {
-        name: value.name,
-        email: value.email,
-        avatar: value.avatar,
-        gender: value.gender,
-        phone: value.phone,
-        status: value.status,
+      const updateData: Parameters<typeof putUsersUserId>[1] = {
+        name: typeof value.name === 'string' ? value.name : undefined,
+        email: typeof value.email === 'string' ? value.email : undefined,
+        avatar: typeof value.avatar === 'string' ? value.avatar : undefined,
+        gender:
+          value.gender === 'MALE' || value.gender === 'FEMALE' || value.gender === 'OTHER'
+            ? value.gender
+            : undefined,
+        phone: typeof value.phone === 'string' ? value.phone : undefined,
+        status:
+          value.status === 'ACTIVE' || value.status === 'DISABLED' || value.status === 'ARCHIVED'
+            ? value.status
+            : undefined,
         department_id: Array.isArray(value.department_id)
-          ? value.department_id[value.department_id.length - 1]
-          : value.department_id,
+          ? String(value.department_id[value.department_id.length - 1])
+          : typeof value.department_id === 'string'
+            ? value.department_id
+            : undefined,
       };
 
       const response = await putUsersUserId({ user_id: id }, updateData);

@@ -20,6 +20,8 @@ export function parseApiListResponse<T>(response: unknown): {
   /** 与 data 相同，便于解构后手动映射 */
   items: T[];
   total: number;
+  page?: number;
+  size?: number;
   success: boolean;
 } {
   if (response == null || typeof response !== 'object') {
@@ -30,10 +32,14 @@ export function parseApiListResponse<T>(response: unknown): {
     res.data && typeof res.data === 'object' ? (res.data as ApiRecord) : res;
   const items = (Array.isArray(payload.items) ? payload.items : []) as T[];
   const total = typeof payload.total === 'number' ? payload.total : 0;
+  const page = typeof payload.page === 'number' ? payload.page : undefined;
+  const size = typeof payload.size === 'number' ? payload.size : undefined;
   return {
     data: items,
     items,
     total,
+    page,
+    size,
     success: isApiSuccess(response),
   };
 }
@@ -183,7 +189,12 @@ export function getTargetNotFoundPayload(error: unknown): {
   };
 }
 
+/** 从响应类型推断 data 字段 */
+type ApiDataFromResponse<R> = R extends { data?: infer D } ? D : R;
+
 /** 从 API 响应中取出 data 字段（兼容已解包的情况） */
+export function getApiData<R>(response: R): ApiDataFromResponse<R> | undefined;
+export function getApiData<T>(response: unknown): T | undefined;
 export function getApiData<T>(response: unknown): T | undefined {
   if (response == null || typeof response !== 'object') {
     return undefined;

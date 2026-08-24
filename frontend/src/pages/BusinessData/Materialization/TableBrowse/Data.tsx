@@ -37,7 +37,7 @@ const TableDataPage: React.FC = () => {
   const [meta, setMeta] = useState<API.MaterializedTableRowsResult | null>(null);
   const [columnNames, setColumnNames] = useState<string[]>([]);
   const [initLoading, setInitLoading] = useState(true);
-  const actionRef = useRef<ActionType>();
+  const actionRef = useRef<ActionType | undefined>(undefined);
 
   useAISurface({
     id: 'bizdata.materialization.browse',

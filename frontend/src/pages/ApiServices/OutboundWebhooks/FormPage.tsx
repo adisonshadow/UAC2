@@ -207,7 +207,14 @@ const OutboundWebhookFormPage: React.FC<FormPageProps> = ({ mode }) => {
     }),
     applyMutation: (mutation) => {
       if (mutation.type === 'outbound_webhook.updated') {
-        const p = mutation.payload || {};
+        const p = (mutation.payload || {}) as {
+          requestStructure?: string;
+          requestExample?: string;
+          transformScript?: string;
+          mockData?: string;
+          exceptionRules?: unknown;
+          responseConfig?: API.OutboundWebhookResponseConfig;
+        };
         if (p.requestStructure != null) setRequestStructure(p.requestStructure);
         if (p.requestExample != null) setRequestExample(p.requestExample);
         if (p.transformScript != null) setTransformScript(p.transformScript);

@@ -109,7 +109,7 @@ export function registerProviderModelTools() {
       handler: async (args) => {
         const res = await postAdminProviders({
           name: String(args.name),
-          slug: args.slug ? String(args.slug).trim() : undefined,
+          slug: args.slug ? String(args.slug).trim() : '',
           baseUrl: String(args.baseUrl),
           apiKey: args.apiKey ? String(args.apiKey) : undefined,
           adapterType: args.adapterType ? String(args.adapterType) : undefined,

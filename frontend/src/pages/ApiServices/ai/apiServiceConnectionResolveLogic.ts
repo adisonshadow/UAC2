@@ -16,10 +16,10 @@ export interface ConnectionLike {
 }
 
 export interface MaterializationLike {
-  connectionId?: string;
-  entityId?: string;
+  connectionId?: string | null;
+  entityId?: string | null;
   code?: string;
-  targetSchema?: string;
+  targetSchema?: string | null;
   staleStatus?: string;
 }
 

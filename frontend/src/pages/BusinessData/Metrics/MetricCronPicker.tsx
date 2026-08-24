@@ -68,7 +68,7 @@ const MetricCronPicker: React.FC<MetricCronPickerProps> = ({ value = '', onChang
   return (
     <Cron
       value={value}
-      setValue={(next) => {
+      setValue={(next: string | ((prev: string) => string)) => {
         const expression = typeof next === 'function' ? next(value) : next;
         onChange?.(expression);
       }}

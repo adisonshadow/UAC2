@@ -92,7 +92,10 @@ async function fetchAllActiveToolOptions() {
     page += 1;
   }
 
-  return items.map((item) => toToolOption(item));
+  return items.flatMap((item) => {
+    if (typeof item.id !== 'string' || typeof item.name !== 'string') return [];
+    return [toToolOption(item as { id: string; name: string; functionName?: string; slug?: string })];
+  });
 }
 
 type ContentViewMode = 'editor' | 'markdown';

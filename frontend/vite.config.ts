@@ -124,6 +124,17 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    port: APP_ENV.port,
+    proxy: {
+      '/api/v1': {
+        target: APP_ENV.devApiBaseUrl,
+        changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
+      },
+    },
+  },
   build: {
     outDir: 'dist',
     sourcemap: true,

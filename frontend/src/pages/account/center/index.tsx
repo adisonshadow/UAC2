@@ -68,7 +68,7 @@ const AccountCenter: React.FC = () => {
 
         <img
           src={brandingLogo}
-          alt={brandingName}
+          alt={typeof brandingName === 'string' ? brandingName : undefined}
           className={styles['account-center-logo']}
         />
         

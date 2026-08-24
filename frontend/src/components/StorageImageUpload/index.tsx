@@ -33,7 +33,7 @@ const StorageImageUpload: React.FC<StorageImageUploadProps> = ({
   hint,
 }) => {
   const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const blobUrlRef = useRef<string | undefined>();
+  const blobUrlRef = useRef<string | undefined>(undefined);
 
   const revokeBlob = () => {
     if (blobUrlRef.current) {

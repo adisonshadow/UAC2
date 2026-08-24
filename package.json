@@ -1,9 +1,10 @@
 {
   "name": "EADAF-monorepo",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "bash scripts/dev.sh"
+    "dev": "bash scripts/dev.sh",
+    "start": "bash scripts/preview.sh"
   },
   "pnpm": {
     "overrides": {

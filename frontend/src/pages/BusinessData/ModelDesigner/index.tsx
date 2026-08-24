@@ -156,6 +156,10 @@ const ModelDesigner: React.FC = () => {
     }));
   }, []);
 
+  const refreshSchema = useCallback(async () => {
+    await loadSchema();
+  }, [loadSchema]);
+
   const applyMutation = useCallback(
     (mutation: AIMutation) => {
       applyBizdataModelMutation(mutation, {
@@ -163,10 +167,10 @@ const ModelDesigner: React.FC = () => {
         appendEntity: appendEntityInSchema,
         removeEntity: removeEntityFromSchema,
         appendEnum: appendEnumInSchema,
-        refresh: loadSchema,
+        refresh: refreshSchema,
       });
     },
-    [appendEntityInSchema, appendEnumInSchema, loadSchema, patchEntityInSchema, removeEntityFromSchema],
+    [appendEntityInSchema, appendEnumInSchema, patchEntityInSchema, refreshSchema, removeEntityFromSchema],
   );
 
   useAISurface({
@@ -181,7 +185,7 @@ const ModelDesigner: React.FC = () => {
       enumCount: schemaRef.current.enums?.length ?? 0,
       relationCount: schemaRef.current.relations?.length ?? 0,
     }),
-    refresh: loadSchema,
+    refresh: refreshSchema,
     applyMutation,
     matchMutation: (mutation) =>
       mutation.domain === 'bizdata'
