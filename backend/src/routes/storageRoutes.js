@@ -43,7 +43,11 @@ const uploadMiddleware = koaBody({
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为分页 { items, total, page, size }
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageBucketList'
  *   post:
  *     tags: [Storage]
  *     summary: 创建 Bucket [需要认证]
@@ -64,7 +68,11 @@ const uploadMiddleware = koaBody({
  *               accessRestrictions: { type: object }
  *     responses:
  *       201:
- *         description: 创建成功
+ *         description: 创建成功，data 为 StorageBucket
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageBucket'
  */
 router.get('/buckets', authWithBuiltinApiGuard, StorageController.listBuckets);
 router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket);
@@ -83,7 +91,11 @@ router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket)
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为 StorageBucket
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageBucket'
  *   put:
  *     tags: [Storage]
  *     summary: 更新 Bucket [需要认证]
@@ -99,9 +111,20 @@ router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket)
  *         application/json:
  *           schema:
  *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *               applicationId: { type: string, format: uuid, nullable: true }
+ *               accessMode: { type: string, enum: [public, authenticated] }
+ *               accessRestrictions: { type: object }
+ *               status: { type: string, enum: [ACTIVE, DISABLED] }
  *     responses:
  *       200:
- *         description: 更新成功
+ *         description: 更新成功，data 为 StorageBucket
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageBucket'
  *   delete:
  *     tags: [Storage]
  *     summary: 删除 Bucket [需要认证]
@@ -113,7 +136,11 @@ router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket)
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 删除成功
+ *         description: 删除成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/buckets/:id', authWithBuiltinApiGuard, StorageController.getBucket);
 router.put('/buckets/:id', authWithBuiltinApiGuard, StorageController.updateBucket);
@@ -147,7 +174,11 @@ router.delete('/buckets/:id', authWithBuiltinApiGuard, StorageController.deleteB
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为分页文件列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageObjectList'
  */
 router.get('/objects', authWithBuiltinApiGuard, StorageController.listObjects);
 
@@ -171,7 +202,11 @@ router.get('/objects', authWithBuiltinApiGuard, StorageController.listObjects);
  *               applicationId: { type: string, format: uuid }
  *     responses:
  *       201:
- *         description: 上传成功
+ *         description: 上传成功，data 为 StorageObject
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageObject'
  */
 router.post('/objects/upload', authRequired, uploadMiddleware, StorageController.uploadObject);
 
@@ -194,7 +229,11 @@ router.post('/objects/upload', authRequired, uploadMiddleware, StorageController
  *               md5: { type: string, description: 32 位 hex }
  *     responses:
  *       200:
- *         description: 查询成功，duplicate=true 时返回已有 object
+ *         description: 查询成功，duplicate=true 时 data.object 为已有文件
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageDedup'
  */
 router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
 
@@ -206,7 +245,12 @@ router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
  *     summary: tus 能力发现（Tus-Resumable / Tus-Max-Size）
  *     responses:
  *       204:
- *         description: 返回 tus 扩展头
+ *         description: 返回 tus 扩展头（Tus-Resumable / Tus-Version / Tus-Max-Size / Tus-Extension）
+ *         headers:
+ *           Tus-Resumable:
+ *             schema: { type: string, example: '1.0.0' }
+ *           Tus-Max-Size:
+ *             schema: { type: integer }
  *   post:
  *     tags: [Storage]
  *     summary: 创建 tus 上传会话（超大文件断点续传）[需要认证]
@@ -229,7 +273,15 @@ router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
  *         schema: { type: string }
  *     responses:
  *       201:
- *         description: 已创建，Location 为会话 URL
+ *         description: 已创建，Location 为会话 URL；无 JSON body
+ *         headers:
+ *           Location:
+ *             schema: { type: string }
+ *             description: tus 会话 URL，如 /api/v1/storage/tus/{id}
+ *           Tus-Resumable:
+ *             schema: { type: string, example: '1.0.0' }
+ *           Upload-Offset:
+ *             schema: { type: integer, example: 0 }
  *
  * /api/v1/storage/tus/{id}:
  *   head:
@@ -243,7 +295,12 @@ router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Upload-Offset 为已写入字节
+ *         description: Upload-Offset 为已写入字节；无 JSON body
+ *         headers:
+ *           Upload-Offset:
+ *             schema: { type: integer }
+ *           Tus-Resumable:
+ *             schema: { type: string, example: '1.0.0' }
  *   patch:
  *     tags: [Storage]
  *     summary: 向 tus 会话追加数据（流式写盘）[需要认证]
@@ -264,7 +321,10 @@ router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
  *           schema: { type: string, format: binary }
  *     responses:
  *       204:
- *         description: 追加成功
+ *         description: 追加成功；Upload-Offset 为新偏移
+ *         headers:
+ *           Upload-Offset:
+ *             schema: { type: integer }
  *   delete:
  *     tags: [Storage]
  *     summary: 终止未完成的 tus 上传 [需要认证]
@@ -291,8 +351,16 @@ router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
  *     responses:
  *       200:
  *         description: completed / duplicate，data.object 为文件记录
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageTusResult'
  *       202:
- *         description: uploading / pending_finalize / finalizing
+ *         description: uploading / pending_finalize / finalizing，data 含 offset
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeStorageTusResult'
  */
 router.get('/tus/:id/result', authRequired, StorageController.getTusResult);
 
@@ -309,7 +377,18 @@ router.get('/tus/:id/result', authRequired, StorageController.getTusResult);
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 文件流
+ *         description: 原始文件流（非 JSON 外壳）
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *         headers:
+ *           Content-Type:
+ *             schema: { type: string }
+ *           Content-Disposition:
+ *             schema: { type: string }
+ *             description: attachment; filename=...
  */
 router.get('/objects/:id/download', authOptional, StorageController.downloadObject);
 
@@ -326,8 +405,90 @@ router.get('/objects/:id/download', authOptional, StorageController.downloadObje
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 文件流
+ *         description: 预览文件流（图片 inline，非 JSON 外壳）
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *         headers:
+ *           Content-Type:
+ *             schema: { type: string }
+ *           Content-Disposition:
+ *             schema: { type: string, example: 'inline' }
  */
 router.get('/objects/:id/preview', authOptional, StorageController.previewObject);
+
+/**
+ * @swagger
+ * /api/v1/storage/objects/{id}/crop:
+ *   get:
+ *     tags: [Storage]
+ *     summary: 图片自动裁剪（按 w/h/fit 缩放并缓存，返回 webp）
+ *     description: |
+ *       传入文件资源 ID 与裁剪参数，服务端使用 sharp 生成 webp 并写入磁盘缓存。
+ *       鉴权与 preview 相同：公开 Bucket 可匿名访问。
+ *       两种用法：
+ *       1) 同时指定 w、h：fit=cover 覆盖裁剪到精确尺寸；fit=contain（默认）按原图比例缩放到框内（不留白，输出未必等于 w×h）。
+ *       2) 只指定 w 或 h：按原图比例自动计算另一边（忽略 fit）。
+ *       w/h 均未传时默认 w=480；取值范围 1–4096。
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *         description: 文件资源 ID（storage_objects.object_id）
+ *       - in: query
+ *         name: w
+ *         schema: { type: integer, minimum: 1, maximum: 4096 }
+ *         description: 目标宽度（像素）；与 h 均未传时默认 480
+ *       - in: query
+ *         name: h
+ *         schema: { type: integer, minimum: 1, maximum: 4096 }
+ *         description: 目标高度（像素）
+ *       - in: query
+ *         name: fit
+ *         schema:
+ *           type: string
+ *           enum: [cover, contain]
+ *           default: contain
+ *         description: |
+ *           仅同时指定 w、h 时生效。cover=覆盖裁剪；contain=按比例适配框内（不留白）。
+ *           只传一侧尺寸时忽略本参数。
+ *     responses:
+ *       200:
+ *         description: 裁剪后的 webp 图片流（非 JSON 外壳）
+ *         content:
+ *           image/webp:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *         headers:
+ *           Content-Type:
+ *             schema: { type: string, example: image/webp }
+ *           Content-Disposition:
+ *             schema: { type: string, example: 'inline; filename="photo.webp"' }
+ *           Cache-Control:
+ *             schema: { type: string, example: 'public, max-age=31536000, immutable' }
+ *       400:
+ *         description: 非图片或参数非法
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeError'
+ *       403:
+ *         description: 无权访问
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeError'
+ *       404:
+ *         description: 文件不存在
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeError'
+ */
+router.get('/objects/:id/crop', authOptional, StorageController.cropObject);
 
 module.exports = router;

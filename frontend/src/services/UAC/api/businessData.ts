@@ -11,6 +11,17 @@ export async function getBusinessDataScopes() {
   }>(`${BASE}/scopes`, { method: 'GET' });
 }
 
+export async function getBusinessDataScopeExists(params: { code: string }) {
+  return request<{
+    code: number;
+    message: string;
+    data: API.BusinessDataExistsResult<API.BizdataScopeOption> & { entityCount?: number };
+  }>(`${BASE}/scopes/exists`, {
+    method: 'GET',
+    params,
+  });
+}
+
 export async function getBusinessDataScopeDocs(params?: { codes?: string }) {
   return request<{
     code: number;
@@ -77,6 +88,17 @@ export async function getBusinessDataEntities(params?: {
   });
 }
 
+export async function getBusinessDataEntityExists(params: { code: string }) {
+  return request<{
+    code: number;
+    message: string;
+    data: API.BusinessDataExistsResult<API.BusinessDataEntity>;
+  }>(`${BASE}/entities/exists`, {
+    method: 'GET',
+    params,
+  });
+}
+
 export async function getBusinessDataEntity(id: string) {
   return request<{ code: number; message: string; data: API.BusinessDataEntity }>(`${BASE}/entities/${id}`, {
     method: 'GET',
@@ -132,6 +154,17 @@ export async function getBusinessDataEnums(params?: { page?: number; size?: numb
     `${BASE}/enums`,
     { method: 'GET', params },
   );
+}
+
+export async function getBusinessDataEnumExists(params: { code: string }) {
+  return request<{
+    code: number;
+    message: string;
+    data: API.BusinessDataExistsResult<API.BusinessDataEnum>;
+  }>(`${BASE}/enums/exists`, {
+    method: 'GET',
+    params,
+  });
 }
 
 export async function postBusinessDataEnum(body: Partial<API.BusinessDataEnum>) {

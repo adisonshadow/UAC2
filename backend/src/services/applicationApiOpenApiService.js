@@ -371,21 +371,29 @@ async function getPublicApiOpenApi(applicationKey) {
     }
   }
 
-  // 2. 内置 API
+  // 2. 内置 API（请求/响应来自路由 swagger 注释）
   for (const api of builtinApis) {
-    const fullPath = normalizePath(api.routePath);
-    const methods = (api.httpMethods && api.httpMethods.length) ? api.httpMethods : ['GET'];
-    for (const m of methods) {
-      const methodLower = String(m).toLowerCase();
+    const ops = Array.isArray(api.operations) && api.operations.length
+      ? api.operations
+      : (api.httpMethods && api.httpMethods.length ? api.httpMethods : ['GET']).map((m) => ({
+        httpMethod: m,
+        routePattern: api.routePath,
+      }));
+    for (const op of ops) {
+      const methodLower = String(op.httpMethod || 'get').toLowerCase();
       if (!VALID_METHODS.has(methodLower)) continue;
+      const fullPath = toOpenApiPath(op.routePattern || api.routePath);
       const opId = ensureUniqueOpId(`builtin_${api.code}_${methodLower}`);
       const opObject = buildOperationObject({
         operationId: opId,
-        summary: api.label || api.code,
+        summary: op.label || api.label || api.code,
         description: api.description,
         method: methodLower,
-        parametersSchema: undefined,
+        parametersSchema: op.parametersSchema,
+        routePattern: op.routePattern,
+        requestExample: op.requestExample,
         tags: [api.domain ? `内置 API / ${api.domain}` : '内置 API'],
+        responseSchema: op.responseSchema,
       });
       registerOperation(fullPath, methodLower, opObject);
     }

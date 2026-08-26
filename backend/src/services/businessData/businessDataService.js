@@ -315,6 +315,48 @@ async function getEntityById(id) {
   return formatEntity(entity);
 }
 
+function requireExistsCode(code) {
+  const trimmed = String(code || '').trim();
+  if (!trimmed) {
+    throw Object.assign(new Error('code 不能为空'), { status: 400 });
+  }
+  return trimmed;
+}
+
+/** 按精确 code 判断实体是否存在（AI 自动新建前的准备） */
+async function existsEntityByCode(code) {
+  const trimmed = requireExistsCode(code);
+  const entity = await BizdataEntity.findOne({
+    where: { code: trimmed },
+    attributes: ['id', 'code', 'label', 'entity_kind', 'table_name', 'status', 'version', 'entity_info'],
+  });
+  if (!entity) return { exists: false, item: null };
+  const fieldCount = await BizdataEntityField.count({ where: { entity_id: entity.id } });
+  return { exists: true, item: formatEntitySummary(entity, fieldCount) };
+}
+
+/** 按精确 code 判断枚举是否存在（AI 自动新建前的准备） */
+async function existsEnumByCode(code) {
+  const trimmed = requireExistsCode(code);
+  const row = await BizdataEnum.findOne({ where: { code: trimmed } });
+  if (!row) return { exists: false, item: null };
+  return { exists: true, item: formatEnum(row) };
+}
+
+/** 按精确 code 判断 Scope 前缀是否已有实体（Scope 由实体 code 推导，无独立表） */
+async function existsScopeByCode(code) {
+  const trimmed = requireExistsCode(code);
+  const entityCount = await BizdataEntity.count({
+    where: { code: { [Op.like]: `${trimmed}:%` } },
+  });
+  const exists = entityCount > 0;
+  return {
+    exists,
+    item: exists ? { code: trimmed, name: trimmed.split(':').pop() } : null,
+    entityCount,
+  };
+}
+
 async function createEntity(payload) {
   const { code, label, entityKind = 'er_table', tableName, status = 'enabled', entityInfo = {}, jsonSchema } = payload;
   if (!code || !label) {
@@ -919,6 +961,9 @@ module.exports = {
   listEntities,
   listEntitySummaries,
   getEntityById,
+  existsEntityByCode,
+  existsEnumByCode,
+  existsScopeByCode,
   createEntity,
   updateEntity,
   deleteEntity,

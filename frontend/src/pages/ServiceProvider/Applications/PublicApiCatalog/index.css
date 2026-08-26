@@ -49,9 +49,10 @@
   overflow: hidden;
 }
 
-/* 左侧树 / 右侧明细切换时不做过渡动画 */
-.application-api-catalog__body,
-.application-api-catalog__body * {
+/* 仅关闭左侧树的切换动画。不要作用到右侧文档区：antd Collapse 依赖 animationend，
+   全局 animation:none 会把面板卡在 height:0，看起来像没有「请求 / 响应」。 */
+.application-api-catalog__sidebar,
+.application-api-catalog__sidebar * {
   transition: none !important;
   animation: none !important;
 }
@@ -108,7 +109,7 @@
 
 .application-api-catalog__operation {
   border: 1px solid #e8e8e8;
-  border-radius: 4px;
+  border-radius: 8px;
   background: #fff;
   overflow: hidden;
 }
@@ -126,12 +127,20 @@
   user-select: none;
 }
 
-.application-api-catalog__doc-collapse > .ant-collapse-item > .ant-collapse-header {
-  font-weight: 600;
-  font-size: 15px;
+.application-api-catalog__doc-panel + .application-api-catalog__doc-panel {
+  border-top: 1px solid #e8e8e8;
 }
 
-.application-api-catalog__doc-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+.application-api-catalog__doc-panel-title {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  background: #fafafa;
+}
+
+.application-api-catalog__doc-panel-body {
   padding: 12px 16px 16px;
 }
 
@@ -152,6 +161,16 @@
 
 .application-api-catalog__inner-collapse {
   margin-top: 4px;
+}
+
+.application-api-catalog__inner-collapse > summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+.application-api-catalog__inner-collapse > .application-api-catalog__schema {
+  margin-top: 8px;
 }
 
 .application-api-catalog__response-example .response-document-panel__viewer {

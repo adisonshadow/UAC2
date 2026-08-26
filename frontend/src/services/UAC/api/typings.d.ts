@@ -694,6 +694,12 @@ declare namespace API {
     updatedAt?: string;
   };
 
+  type BusinessDataExistsResult<T = unknown> = {
+    exists: boolean;
+    item?: T | null;
+    entityCount?: number;
+  };
+
   type BusinessDataRelation = {
     id?: string;
     type?: string;

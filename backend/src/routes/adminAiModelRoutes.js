@@ -31,6 +31,16 @@ const router = new Router({
  *           example: DeepSeek Chat
  *         defaultParams:
  *           type: object
+ *         rateLimit:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             maxConcurrent:
+ *               type: integer
+ *               nullable: true
+ *             requestsPerMinute:
+ *               type: integer
+ *               nullable: true
  *         capabilities:
  *           type: array
  *           items:
@@ -45,6 +55,22 @@ const router = new Router({
  *             type: string
  *         isActive:
  *           type: boolean
+ *         provider:
+ *           type: object
+ *           properties:
+ *             id:
+ *               type: string
+ *               format: uuid
+ *             name:
+ *               type: string
+ *             slug:
+ *               type: string
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  */
 
 /**
@@ -76,7 +102,11 @@ const router = new Router({
  *           type: boolean
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为分页 { items, total, page, size }，item 见 AdminAiModel
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminAiModelList'
  *   post:
  *     tags:
  *       - Admin-Models
@@ -114,9 +144,23 @@ const router = new Router({
  *                 type: array
  *                 items:
  *                   type: string
+ *               rateLimit:
+ *                 type: object
+ *                 nullable: true
+ *                 properties:
+ *                   maxConcurrent:
+ *                     type: integer
+ *                     nullable: true
+ *                   requestsPerMinute:
+ *                     type: integer
+ *                     nullable: true
  *     responses:
  *       200:
- *         description: 创建成功
+ *         description: 创建成功，data 为 AdminAiModel
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminAiModel'
  */
 router.get('/', authWithBuiltinApiGuard, AiModelController.list);
 router.post('/', authWithBuiltinApiGuard, AiModelController.create);
@@ -139,7 +183,11 @@ router.post('/', authWithBuiltinApiGuard, AiModelController.create);
  *           format: uuid
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为 AdminAiModel
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminAiModel'
  *   patch:
  *     tags:
  *       - Admin-Models
@@ -183,9 +231,16 @@ router.post('/', authWithBuiltinApiGuard, AiModelController.create);
  *                   type: string
  *               isActive:
  *                 type: boolean
+ *               rateLimit:
+ *                 type: object
+ *                 nullable: true
  *     responses:
  *       200:
- *         description: 更新成功
+ *         description: 更新成功，data 为 AdminAiModel
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminAiModel'
  *   delete:
  *     tags:
  *       - Admin-Models
@@ -201,7 +256,11 @@ router.post('/', authWithBuiltinApiGuard, AiModelController.create);
  *           format: uuid
  *     responses:
  *       200:
- *         description: 删除成功
+ *         description: 删除成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, AiModelController.getById);
 router.patch('/:id', authWithBuiltinApiGuard, AiModelController.update);

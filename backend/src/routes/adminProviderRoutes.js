@@ -35,6 +35,12 @@ const router = new Router({
  *         isActive:
  *           type: boolean
  *           example: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  */
 
 /**
@@ -61,7 +67,11 @@ const router = new Router({
  *           type: boolean
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为分页 { items, total, page, size }
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminProviderList'
  *   post:
  *     tags:
  *       - Admin-Providers
@@ -89,7 +99,11 @@ const router = new Router({
  *                 example: openai_compatible
  *     responses:
  *       200:
- *         description: 创建成功
+ *         description: 创建成功，data 为 AdminProvider（不含明文 apiKey）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminProvider'
  */
 router.get('/', authWithBuiltinApiGuard, ProviderController.list);
 router.post('/', authWithBuiltinApiGuard, ProviderController.create);
@@ -112,7 +126,11 @@ router.post('/', authWithBuiltinApiGuard, ProviderController.create);
  *           format: uuid
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为 AdminProvider
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminProvider'
  *   patch:
  *     tags:
  *       - Admin-Providers
@@ -146,7 +164,11 @@ router.post('/', authWithBuiltinApiGuard, ProviderController.create);
  *                 type: boolean
  *     responses:
  *       200:
- *         description: 更新成功
+ *         description: 更新成功，data 为 AdminProvider
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminProvider'
  *   delete:
  *     tags:
  *       - Admin-Providers
@@ -162,7 +184,11 @@ router.post('/', authWithBuiltinApiGuard, ProviderController.create);
  *           format: uuid
  *     responses:
  *       200:
- *         description: 删除成功
+ *         description: 删除成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, ProviderController.getById);
 router.patch('/:id', authWithBuiltinApiGuard, ProviderController.update);

@@ -63,16 +63,11 @@ const router = new Router({
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，body.data 为可用模型列表（无 code/message 外壳）
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/ModelInfo'
+ *               $ref: '#/components/schemas/EnvelopeAiPublicModels'
  */
 router.get('/models', authWithBuiltinApiGuard, AiServiceController.listModels);
 
@@ -118,6 +113,14 @@ router.get('/models', authWithBuiltinApiGuard, AiServiceController.listModels);
  *     responses:
  *       200:
  *         description: 对话成功（非流式返回 OpenAI JSON，流式返回 text/event-stream）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OpenAIChatCompletion'
+ *           text/event-stream:
+ *             schema:
+ *               type: string
+ *               description: SSE 流式 chunk
  *       400:
  *         description: 请求无效或能力不匹配
  *         content:
@@ -152,7 +155,11 @@ router.post('/chat/completions', authWithBuiltinApiGuard, AiServiceController.ch
  *         description: 应用系统 ID；传入后返回全局 Skill 与绑定该应用的专用 Skill
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，body.data 含 scopes/skills/tools/topLevelSkill
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiCapabilities'
  */
 router.get('/capabilities', authWithBuiltinApiGuard, AiCapabilityController.getCapabilities);
 
@@ -170,7 +177,11 @@ router.get('/capabilities', authWithBuiltinApiGuard, AiCapabilityController.getC
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，body.data.scope 与 tools（含 openaiTool）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiScopeTools'
  */
 router.get('/scopes/:slug/tools', authWithBuiltinApiGuard, AiCapabilityController.getScopeTools);
 
@@ -189,7 +200,11 @@ router.get('/scopes/:slug/tools', authWithBuiltinApiGuard, AiCapabilityControlle
  *         description: 逗号分隔的 slug 列表，单次最多 50 个
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，body.data 为 Skill 数组（含 tools / openaiTools）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiPublicSkillList'
  *       304:
  *         description: 未修改（命中 If-None-Match）
  */
@@ -210,7 +225,11 @@ router.get('/skills', authWithBuiltinApiGuard, SkillController.getPublicBySlugs)
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，body.data 为单个 Skill（含 tools / openaiTools）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiPublicSkill'
  *       304:
  *         description: 未修改（命中 If-None-Match）
  */
@@ -235,7 +254,11 @@ router.get('/skills/:slug', authWithBuiltinApiGuard, SkillController.getPublicBy
  *               arguments: { type: object }
  *     responses:
  *       200:
- *         description: 执行成功
+ *         description: 执行成功，body.data 为 Tool 返回值
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiToolInvoke'
  */
 router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.invokeTool);
 
@@ -264,7 +287,11 @@ router.post('/tools/invoke', authWithBuiltinApiGuard, AiCapabilityController.inv
  *               timeoutMs: { type: integer, example: 15000 }
  *     responses:
  *       200:
- *         description: 请求完成（含目标 HTTP status）
+ *         description: 请求完成（含目标 HTTP status），body.data 见 AiHttpRequestResult
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiHttpRequest'
  *       400:
  *         description: 参数错误或缺少用户 token
  */
@@ -298,7 +325,11 @@ router.post('/http-request', authWithBuiltinApiGuard, AiCapabilityController.htt
  *               result: { description: 可截断的结果预览 }
  *     responses:
  *       200:
- *         description: 记录成功或日志未启用
+ *         description: 记录成功或日志未启用，data.logged 表示是否落盘
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiToolInvokeLog'
  */
 router.post('/tool-invoke-logs', authWithBuiltinApiGuard, AiCapabilityController.logClientToolInvoke);
 

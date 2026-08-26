@@ -24,7 +24,11 @@ const router = new Router({ prefix: '/api/v1/admin/scopes' });
  *         schema: { type: boolean }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为分页 { items, total, page, size }
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminScopeList'
  *   post:
  *     tags: [Admin-Scopes]
  *     summary: 创建 Scope [需要认证]
@@ -42,7 +46,11 @@ const router = new Router({ prefix: '/api/v1/admin/scopes' });
  *               description: { type: string }
  *     responses:
  *       201:
- *         description: 创建成功
+ *         description: 创建成功，data 为 AdminScope
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminScope'
  */
 router.get('/', authWithBuiltinApiGuard, ScopeController.list);
 router.post('/', authWithBuiltinApiGuard, ScopeController.create);
@@ -61,7 +69,11 @@ router.post('/', authWithBuiltinApiGuard, ScopeController.create);
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为 AdminScope
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminScope'
  *   patch:
  *     tags: [Admin-Scopes]
  *     summary: 更新 Scope [需要认证]
@@ -83,7 +95,11 @@ router.post('/', authWithBuiltinApiGuard, ScopeController.create);
  *               isActive: { type: boolean }
  *     responses:
  *       200:
- *         description: 更新成功
+ *         description: 更新成功，data 为 AdminScope
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAdminScope'
  *   delete:
  *     tags: [Admin-Scopes]
  *     summary: 软删除 Scope [需要认证]
@@ -95,7 +111,11 @@ router.post('/', authWithBuiltinApiGuard, ScopeController.create);
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 删除成功
+ *         description: 删除成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, ScopeController.getById);
 router.patch('/:id', authWithBuiltinApiGuard, ScopeController.update);

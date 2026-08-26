@@ -1,4 +1,5 @@
 const swaggerJSDoc = require('swagger-jsdoc');
+const swaggerSchemas = require('./swaggerSchemas');
 
 const options = {
   definition: {
@@ -22,6 +23,7 @@ const options = {
           bearerFormat: 'JWT',
         },
       },
+      schemas: swaggerSchemas,
       responses: {
         400: {
           description: '请求参数错误',

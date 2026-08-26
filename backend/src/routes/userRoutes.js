@@ -741,8 +741,7 @@ router.put('/:user_id', authWithBuiltinApiGuard, UserController.update);
  *                   type: string
  *                   example: 用户删除成功
  *                 data:
- *                   type: null
- *                   example: null
+ *                   $ref: '#/components/schemas/ApiNull'
  *       401:
  *         description: 未授权
  *         content:
@@ -939,11 +938,15 @@ router.put('/:user_id/roles', authWithBuiltinApiGuard, UserController.assignRole
  *                 description: 用户状态
  *     responses:
  *       200:
- *         description: 更新成功
+ *         description: 更新成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  *       404:
- *         description: 用户不存在
+ *         $ref: '#/components/responses/404'
  *       500:
- *         description: 服务器错误
+ *         $ref: '#/components/responses/500'
  */
 router.put('/:user_id/status', authWithBuiltinApiGuard, UserController.updateStatus);
 
@@ -994,19 +997,27 @@ router.post('/:user_id/avatar', authWithBuiltinApiGuard, UserController.update);
  *       - Users
  *     summary: 恢复已删除用户 [需要认证]
  *     description: 恢复被软删除的用户
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - name: user_id
  *         in: path
  *         required: true
- *         type: string
+ *         schema:
+ *           type: string
+ *           format: uuid
  *         description: 用户ID
  *     responses:
  *       200:
- *         description: 恢复成功
+ *         description: 恢复成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  *       404:
- *         description: 用户不存在
+ *         $ref: '#/components/responses/404'
  *       500:
- *         description: 服务器错误
+ *         $ref: '#/components/responses/500'
  */
 router.post('/:user_id/restore', authWithBuiltinApiGuard, UserController.restore);
 

@@ -590,6 +590,8 @@ router.put('/:permission_id', authWithBuiltinApiGuard, PermissionController.upda
  *                 message:
  *                   type: string
  *                   example: 权限删除成功
+ *                 data:
+ *                   $ref: '#/components/schemas/ApiNull'
  *       404:
  *         description: 权限不存在
  *       500:

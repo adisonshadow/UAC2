@@ -31,6 +31,10 @@ const router = new Router({ prefix: '/api/v1/business-data/collection-pipelines'
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipelineList'
  *   post:
  *     tags: [BusinessData-CollectionPipeline]
  *     summary: 创建采集管道 [需要认证]
@@ -60,6 +64,10 @@ const router = new Router({ prefix: '/api/v1/business-data/collection-pipelines'
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
 router.get('/', authWithBuiltinApiGuard, CollectionPipelineController.list);
 router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
@@ -79,6 +87,10 @@ router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  *   patch:
  *     tags: [BusinessData-CollectionPipeline]
  *     summary: 更新采集管道 [需要认证]
@@ -111,6 +123,10 @@ router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  *       409:
  *         description: code 或 routePath 冲突
  *   delete:
@@ -125,6 +141,10 @@ router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, CollectionPipelineController.getById);
 router.patch('/:id', authWithBuiltinApiGuard, CollectionPipelineController.update);
@@ -145,6 +165,10 @@ router.delete('/:id', authWithBuiltinApiGuard, CollectionPipelineController.remo
  *     responses:
  *       200:
  *         description: 发布成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
 router.post('/:id/publish', authWithBuiltinApiGuard, CollectionPipelineController.publish);
 
@@ -163,6 +187,10 @@ router.post('/:id/publish', authWithBuiltinApiGuard, CollectionPipelineControlle
  *     responses:
  *       200:
  *         description: 禁用成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
 router.post('/:id/disable', authWithBuiltinApiGuard, CollectionPipelineController.disable);
 
@@ -187,6 +215,10 @@ router.post('/:id/disable', authWithBuiltinApiGuard, CollectionPipelineControlle
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipelineRunList'
  */
 router.get('/:id/runs', authWithBuiltinApiGuard, CollectionPipelineController.listRuns);
 
@@ -205,6 +237,10 @@ router.get('/:id/runs', authWithBuiltinApiGuard, CollectionPipelineController.li
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
 router.get('/:id/test-profile', authWithBuiltinApiGuard, CollectionPipelineController.getTestProfile);
 
@@ -231,6 +267,10 @@ router.get('/:id/test-profile', authWithBuiltinApiGuard, CollectionPipelineContr
  *     responses:
  *       200:
  *         description: 测试成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeCollectionPipelineTest'
  */
 router.post('/:id/test', authWithBuiltinApiGuard, CollectionPipelineController.test);
 

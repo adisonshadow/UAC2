@@ -1,0 +1,972 @@
+/**
+ * 内置 API 共用 OpenAPI schemas（供路由 @swagger 通过 $ref 引用）。
+ * 形状与 controller / format* 返回值对齐。
+ */
+
+const uuid = (description, example = '00000000-0000-4000-8000-000000000001') => ({
+  type: 'string',
+  format: 'uuid',
+  description,
+  example,
+});
+
+const dateTime = (description) => ({
+  type: 'string',
+  format: 'date-time',
+  description,
+  example: '2024-01-01T00:00:00.000Z',
+});
+
+const str = (description, example = 'string') => ({
+  type: 'string',
+  description,
+  example,
+});
+
+const int = (description, example = 0) => ({
+  type: 'integer',
+  description,
+  example,
+});
+
+const bool = (description, example = true) => ({
+  type: 'boolean',
+  description,
+  example,
+});
+
+const obj = (description, properties = {}, extra = {}) => ({
+  type: 'object',
+  description,
+  properties,
+  ...extra,
+});
+
+function envelope(dataSchema, { code = 200, message = 'success' } = {}) {
+  return {
+    type: 'object',
+    description: '标准业务响应外壳 { code, message, data }',
+    properties: {
+      code: { type: 'integer', description: '业务状态码', example: code },
+      message: { type: 'string', description: '提示信息', example: message },
+      data: dataSchema,
+    },
+  };
+}
+
+function paged(itemRef) {
+  return {
+    type: 'object',
+    description: '分页列表',
+    properties: {
+      items: { type: 'array', items: { $ref: itemRef } },
+      total: int('总条数', 1),
+      page: int('页码', 1),
+      size: int('每页条数', 10),
+    },
+  };
+}
+
+const schemas = {
+  ApiNull: { nullable: true, description: '空 data', example: null },
+
+  AdminProvider: {
+    type: 'object',
+    properties: {
+      id: uuid('服务商 ID'),
+      name: str('名称', 'DeepSeek'),
+      slug: str('唯一标识', 'deepseek'),
+      baseUrl: str('API 根地址', 'https://api.deepseek.com'),
+      apiKeySet: bool('是否已配置 API Key'),
+      adapterType: str('适配器类型', 'openai_compatible'),
+      isActive: bool('是否启用'),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  AdminAiModel: {
+    type: 'object',
+    properties: {
+      id: uuid('模型 ID'),
+      providerId: uuid('所属服务商 ID'),
+      slug: str('对外路由标识', 'deepseek-chat'),
+      modelId: str('上游模型 ID', 'deepseek-chat'),
+      displayName: str('展示名', 'DeepSeek Chat'),
+      defaultParams: obj('默认推理参数'),
+      rateLimit: {
+        type: 'object',
+        nullable: true,
+        description: '限流；null 表示不限流',
+        properties: {
+          maxConcurrent: { type: 'integer', nullable: true, example: 4 },
+          requestsPerMinute: { type: 'integer', nullable: true, example: 60 },
+        },
+      },
+      isActive: bool('是否启用'),
+      capabilities: { type: 'array', items: { type: 'string' }, example: ['chat'] },
+      inputTags: { type: 'array', items: { type: 'string' }, example: ['text'] },
+      outputTags: { type: 'array', items: { type: 'string' }, example: ['text'] },
+      provider: {
+        type: 'object',
+        description: '列表接口附带的服务商摘要',
+        properties: {
+          id: uuid('服务商 ID'),
+          name: str('名称', 'DeepSeek'),
+          slug: str('标识', 'deepseek'),
+        },
+      },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  AdminScope: {
+    type: 'object',
+    properties: {
+      id: uuid('Scope ID'),
+      name: str('名称', '业务数据'),
+      slug: str('标识', 'bizdata'),
+      description: str('说明'),
+      isActive: bool('是否启用'),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  AdminTool: {
+    type: 'object',
+    properties: {
+      id: uuid('Tool ID'),
+      scopeId: uuid('所属 Scope ID'),
+      scope: obj('Scope 摘要', {
+        id: uuid('Scope ID'),
+        name: str('名称'),
+        slug: str('标识'),
+      }),
+      name: str('展示名'),
+      slug: str('标识'),
+      functionName: str('调用名', 'bizdata_list_entities'),
+      description: str('说明'),
+      executionType: { type: 'string', enum: ['client', 'server_http', 'server_builtin'] },
+      parametersSchema: obj('JSON Schema 参数'),
+      reviewMarkdown: str('审核说明'),
+      serverConfig: { type: 'object', nullable: true },
+      isActive: bool('是否启用'),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  AdminSkillToolBrief: {
+    type: 'object',
+    properties: {
+      id: uuid('Tool ID'),
+      name: str('名称'),
+      slug: str('标识'),
+      functionName: str('调用名'),
+      description: str('说明'),
+      executionType: { type: 'string' },
+      parametersSchema: obj('参数 Schema'),
+      reviewMarkdown: str('审核说明'),
+      serverConfig: { type: 'object', nullable: true },
+      isActive: bool('是否启用'),
+    },
+  },
+  AdminSkill: {
+    type: 'object',
+    properties: {
+      id: uuid('Skill ID'),
+      scopeId: { type: 'string', format: 'uuid', nullable: true },
+      scopeSlug: { type: 'string', nullable: true },
+      name: str('名称'),
+      slug: str('Skill ID / 唯一标识'),
+      description: str('说明'),
+      contentMarkdown: str('Skill 正文 Markdown'),
+      isActive: bool('是否启用'),
+      isGlobal: bool('是否全局 Skill'),
+      isDedicated: bool('是否专用 Skill'),
+      completionStrategy: { type: 'string', nullable: true },
+      applicationIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+      applications: {
+        type: 'array',
+        items: obj('绑定应用', {
+          applicationId: uuid('应用 ID'),
+          name: str('应用名'),
+          code: str('应用编码'),
+        }),
+      },
+      tools: { type: 'array', items: { $ref: '#/components/schemas/AdminSkillToolBrief' } },
+      toolIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  AiRequestLog: {
+    type: 'object',
+    properties: {
+      id: uuid('日志 ID'),
+      traceId: str('链路 ID'),
+      slug: { type: 'string', nullable: true, description: '模型 slug' },
+      statusCode: int('HTTP 状态码', 200),
+      durationMs: int('耗时毫秒', 120),
+      errorCode: { type: 'string', nullable: true },
+      createdAt: dateTime('创建时间'),
+    },
+  },
+
+  StorageBucket: {
+    type: 'object',
+    properties: {
+      bucketId: uuid('Bucket ID'),
+      code: str('编码', 'public-assets'),
+      name: str('名称'),
+      description: str('说明'),
+      applicationId: { type: 'string', format: 'uuid', nullable: true },
+      status: str('状态', 'ACTIVE'),
+      accessMode: { type: 'string', enum: ['public', 'authenticated'] },
+      accessRestrictions: obj('访问限制'),
+      isSystem: bool('是否系统桶', false),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+      application: obj('所属应用摘要', {
+        applicationId: uuid('应用 ID'),
+        name: str('名称'),
+        code: str('编码'),
+      }),
+    },
+  },
+  StorageObject: {
+    type: 'object',
+    properties: {
+      objectId: uuid('文件 ID'),
+      bucketId: uuid('Bucket ID'),
+      name: str('文件名', 'photo.png'),
+      mimeType: str('MIME', 'image/png'),
+      size: int('字节数', 1024),
+      relativePath: str('相对路径'),
+      contentMd5: { type: 'string', nullable: true, description: '32 位 hex MD5' },
+      applicationId: { type: 'string', format: 'uuid', nullable: true },
+      createdBy: { type: 'string', nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+      bucket: obj('所属桶摘要', {
+        bucketId: uuid('Bucket ID'),
+        code: str('编码'),
+        name: str('名称'),
+      }),
+      application: obj('所属应用摘要', {
+        applicationId: uuid('应用 ID'),
+        name: str('名称'),
+        code: str('编码'),
+      }),
+      creator: obj('上传者摘要', {
+        userId: uuid('用户 ID'),
+        username: str('用户名'),
+        name: str('姓名'),
+      }),
+    },
+  },
+  StorageDedupResult: {
+    type: 'object',
+    properties: {
+      duplicate: bool('是否已存在相同 MD5 文件', false),
+      object: { allOf: [{ $ref: '#/components/schemas/StorageObject' }], nullable: true },
+    },
+  },
+  StorageTusResult: {
+    type: 'object',
+    properties: {
+      status: {
+        type: 'string',
+        enum: ['completed', 'duplicate', 'uploading', 'pending_finalize', 'finalizing', 'failed', 'expired'],
+      },
+      uploadId: str('tus 会话 ID'),
+      offset: int('已写入字节'),
+      uploadLength: int('声明总长度'),
+      object: { allOf: [{ $ref: '#/components/schemas/StorageObject' }], nullable: true },
+    },
+  },
+
+  BizdataEntityField: {
+    type: 'object',
+    properties: {
+      id: uuid('字段 ID'),
+      entityId: uuid('实体 ID'),
+      fieldKey: str('字段名', 'orderNo'),
+      columnInfo: obj('列元信息，如 label'),
+      typeormConfig: obj('类型配置，如 type/length/nullable/primary'),
+      sortOrder: int('排序', 0),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataEntitySummary: {
+    type: 'object',
+    properties: {
+      id: uuid('实体 ID'),
+      code: str('实体编码', 'sales:order:Order'),
+      label: str('显示名', '订单'),
+      entityKind: { type: 'string', enum: ['er_table', 'json_schema'] },
+      tableName: str('物理表名'),
+      status: { type: 'string', enum: ['enabled', 'disabled', 'archived'] },
+      version: int('模型版本', 1),
+      fieldCount: int('字段数', 8),
+      modelValidated: bool('模型是否已校验', false),
+    },
+  },
+  BizdataEntity: {
+    type: 'object',
+    properties: {
+      id: uuid('实体 ID'),
+      code: str('实体编码', 'sales:order:Order'),
+      label: str('显示名', '订单'),
+      entityKind: { type: 'string', enum: ['er_table', 'json_schema'] },
+      tableName: str('物理表名'),
+      status: { type: 'string', enum: ['enabled', 'disabled', 'archived'] },
+      isLocked: bool('是否锁定', false),
+      version: int('模型版本', 1),
+      entityInfo: obj('扩展信息'),
+      jsonSchema: { type: 'object', nullable: true },
+      layout: { type: 'object', nullable: true },
+      fields: { type: 'array', items: { $ref: '#/components/schemas/BizdataEntityField' } },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataEnum: {
+    type: 'object',
+    properties: {
+      id: uuid('枚举 ID'),
+      code: str('枚举编码', 'sales:OrderStatus'),
+      enumInfo: obj('枚举元信息'),
+      values: obj('值映射，key 为枚举值'),
+      items: obj('项列表（含 label/sort）'),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataRelation: {
+    type: 'object',
+    properties: {
+      id: uuid('关系 ID'),
+      type: { type: 'string', enum: ['oneToMany', 'manyToOne', 'oneToOne', 'manyToMany'] },
+      name: str('关系名', 'items'),
+      inverseName: { type: 'string', nullable: true },
+      fromEntityId: uuid('起点实体 ID'),
+      toEntityId: uuid('终点实体 ID'),
+      fromEntityCode: str('起点实体 code'),
+      toEntityCode: str('终点实体 code'),
+      directionSummary: str('方向摘要', 'sales:order:Order --oneToMany--> sales:order:OrderItem'),
+      config: obj('关系配置'),
+      joinTable: { type: 'string', nullable: true },
+      metadata: obj('附加元数据'),
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataSchemaSnapshot: {
+    type: 'object',
+    properties: {
+      entities: { type: 'array', items: { $ref: '#/components/schemas/BizdataEntity' } },
+      enums: { type: 'array', items: { $ref: '#/components/schemas/BizdataEnum' } },
+      relations: { type: 'array', items: { $ref: '#/components/schemas/BizdataRelation' } },
+    },
+  },
+  BizdataExistsEntity: {
+    type: 'object',
+    properties: {
+      exists: bool('是否存在', true),
+      item: { allOf: [{ $ref: '#/components/schemas/BizdataEntitySummary' }], nullable: true },
+    },
+  },
+  BizdataExistsEnum: {
+    type: 'object',
+    properties: {
+      exists: bool('是否存在', true),
+      item: { allOf: [{ $ref: '#/components/schemas/BizdataEnum' }], nullable: true },
+    },
+  },
+  BizdataExistsScope: {
+    type: 'object',
+    properties: {
+      exists: bool('该 Scope 前缀下是否已有实体', true),
+      item: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          code: str('Scope code', 'sales:order'),
+          name: str('末级名', 'order'),
+        },
+      },
+      entityCount: int('该前缀下实体数量', 3),
+    },
+  },
+  BizdataScopeNode: {
+    type: 'object',
+    properties: {
+      code: str('Scope code', 'sales:order'),
+      name: str('节点名', 'order'),
+      children: { type: 'array', items: { type: 'object' }, description: '子 Scope 节点' },
+    },
+  },
+  BizdataScopeList: {
+    type: 'object',
+    properties: {
+      tree: { type: 'array', items: { $ref: '#/components/schemas/BizdataScopeNode' } },
+      items: { type: 'array', items: { $ref: '#/components/schemas/BizdataScopeNode' }, description: '扁平列表' },
+    },
+  },
+  BizdataScopeDoc: {
+    type: 'object',
+    properties: {
+      code: str('Scope code', 'IPS:bom'),
+      contentMarkdown: str('Markdown 正文'),
+      hasContent: bool('是否有内容'),
+      createdAt: { type: 'string', format: 'date-time', nullable: true },
+      updatedAt: { type: 'string', format: 'date-time', nullable: true },
+      ancestors: {
+        type: 'array',
+        description: 'includeAncestors 时返回有内容的祖先说明',
+        items: { $ref: '#/components/schemas/BizdataScopeDoc' },
+      },
+    },
+  },
+  BizdataScopeDocBrief: {
+    type: 'object',
+    properties: {
+      code: str('Scope code'),
+      updatedAt: dateTime('更新时间'),
+      hasContent: bool('是否有内容', true),
+    },
+  },
+  BizdataDeletionAnalysis: {
+    type: 'object',
+    properties: {
+      rootEntityId: uuid('根实体 ID'),
+      rootEntity: { $ref: '#/components/schemas/BizdataEntitySummary' },
+      entities: { type: 'array', items: { type: 'object' }, description: '连通子图实体及下游影响' },
+      relations: { type: 'array', items: { $ref: '#/components/schemas/BizdataRelation' } },
+      metricMetadataTables: { type: 'array', items: { type: 'object' } },
+    },
+  },
+  BizdataDeletionExecute: {
+    type: 'object',
+    properties: {
+      deleteEntityIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+      dropPhysicalTables: bool('是否 DROP 物理表', false),
+      summary: obj('删除计数与物理表 DROP 结果'),
+      deletedEntities: { type: 'array', items: { $ref: '#/components/schemas/BizdataEntitySummary' } },
+      deletedApiServices: { type: 'array', items: { type: 'object' } },
+      deletedCollectionPipelines: { type: 'array', items: { type: 'object' } },
+      deletedMetrics: { type: 'array', items: { type: 'object' } },
+    },
+  },
+  BizdataMaterializationPreview: {
+    type: 'object',
+    properties: {
+      connectionId: uuid('连接 ID'),
+      connectionName: str('连接名'),
+      dbType: str('库类型', 'postgresql'),
+      targetSchema: str('目标 Schema'),
+      entities: {
+        type: 'array',
+        items: obj('实体摘要', {
+          id: uuid('实体 ID'),
+          code: str('编码'),
+          version: int('版本'),
+          tableName: str('表名'),
+        }),
+      },
+      sql: str('预览 SQL'),
+      generatedCode: obj('实体 ID → TS 代码'),
+    },
+  },
+  BizdataMaterializationExecute: {
+    type: 'object',
+    properties: {
+      run: { $ref: '#/components/schemas/BizdataMaterializationRun' },
+      preview: { $ref: '#/components/schemas/BizdataMaterializationPreview' },
+      executed: bool('是否已执行 DDL', true),
+    },
+  },
+  BizdataMaterializationStatusItem: {
+    type: 'object',
+    properties: {
+      entityId: uuid('实体 ID'),
+      code: str('编码'),
+      label: str('显示名'),
+      tableName: str('表名'),
+      currentVersion: int('当前模型版本'),
+      materializedVersion: { type: 'integer', nullable: true },
+      isStale: bool('是否落后于模型'),
+      staleStatus: { type: 'string', enum: ['not_materialized', 'stale', 'latest'] },
+      lastMaterializedAt: { type: 'string', format: 'date-time', nullable: true },
+      connectionId: { type: 'string', format: 'uuid', nullable: true },
+      connectionName: { type: 'string', nullable: true },
+      dbType: { type: 'string', nullable: true },
+      targetSchema: { type: 'string', nullable: true },
+    },
+  },
+  BizdataMaterializationRun: {
+    type: 'object',
+    properties: {
+      id: uuid('运行 ID'),
+      connectionId: uuid('连接 ID'),
+      connectionName: str('连接名'),
+      dbType: str('库类型'),
+      targetSchema: str('目标 Schema'),
+      status: str('状态', 'success'),
+      sqlPreview: str('SQL 预览'),
+      generatedCode: obj('生成代码'),
+      executedAt: { type: 'string', format: 'date-time', nullable: true },
+      errorMessage: { type: 'string', nullable: true },
+      createdBy: { type: 'string', nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataTableSchema: {
+    type: 'object',
+    description: '物化物理表结构',
+    additionalProperties: true,
+  },
+  BizdataTableRows: {
+    type: 'object',
+    properties: {
+      items: { type: 'array', items: { type: 'object' } },
+      total: int('总行数'),
+      page: int('页码', 1),
+      size: int('每页条数', 20),
+    },
+  },
+  BizdataDatabaseConnection: {
+    type: 'object',
+    properties: {
+      id: uuid('连接 ID'),
+      name: str('名称', '默认库'),
+      dbType: { type: 'string', enum: ['postgresql', 'mongodb', 'redis'] },
+      host: str('主机'),
+      port: int('端口', 5432),
+      username: str('用户名'),
+      passwordSet: bool('是否已配置密码'),
+      databaseName: str('库名'),
+      targetSchema: { type: 'string', nullable: true },
+      isDefault: bool('是否默认连接'),
+      lastTestStatus: { type: 'string', nullable: true },
+      lastTestedAt: { type: 'string', format: 'date-time', nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataConnectionTest: {
+    type: 'object',
+    properties: {
+      success: bool('是否连通'),
+      message: str('探测结果说明', '连接成功'),
+    },
+  },
+  BizdataMetric: {
+    type: 'object',
+    properties: {
+      id: uuid('指标 ID'),
+      code: str('编码', 'sales:order:OrderCount'),
+      label: str('显示名'),
+      description: str('说明'),
+      metricType: { type: 'string', enum: ['sql', 'formula'] },
+      connectionId: { type: 'string', format: 'uuid', nullable: true },
+      queryScript: { type: 'string', nullable: true },
+      formulaConfig: obj('公式配置'),
+      computeMode: str('计算模式'),
+      scheduleType: str('调度类型'),
+      scheduleConfig: obj('调度配置'),
+      unit: { type: 'string', nullable: true },
+      category: { type: 'string', nullable: true },
+      scopeCode: { type: 'string', nullable: true },
+      status: { type: 'string', enum: ['enabled', 'disabled'] },
+      lastComputedAt: { type: 'string', format: 'date-time', nullable: true },
+      lastValue: { type: 'number', nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataMetricCard: {
+    type: 'object',
+    properties: {
+      id: uuid('卡片 ID'),
+      code: str('编码'),
+      title: str('标题'),
+      description: str('说明'),
+      domainCode: str('域编码'),
+      metricId: { type: 'string', format: 'uuid', nullable: true },
+      vizType: { type: 'string', enum: ['statistic_trend', 'line', 'bar', 'ring'] },
+      config: obj('可视化配置'),
+      sortOrder: int('排序'),
+      status: { type: 'string', enum: ['enabled', 'disabled'] },
+      metric: { type: 'object', nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataMetricRun: {
+    type: 'object',
+    properties: {
+      id: uuid('运行 ID'),
+      metricId: uuid('指标 ID'),
+      status: str('状态'),
+      triggeredBy: str('触发来源'),
+      startedAt: dateTime('开始时间'),
+      finishedAt: { type: 'string', format: 'date-time', nullable: true },
+      durationMs: { type: 'integer', nullable: true },
+      errorMessage: { type: 'string', nullable: true },
+      rowCount: { type: 'integer', nullable: true },
+      createdAt: dateTime('创建时间'),
+    },
+  },
+  BizdataMetricValue: {
+    type: 'object',
+    properties: {
+      id: uuid('值 ID'),
+      metricId: uuid('指标 ID'),
+      runId: { type: 'string', format: 'uuid', nullable: true },
+      value: { type: 'number', nullable: true },
+      dimensionKey: str('维度键', ''),
+      computedAt: dateTime('计算时间'),
+    },
+  },
+  BizdataMetricDashboard: {
+    type: 'object',
+    description: '按 domain 分组的卡片及水合数据',
+    additionalProperties: true,
+  },
+  BizdataDataStandard: {
+    type: 'object',
+    properties: {
+      id: uuid('标准 ID'),
+      name: str('名称'),
+      code: str('编码'),
+      version: str('版本', '1.0'),
+      description: str('说明'),
+      status: { type: 'string', enum: ['enabled', 'disabled'] },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataMetadataField: {
+    type: 'object',
+    properties: {
+      id: uuid('字段元数据 ID'),
+      metadataTableId: uuid('所属表 ID'),
+      fieldKey: str('字段名'),
+      metadataCode: str('元数据编码'),
+      standardId: { type: 'string', format: 'uuid', nullable: true },
+      businessMeaning: str('业务含义'),
+      sensitivityLevel: str('敏感级别'),
+      alias: str('别名'),
+      dataType: str('数据类型'),
+      validationRule: obj('校验规则'),
+      enumCode: { type: 'string', nullable: true },
+      standard: { allOf: [{ $ref: '#/components/schemas/BizdataDataStandard' }], nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  BizdataMetadataTable: {
+    type: 'object',
+    properties: {
+      id: uuid('元数据表 ID'),
+      code: str('编码'),
+      targetType: { type: 'string', enum: ['entity', 'metric', 'enum'] },
+      targetId: { type: 'string', format: 'uuid', nullable: true },
+      metadataCode: str('元数据编码'),
+      standardId: { type: 'string', format: 'uuid', nullable: true },
+      businessMeaning: str('业务含义'),
+      status: str('状态'),
+      standard: { allOf: [{ $ref: '#/components/schemas/BizdataDataStandard' }], nullable: true },
+      fields: { type: 'array', items: { $ref: '#/components/schemas/BizdataMetadataField' } },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+    },
+  },
+  CollectionPipeline: {
+    type: 'object',
+    properties: {
+      id: uuid('管道 ID'),
+      code: str('完整编码'),
+      routePath: str('采集路由'),
+      name: str('名称'),
+      description: str('说明'),
+      status: { type: 'string', enum: ['draft', 'published', 'disabled'] },
+      protocolType: { type: 'string', enum: ['serial', 'modbus_rtu', 'modbus_tcp'] },
+      restrictSources: bool('是否限制来源应用'),
+      sampleData: { type: 'string', nullable: true },
+      targetStructure: { type: 'string', nullable: true },
+      parseScript: { type: 'string', nullable: true },
+      storeScript: { type: 'string', nullable: true },
+      entityId: { type: 'string', format: 'uuid', nullable: true },
+      entityCode: { type: 'string', nullable: true },
+      connectionId: { type: 'string', format: 'uuid', nullable: true },
+      tableName: { type: 'string', nullable: true },
+      targetSchema: { type: 'string', nullable: true },
+      basePath: str('完整采集路径'),
+      version: int('版本'),
+      publishedAt: { type: 'string', format: 'date-time', nullable: true },
+      createdBy: { type: 'string', nullable: true },
+      createdAt: dateTime('创建时间'),
+      updatedAt: dateTime('更新时间'),
+      scopeCode: { type: 'string', nullable: true },
+      pipelineSlug: { type: 'string', nullable: true },
+      applicationIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+      entity: { type: 'object', nullable: true },
+      connection: { type: 'object', nullable: true },
+    },
+  },
+  CollectionPipelineRun: {
+    type: 'object',
+    additionalProperties: true,
+    description: '采集运行记录',
+  },
+
+  SystemFeatures: {
+    type: 'object',
+    properties: {
+      metadataEnabled: bool('是否启用元数据目录'),
+      apiServiceAllowWriteOperations: bool('API 测试是否允许写操作'),
+      apiServiceTestAutoRollback: bool('API 测试写操作是否自动回滚'),
+      autoBackupEnabled: bool('是否启用自动备份'),
+      autoBackupCron: str('自动备份 cron', '0 2 * * *'),
+    },
+  },
+  SystemBackupFile: {
+    type: 'object',
+    properties: {
+      name: str('文件名', 'eadaf-20240101.dump'),
+      path: str('服务器路径'),
+      size: int('字节数'),
+      createdAt: dateTime('文件时间'),
+    },
+  },
+  SystemBackupList: {
+    type: 'object',
+    properties: {
+      backupDir: str('备份目录'),
+      items: { type: 'array', items: { $ref: '#/components/schemas/SystemBackupFile' } },
+    },
+  },
+  SystemBackupRun: {
+    type: 'object',
+    properties: {
+      stdout: str('脚本标准输出'),
+      stderr: str('脚本标准错误'),
+      latestBackup: { allOf: [{ $ref: '#/components/schemas/SystemBackupFile' }], nullable: true },
+    },
+  },
+  SystemBackupRestore: {
+    type: 'object',
+    properties: {
+      stdout: str('脚本标准输出'),
+      stderr: str('脚本标准错误'),
+    },
+  },
+
+  DepartmentRoleAssign: {
+    type: 'object',
+    properties: {
+      department_id: uuid('部门 ID'),
+      roles: { type: 'array', items: { $ref: '#/components/schemas/Role' }, description: '分配后的角色列表' },
+    },
+  },
+
+  AiCapabilities: {
+    type: 'object',
+    properties: {
+      modelCapabilities: { type: 'array', items: { type: 'string' } },
+      scopes: { type: 'array', items: { type: 'object' } },
+      skills: { type: 'array', items: { type: 'object' } },
+      tools: { type: 'array', items: { type: 'object' } },
+      topLevelSkill: { type: 'object', nullable: true },
+    },
+  },
+  AiScopeTools: {
+    type: 'object',
+    properties: {
+      scope: obj('Scope', {
+        id: uuid('Scope ID'),
+        name: str('名称'),
+        slug: str('标识'),
+      }),
+      tools: { type: 'array', items: { type: 'object' } },
+    },
+  },
+  AiPublicSkill: {
+    type: 'object',
+    description: '公开 Skill（含 tools / openaiTools）',
+    additionalProperties: true,
+  },
+  AiToolInvokeResult: {
+    type: 'object',
+    description: 'Server Tool 执行结果，结构随 Tool 而变',
+    additionalProperties: true,
+  },
+  AiHttpRequestResult: {
+    type: 'object',
+    properties: {
+      ok: bool('是否成功发起'),
+      kind: str('结果类型', 'success'),
+      data: obj('目标 HTTP 响应摘要', {
+        status: int('HTTP 状态', 200),
+        ok: bool('2xx'),
+        method: str('方法', 'GET'),
+        contentType: str('Content-Type'),
+        headers: obj('响应头'),
+        body: { description: '解析后的响应体' },
+        truncated: bool('body 是否截断', false),
+        url: str('最终 URL'),
+        path: str('路径'),
+        trusted: bool('是否受信主机'),
+      }),
+      display: obj('前端展示载荷'),
+    },
+  },
+  OpenAIChatCompletion: {
+    type: 'object',
+    description: 'OpenAI 兼容非流式对话响应（透传上游）',
+    properties: {
+      id: str('completion id'),
+      object: str('对象类型', 'chat.completion'),
+      choices: {
+        type: 'array',
+        items: obj('choice', {
+          index: int('序号', 0),
+          message: obj('消息', {
+            role: str('角色', 'assistant'),
+            content: str('正文'),
+          }),
+          finish_reason: str('结束原因', 'stop'),
+        }),
+      },
+      usage: obj('token 用量'),
+    },
+  },
+};
+
+Object.assign(schemas, {
+  EnvelopeNull: envelope({ $ref: '#/components/schemas/ApiNull' }, { message: '操作成功' }),
+  EnvelopeAdminProvider: envelope({ $ref: '#/components/schemas/AdminProvider' }, { message: '获取服务商成功' }),
+  EnvelopeAdminProviderList: envelope(paged('#/components/schemas/AdminProvider'), { message: '获取服务商列表成功' }),
+  EnvelopeAdminAiModel: envelope({ $ref: '#/components/schemas/AdminAiModel' }, { message: '获取 AI 模型成功' }),
+  EnvelopeAdminAiModelList: envelope(paged('#/components/schemas/AdminAiModel'), { message: '获取 AI 模型列表成功' }),
+  EnvelopeAdminScope: envelope({ $ref: '#/components/schemas/AdminScope' }, { message: '获取 Scope 成功' }),
+  EnvelopeAdminScopeList: envelope(paged('#/components/schemas/AdminScope'), { message: '获取 Scope 列表成功' }),
+  EnvelopeAdminTool: envelope({ $ref: '#/components/schemas/AdminTool' }, { message: '获取 Tool 成功' }),
+  EnvelopeAdminToolList: envelope(paged('#/components/schemas/AdminTool'), { message: '获取 Tool 列表成功' }),
+  EnvelopeAdminSkill: envelope({ $ref: '#/components/schemas/AdminSkill' }, { message: '获取 Skill 成功' }),
+  EnvelopeAdminSkillList: envelope(paged('#/components/schemas/AdminSkill'), { message: '获取 Skill 列表成功' }),
+  EnvelopeAiRequestLog: envelope({ $ref: '#/components/schemas/AiRequestLog' }, { message: '获取日志成功' }),
+  EnvelopeAiRequestLogList: envelope(paged('#/components/schemas/AiRequestLog'), { message: '获取 AI 请求日志成功' }),
+
+  EnvelopeStorageBucket: envelope({ $ref: '#/components/schemas/StorageBucket' }, { message: '获取 Bucket 成功' }),
+  EnvelopeStorageBucketList: envelope(paged('#/components/schemas/StorageBucket'), { message: '获取 Bucket 列表成功' }),
+  EnvelopeStorageObject: envelope({ $ref: '#/components/schemas/StorageObject' }, { message: '获取文件成功', code: 201 }),
+  EnvelopeStorageObjectList: envelope(paged('#/components/schemas/StorageObject'), { message: '获取文件列表成功' }),
+  EnvelopeStorageDedup: envelope({ $ref: '#/components/schemas/StorageDedupResult' }, { message: '查询成功' }),
+  EnvelopeStorageTusResult: envelope({ $ref: '#/components/schemas/StorageTusResult' }, { message: '上传完成' }),
+
+  EnvelopeBizdataSchema: envelope({ $ref: '#/components/schemas/BizdataSchemaSnapshot' }, { message: '获取业务数据模型成功' }),
+  EnvelopeBizdataEntity: envelope({ $ref: '#/components/schemas/BizdataEntity' }, { message: '获取实体成功' }),
+  EnvelopeBizdataEntityList: envelope(paged('#/components/schemas/BizdataEntity'), { message: '获取实体列表成功' }),
+  EnvelopeBizdataEntitySummaryList: envelope(paged('#/components/schemas/BizdataEntitySummary'), { message: '获取实体列表成功' }),
+  EnvelopeBizdataExistsEntity: envelope({ $ref: '#/components/schemas/BizdataExistsEntity' }, { message: '查询实体是否存在成功' }),
+  EnvelopeBizdataExistsEnum: envelope({ $ref: '#/components/schemas/BizdataExistsEnum' }, { message: '查询枚举是否存在成功' }),
+  EnvelopeBizdataExistsScope: envelope({ $ref: '#/components/schemas/BizdataExistsScope' }, { message: '查询 Scope 是否存在成功' }),
+  EnvelopeBizdataEnum: envelope({ $ref: '#/components/schemas/BizdataEnum' }, { message: '获取枚举成功' }),
+  EnvelopeBizdataEnumList: envelope(paged('#/components/schemas/BizdataEnum'), { message: '获取枚举列表成功' }),
+  EnvelopeBizdataRelation: envelope({ $ref: '#/components/schemas/BizdataRelation' }, { message: '获取关系成功' }),
+  EnvelopeBizdataRelationList: envelope(
+    { type: 'array', items: { $ref: '#/components/schemas/BizdataRelation' } },
+    { message: '获取关系列表成功' },
+  ),
+  EnvelopeBizdataScopeList: envelope({ $ref: '#/components/schemas/BizdataScopeList' }, { message: '获取 Scope 列表成功' }),
+  EnvelopeBizdataScopeDoc: envelope({ $ref: '#/components/schemas/BizdataScopeDoc' }, { message: '获取 Scope 业务说明成功' }),
+  EnvelopeBizdataScopeDocList: envelope(
+    { type: 'array', items: { $ref: '#/components/schemas/BizdataScopeDocBrief' } },
+    { message: '获取 Scope 业务说明列表成功' },
+  ),
+  EnvelopeBizdataDeletionAnalysis: envelope({ $ref: '#/components/schemas/BizdataDeletionAnalysis' }, { message: '获取实体删除影响分析成功' }),
+  EnvelopeBizdataDeletionExecute: envelope({ $ref: '#/components/schemas/BizdataDeletionExecute' }, { message: '实体级联删除成功' }),
+  EnvelopeBizdataMaterializationPreview: envelope({ $ref: '#/components/schemas/BizdataMaterializationPreview' }, { message: '物化预览成功' }),
+  EnvelopeBizdataMaterializationExecute: envelope({ $ref: '#/components/schemas/BizdataMaterializationExecute' }, { message: '物化执行成功' }),
+  EnvelopeBizdataMaterializationStatus: envelope(
+    { type: 'array', items: { $ref: '#/components/schemas/BizdataMaterializationStatusItem' } },
+    { message: '获取物化状态成功' },
+  ),
+  EnvelopeBizdataMaterializationRun: envelope({ $ref: '#/components/schemas/BizdataMaterializationRun' }, { message: '获取物化记录成功' }),
+  EnvelopeBizdataMaterializationRunList: envelope(paged('#/components/schemas/BizdataMaterializationRun'), { message: '获取物化历史成功' }),
+  EnvelopeBizdataTableSchema: envelope({ $ref: '#/components/schemas/BizdataTableSchema' }, { message: '获取物化表结构成功' }),
+  EnvelopeBizdataTableRows: envelope({ $ref: '#/components/schemas/BizdataTableRows' }, { message: '获取物化表数据成功' }),
+  EnvelopeBizdataDatabaseConnection: envelope({ $ref: '#/components/schemas/BizdataDatabaseConnection' }, { message: '获取数据库连接成功' }),
+  EnvelopeBizdataDatabaseConnectionList: envelope(
+    { type: 'array', items: { $ref: '#/components/schemas/BizdataDatabaseConnection' } },
+    { message: '获取数据库连接列表成功' },
+  ),
+  EnvelopeBizdataConnectionTest: envelope({ $ref: '#/components/schemas/BizdataConnectionTest' }, { message: '连接测试成功' }),
+  EnvelopeBizdataMetric: envelope({ $ref: '#/components/schemas/BizdataMetric' }, { message: '获取指标成功' }),
+  EnvelopeBizdataMetricList: envelope(paged('#/components/schemas/BizdataMetric'), { message: '获取指标列表成功' }),
+  EnvelopeBizdataMetricCard: envelope({ $ref: '#/components/schemas/BizdataMetricCard' }, { message: '获取指标卡片成功' }),
+  EnvelopeBizdataMetricCardList: envelope(paged('#/components/schemas/BizdataMetricCard'), { message: '获取指标卡片列表成功' }),
+  EnvelopeBizdataMetricRunList: envelope(paged('#/components/schemas/BizdataMetricRun'), { message: '获取执行记录成功' }),
+  EnvelopeBizdataMetricValue: envelope({ $ref: '#/components/schemas/BizdataMetricValue' }, { message: '获取指标最新值成功' }),
+  EnvelopeBizdataMetricValueList: envelope(paged('#/components/schemas/BizdataMetricValue'), { message: '获取指标历史值成功' }),
+  EnvelopeBizdataMetricDashboard: envelope({ $ref: '#/components/schemas/BizdataMetricDashboard' }, { message: '获取指标看板成功' }),
+  EnvelopeBizdataDataStandard: envelope({ $ref: '#/components/schemas/BizdataDataStandard' }, { message: '获取数据标准成功' }),
+  EnvelopeBizdataDataStandardList: envelope(paged('#/components/schemas/BizdataDataStandard'), { message: '获取数据标准列表成功' }),
+  EnvelopeBizdataMetadataTable: envelope({ $ref: '#/components/schemas/BizdataMetadataTable' }, { message: '获取元数据表成功' }),
+  EnvelopeBizdataMetadataTableList: envelope(paged('#/components/schemas/BizdataMetadataTable'), { message: '获取元数据表列表成功' }),
+  EnvelopeCollectionPipeline: envelope({ $ref: '#/components/schemas/CollectionPipeline' }, { message: '获取采集管道成功' }),
+  EnvelopeCollectionPipelineList: envelope(paged('#/components/schemas/CollectionPipeline'), { message: '获取采集管道列表成功' }),
+  EnvelopeCollectionPipelineRunList: envelope(paged('#/components/schemas/CollectionPipelineRun'), { message: '获取运行记录成功' }),
+  EnvelopeCollectionPipelineTest: envelope({ type: 'object', additionalProperties: true }, { message: '采集管道测试成功' }),
+
+  EnvelopeSystemFeatures: envelope({ $ref: '#/components/schemas/SystemFeatures' }, { message: '获取系统功能开关成功' }),
+  EnvelopeSystemBackupList: envelope({ $ref: '#/components/schemas/SystemBackupList' }, { message: '获取备份列表成功' }),
+  EnvelopeSystemBackupRun: envelope({ $ref: '#/components/schemas/SystemBackupRun' }, { message: '备份任务已执行' }),
+  EnvelopeSystemBackupRestore: envelope({ $ref: '#/components/schemas/SystemBackupRestore' }, { message: '数据恢复完成' }),
+
+  EnvelopeUser: envelope({ $ref: '#/components/schemas/User' }, { message: 'success' }),
+  EnvelopeDepartmentRoleAssign: envelope({ $ref: '#/components/schemas/DepartmentRoleAssign' }, { message: '分配成功' }),
+
+  EnvelopeAiCapabilities: {
+    type: 'object',
+    properties: { data: { $ref: '#/components/schemas/AiCapabilities' } },
+  },
+  EnvelopeAiScopeTools: {
+    type: 'object',
+    properties: { data: { $ref: '#/components/schemas/AiScopeTools' } },
+  },
+  EnvelopeAiPublicSkill: {
+    type: 'object',
+    properties: { data: { $ref: '#/components/schemas/AiPublicSkill' } },
+  },
+  EnvelopeAiPublicSkillList: {
+    type: 'object',
+    properties: { data: { type: 'array', items: { $ref: '#/components/schemas/AiPublicSkill' } } },
+  },
+  EnvelopeAiToolInvoke: {
+    type: 'object',
+    properties: { data: { $ref: '#/components/schemas/AiToolInvokeResult' } },
+  },
+  EnvelopeAiHttpRequest: {
+    type: 'object',
+    properties: { data: { $ref: '#/components/schemas/AiHttpRequestResult' } },
+  },
+  EnvelopeAiPublicModels: {
+    type: 'object',
+    properties: {
+      data: { type: 'array', items: { $ref: '#/components/schemas/ModelInfo' } },
+    },
+  },
+  EnvelopeAiToolInvokeLog: {
+    type: 'object',
+    properties: {
+      data: obj('是否已落盘', { logged: bool('是否写入日志') }),
+    },
+  },
+});
+
+module.exports = schemas;

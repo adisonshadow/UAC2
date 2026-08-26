@@ -12,6 +12,7 @@ const { validate: isUuid } = require('uuid');
 const apiServiceService = require('./apiService/apiServiceService');
 const businessDataService = require('./businessData/businessDataService');
 const { getBuiltinApiByCode, listBuiltinApis } = require('./builtinApi/catalog');
+const { enrichBuiltinApiWithSwagger } = require('./builtinApi/swaggerDocs');
 
 /** 系统内置应用 code：本系统拥有全部内置 API 访问权 */
 const SYSTEM_APPLICATION_CODE = 'EADAF';
@@ -107,7 +108,7 @@ function buildBuiltinApiCatalog(permissionCodes) {
   permissionCodes.forEach((code) => {
     const item = getBuiltinApiByCode(code);
     if (item) {
-      apis.push({
+      apis.push(enrichBuiltinApiWithSwagger({
         code: item.code,
         domain: item.domain,
         label: item.label,
@@ -115,7 +116,7 @@ function buildBuiltinApiCatalog(permissionCodes) {
         httpMethods: item.httpMethods || [],
         actions: item.actions || [],
         description: item.description || '',
-      });
+      }));
     }
   });
   return apis;

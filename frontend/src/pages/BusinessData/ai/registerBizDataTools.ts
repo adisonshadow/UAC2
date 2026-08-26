@@ -2,10 +2,13 @@ import {
   deleteBusinessDataRelation,
   getBusinessDataEntity,
   getBusinessDataEntities,
+  getBusinessDataEntityExists,
+  getBusinessDataEnumExists,
   getBusinessDataEnums,
   getBusinessDataRelations,
   getBusinessDataSchema,
   getBusinessDataScopeDoc,
+  getBusinessDataScopeExists,
   patchBusinessDataEntity,
   patchBusinessDataEnum,
   postBusinessDataEntity,
@@ -14,7 +17,8 @@ import {
   postEntityDeletionExecute,
   putBusinessDataEntityFields,
   putBusinessDataScopeDoc,
-} from '@/services/UAC/api/businessData';import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
+} from '@/services/UAC/api/businessData';
+import { registerFunctionCall, unregisterFunctionCall } from '@eadaf/ai-base';
 import { createMutatingHandler } from '@/ai/toolMutation';
 import { getApiData, getApiErrorMessage, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import {
@@ -63,6 +67,9 @@ const TOOL_NAMES = [
   'bizdata_list_entity_summaries',
   'bizdata_get_entity',
   'bizdata_entity',
+  'bizdata_exists_entity',
+  'bizdata_exists_enum',
+  'bizdata_exists_scope',
   'bizdata_create_entity',
   'bizdata_update_entity',
   'bizdata_rename_entity_code',
@@ -373,9 +380,69 @@ export function registerBizDataTools() {
   });
 
   registerFunctionCall({
+    name: 'bizdata_exists_entity',
+    description:
+      '按精确 code 判断实体是否已存在。AI 自动新建前必须先调用：exists=true 则改用 bizdata_update_entity / bizdata_rename_entity_code，禁止盲目 create',
+    parameters: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: '实体 code，如 sales:order:Order' },
+      },
+      required: ['code'],
+    },
+    handler: async (args) => {
+      const res = await getBusinessDataEntityExists({ code: String(args.code || '').trim() });
+      if (!isApiSuccess(res)) {
+        throw new Error(getApiErrorMessage(res, '查询实体是否存在失败'));
+      }
+      return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_exists_enum',
+    description:
+      '按精确 code 判断枚举是否已存在。AI 自动新建前必须先调用：exists=true 则改用 bizdata_update_enum，禁止盲目 create',
+    parameters: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: '枚举 code，如 production:WorkOrderStatus' },
+      },
+      required: ['code'],
+    },
+    handler: async (args) => {
+      const res = await getBusinessDataEnumExists({ code: String(args.code || '').trim() });
+      if (!isApiSuccess(res)) {
+        throw new Error(getApiErrorMessage(res, '查询枚举是否存在失败'));
+      }
+      return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
+    name: 'bizdata_exists_scope',
+    description:
+      '判断 Scope（实体 code 前缀）下是否已有实体。新建域/子域前调用；Scope 由实体 code 推导，无独立 create_scope。exists=true 时附带 entityCount',
+    parameters: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: 'Scope code，如 sales 或 sales:order' },
+      },
+      required: ['code'],
+    },
+    handler: async (args) => {
+      const res = await getBusinessDataScopeExists({ code: String(args.code || '').trim() });
+      if (!isApiSuccess(res)) {
+        throw new Error(getApiErrorMessage(res, '查询 Scope 是否存在失败'));
+      }
+      return getApiData(res);
+    },
+  });
+
+  registerFunctionCall({
     name: 'bizdata_create_entity',
     description:
-      '创建全新实体（code 须不存在）；可同时传 fields、indexes、relations。调整 Scope/重命名已有实体请用 bizdata_rename_entity_code，禁止 delete + create',
+      '创建全新实体（code 须不存在）；新建前先 bizdata_exists_entity。可同时传 fields、indexes、relations。调整 Scope/重命名已有实体请用 bizdata_rename_entity_code，禁止 delete + create',
     requiresVerification: true,
     parameters: {
       type: 'object',
@@ -755,7 +822,7 @@ export function registerBizDataTools() {
   registerFunctionCall({
     name: 'bizdata_create_enum',
     description:
-      '创建 ADB 枚举定义；有限取值字段（status/state/type 等）须先建枚举，再在实体字段中用 type=adb-enum + enumCode 引用。推荐同时传 values 与 items；仅传 values 时服务端会自动补齐 items（UI 以 items 展示选项）',
+      '创建 ADB 枚举定义；新建前先 bizdata_exists_enum（已存在则 bizdata_update_enum）。有限取值字段（status/state/type 等）须先建枚举，再在实体字段中用 type=adb-enum + enumCode 引用。推荐同时传 values 与 items；仅传 values 时服务端会自动补齐 items（UI 以 items 展示选项）',
     parameters: {
       type: 'object',
       properties: {

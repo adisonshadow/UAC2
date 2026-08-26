@@ -457,8 +457,7 @@ router.put('/:department_id', authWithBuiltinApiGuard, DepartmentController.upda
  *                   type: string
  *                   example: success
  *                 data:
- *                   type: null
- *                   example: null
+ *                   $ref: '#/components/schemas/ApiNull'
  *       400:
  *         description: 存在子部门，无法删除
  *         content:
@@ -596,7 +595,11 @@ router.get('/:department_id/users', authWithBuiltinApiGuard, DepartmentControlle
  *                 description: 角色ID列表
  *     responses:
  *       200:
- *         description: 分配成功
+ *         description: 分配成功，data.roles 为部门当前角色列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeDepartmentRoleAssign'
  */
 router.put('/:department_id/roles', authWithBuiltinApiGuard, DepartmentController.assignRoles);
 

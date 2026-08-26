@@ -36,7 +36,11 @@ const restoreUploadMiddleware = koaBody({
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为系统功能开关
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeSystemFeatures'
  *   put:
  *     tags: [System]
  *     summary: 更新系统功能开关 [需要认证]
@@ -50,9 +54,15 @@ const restoreUploadMiddleware = koaBody({
  *               metadataEnabled: { type: boolean }
  *               apiServiceAllowWriteOperations: { type: boolean, description: 'API 测试中是否允许执行写操作（仅测试页，含自定义 SQL）' }
  *               apiServiceTestAutoRollback: { type: boolean, description: 'API 测试中写操作是否自动回滚（仅测试页；false 时测试数据落库）' }
+ *               autoBackupEnabled: { type: boolean, description: '是否启用自动备份' }
+ *               autoBackupCron: { type: string, description: '自动备份 cron，如 0 2 * * *' }
  *     responses:
  *       200:
- *         description: 更新成功
+ *         description: 更新成功，data 为更新后的功能开关
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeSystemFeatures'
  */
 router.get('/features', authWithBuiltinApiGuard, SystemController.getFeatures);
 router.put('/features', authWithBuiltinApiGuard, SystemController.updateFeatures);
@@ -66,7 +76,11 @@ router.put('/features', authWithBuiltinApiGuard, SystemController.updateFeatures
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data.backupDir 与 data.items[]（name/path/size/createdAt）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeSystemBackupList'
  */
 router.get('/backups', authWithBuiltinApiGuard, SystemController.listBackups);
 
@@ -79,7 +93,11 @@ router.get('/backups', authWithBuiltinApiGuard, SystemController.listBackups);
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: 备份已触发
+ *         description: 备份已触发，data.latestBackup 为最新 dump 文件
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeSystemBackupRun'
  */
 router.post('/backups/run', authWithBuiltinApiGuard, SystemController.runBackup);
 
@@ -99,7 +117,11 @@ router.post('/backups/run', authWithBuiltinApiGuard, SystemController.runBackup)
  *               file: { type: string, format: binary, description: '.dump 备份文件' }
  *     responses:
  *       200:
- *         description: 恢复完成
+ *         description: 恢复完成，data 含 stdout/stderr
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeSystemBackupRestore'
  */
 router.post(
   '/backups/restore',

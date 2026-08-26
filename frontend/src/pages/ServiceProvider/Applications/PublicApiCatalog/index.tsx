@@ -1,6 +1,6 @@
 import { useAIChatDisplayMode } from '@eadaf/ai-base';
 import { ApiOutlined, PartitionOutlined, CopyOutlined, WarningOutlined, ReadOutlined, CloudUploadOutlined } from '@ant-design/icons';
-import { Alert, Button, Collapse, Segmented, Spin, Tag, Tree, Typography } from 'antd';
+import { Alert, Button, Segmented, Spin, Tag, Tree, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import type { DataNode } from 'antd/es/tree';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -31,6 +31,35 @@ import {
 import './index.css';
 
 const { Text, Paragraph } = Typography;
+
+function safeJson(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return '// 无法序列化该结构';
+  }
+}
+
+function DocPanels({
+  request,
+  response,
+}: {
+  request: React.ReactNode;
+  response: React.ReactNode;
+}) {
+  return (
+    <div className="application-api-catalog__operation">
+      <section className="application-api-catalog__doc-panel">
+        <h2 className="application-api-catalog__doc-panel-title">请求</h2>
+        <div className="application-api-catalog__doc-panel-body">{request}</div>
+      </section>
+      <section className="application-api-catalog__doc-panel">
+        <h2 className="application-api-catalog__doc-panel-title">响应</h2>
+        <div className="application-api-catalog__doc-panel-body">{response}</div>
+      </section>
+    </div>
+  );
+}
 
 function methodClass(method?: string) {
   return `application-api-catalog__method application-api-catalog__method--${(method || 'get').toLowerCase()}`;
@@ -114,7 +143,14 @@ function toBuiltinTreeNodes(items: ApplicationApiCatalogTreeNode[]): DataNode[] 
   }));
 }
 
-function BuiltinApiDetail({ api }: { api: BuiltinApiCatalogItem }) {
+function BuiltinApiDetail({
+  api,
+  applicationKey,
+}: {
+  api: BuiltinApiCatalogItem;
+  applicationKey: string;
+}) {
+  const navigate = useNavigate();
   const METHOD_COLORS: Record<string, string> = {
     GET: 'blue',
     POST: 'green',
@@ -122,6 +158,15 @@ function BuiltinApiDetail({ api }: { api: BuiltinApiCatalogItem }) {
     DELETE: 'red',
     PATCH: 'cyan',
   };
+  const operations: ApplicationApiCatalogOperation[] = api.operations?.length
+    ? api.operations
+    : (api.httpMethods || []).map((httpMethod) => ({
+        operation: httpMethod.toLowerCase(),
+        httpMethod,
+        routePattern: api.routePath,
+      }));
+  const showPerMethodHead = operations.length > 1;
+
   return (
     <div className="application-api-catalog__detail">
       <h1 className="application-api-catalog__service-title">{api.label}</h1>
@@ -155,6 +200,30 @@ function BuiltinApiDetail({ api }: { api: BuiltinApiCatalogItem }) {
           style={{ marginTop: 16 }}
           message="内置 API：外部应用通过应用 API 密钥调用时，不受角色/组织限制（按应用授权鉴权）。"
         />
+      </div>
+
+      <div className="application-api-catalog__operations" style={{ marginTop: 16 }}>
+        {operations.map((op) => (
+          <div key={`${api.code}-${op.httpMethod}`} className="application-api-catalog__operation-group">
+            {showPerMethodHead ? <OperationEndpointHead operation={op} /> : null}
+            <OperationBlock
+              key={`${api.code}-${op.httpMethod}`}
+              operation={op}
+              requestParameterInterface={op.requestParameterInterface}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <Button
+          type="link"
+          icon={<WarningOutlined />}
+          style={{ padding: 0 }}
+          onClick={() => navigate(buildExceptionResponsesDocsPath(applicationKey))}
+        >
+          异常响应信息明细
+        </Button>
       </div>
     </div>
   );
@@ -269,14 +338,7 @@ function CollectionApiDetail({
       </div>
 
       <div className="application-api-catalog__operations" style={{ marginTop: 16 }}>
-        <Collapse
-          className="application-api-catalog__doc-collapse"
-          defaultActiveKey={['request', 'response']}
-          items={[
-            { key: 'request', label: '请求', children: requestPanel },
-            { key: 'response', label: '响应', children: responsePanel },
-          ]}
-        />
+        <DocPanels request={requestPanel} response={responsePanel} />
       </div>
 
       <div style={{ marginTop: 16 }}>
@@ -317,7 +379,8 @@ function OperationBlock({
   operation: ApplicationApiCatalogOperation;
   requestParameterInterface?: string;
 }) {
-  const hasInterface = Boolean(requestParameterInterface?.trim());
+  const interfaceText = operation.requestParameterInterface || requestParameterInterface;
+  const hasInterface = Boolean(interfaceText?.trim());
   const hasSchema = Boolean(operation.parametersSchema && Object.keys(operation.parametersSchema).length);
   const requestExample = operation.requestExample || operation.mockParameters;
   const hasRequestExample = Boolean(requestExample && Object.keys(requestExample).length);
@@ -336,7 +399,7 @@ function OperationBlock({
             请求参数结构（TypeScript interface）
           </Text>
           <pre className="application-api-catalog__schema">
-            {requestParameterInterface!.trim()}
+            {interfaceText!.trim()}
           </pre>
         </>
       ) : null}
@@ -361,7 +424,7 @@ function OperationBlock({
             请求参数 Example（JSON）
           </Text>
           <pre className="application-api-catalog__schema">
-            {JSON.stringify(requestExample, null, 2)}
+            {safeJson(requestExample)}
           </pre>
         </>
       ) : null}
@@ -378,21 +441,15 @@ function OperationBlock({
         </>
       ) : null}
       {hasSchema ? (
-        <Collapse
-          ghost
-          className="application-api-catalog__inner-collapse"
-          items={[
-            {
-              key: 'schema',
-              label: 'Parameters Schema（运行时 JSON Schema）',
-              children: (
-                <pre className="application-api-catalog__schema">
-                  {JSON.stringify(operation.parametersSchema, null, 2)}
-                </pre>
-              ),
-            },
-          ]}
-        />
+        <details className="application-api-catalog__inner-collapse">
+          <summary>Parameters Schema（运行时 JSON Schema）</summary>
+          <pre className="application-api-catalog__schema">
+            {safeJson(operation.parametersSchema)}
+          </pre>
+        </details>
+      ) : null}
+      {!hasInterface && !hasSchema && !hasRequestExample ? (
+        <Text type="secondary">暂无请求参数</Text>
       ) : null}
     </div>
   );
@@ -425,28 +482,7 @@ function OperationBlock({
     </div>
   );
 
-  const collapseItems = [
-    {
-      key: 'request',
-      label: '请求',
-      children: requestPanel,
-    },
-    {
-      key: 'response',
-      label: '响应',
-      children: responsePanel,
-    },
-  ];
-
-  return (
-    <div className="application-api-catalog__operation">
-      <Collapse
-        className="application-api-catalog__doc-collapse"
-        defaultActiveKey={['request', 'response']}
-        items={collapseItems}
-      />
-    </div>
-  );
+  return <DocPanels request={requestPanel} response={responsePanel} />;
 }
 
 function ServiceDetail({
@@ -834,7 +870,11 @@ const ApplicationPublicApiCatalogPage: React.FC = () => {
             )
           ) : tab === 'builtin' ? (
             selectedBuiltinApi ? (
-              <BuiltinApiDetail api={selectedBuiltinApi} />
+              <BuiltinApiDetail
+                key={selectedBuiltinApi.code}
+                api={selectedBuiltinApi}
+                applicationKey={code!}
+              />
             ) : (
               <div className="application-api-catalog__detail application-api-catalog__empty">
                 请从左侧选择一个内置 API 查看明细

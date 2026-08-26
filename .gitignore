@@ -69,6 +69,7 @@ backend/db-backup/
 backend/data/*.db
 backend/src/resource/
 backend/install/images/*.tar
+backend/img_crop_cache
 
 # --- AIBase_with_example ---
 AIBase_with_example/ref-demo/

@@ -405,6 +405,8 @@ router.put('/:role_id', authWithBuiltinApiGuard, RoleController.update);
  *                 message:
  *                   type: string
  *                   example: 角色删除成功
+ *                 data:
+ *                   $ref: '#/components/schemas/ApiNull'
  *       404:
  *         description: 角色不存在
  *       500:
@@ -458,6 +460,8 @@ router.delete('/:role_id', authWithBuiltinApiGuard, RoleController.delete);
  *                 message:
  *                   type: string
  *                   example: 权限成功
+ *                 data:
+ *                   $ref: '#/components/schemas/ApiNull'
  *       400:
  *         description: 参数错误
  *       404:
@@ -520,6 +524,8 @@ router.post('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.ass
  *                 message:
  *                   type: string
  *                   example: 权限更新成功
+ *                 data:
+ *                   $ref: '#/components/schemas/ApiNull'
  *       400:
  *         description: 参数错误
  *       404:
@@ -532,18 +538,19 @@ router.put('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.upda
 /**
  * @swagger
  * /api/v1/roles/check-permission:
- *   get:
+ *   post:
  *     tags:
  *       - Roles
  *     summary: 检查用户权限 [需要认证]
- *     description: 检查当前用户是否拥有指定权限
+ *     description: 检查当前用户是否拥有指定权限（permission_code 通过 query 传递）
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - name: permission_code
  *         in: query
  *         required: true
- *         type: string
+ *         schema:
+ *           type: string
  *         description: 权限编码
  *     responses:
  *       200:

@@ -9,6 +9,8 @@ export interface ApplicationApiCatalogOperation {
   mockParameters?: Record<string, unknown>;
   /** 与 mockParameters 相同：请求参数 Example（编辑/测试页同源） */
   requestExample?: Record<string, unknown>;
+  /** 请求参数 TypeScript interface（内置 API 从 swagger 生成） */
+  requestParameterInterface?: string;
   responseInterface?: string;
   responsesSchema?: Record<string, unknown>;
   responseSchema?: Record<string, unknown>;
@@ -52,6 +54,8 @@ export interface BuiltinApiCatalogItem {
   httpMethods: string[];
   actions: string[];
   description: string;
+  /** 按 HTTP method 拆分的请求/响应文档（来自路由 swagger） */
+  operations?: ApplicationApiCatalogOperation[];
 }
 
 /** 采集管道 API 明细（公开目录展示用） */
@@ -128,6 +132,7 @@ export async function getApplicationsPublicApiCatalog(
     `/api/v1/applications-public/${encodeURIComponent(key)}/api-catalog`,
     {
       method: 'GET',
+      timeout: 60_000,
       skipErrorHandler: options?.skipErrorHandler,
     },
   );

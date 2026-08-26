@@ -66,6 +66,21 @@ export function getStorageDownloadUrl(objectId: string) {
   return `${BASE}/objects/${objectId}/download`;
 }
 
+export type StorageCropParams = {
+  w?: number;
+  h?: number;
+  fit?: 'cover' | 'contain';
+};
+
+export function getStorageCropUrl(objectId: string, params?: StorageCropParams) {
+  const search = new URLSearchParams();
+  if (params?.w != null) search.set('w', String(params.w));
+  if (params?.h != null) search.set('h', String(params.h));
+  if (params?.fit) search.set('fit', params.fit);
+  const qs = search.toString();
+  return `${BASE}/objects/${objectId}/crop${qs ? `?${qs}` : ''}`;
+}
+
 export async function postStorageObjectDedupCheck(body: { bucketCode: string; md5: string }) {
   return request<{
     code: number;

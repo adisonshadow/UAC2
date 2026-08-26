@@ -62,6 +62,51 @@ class BusinessDataController {
     }
   }
 
+  static async existsEntity(ctx) {
+    try {
+      const code = String(ctx.query.code || '').trim();
+      if (!code) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: '缺少 query 参数 code', data: null };
+        return;
+      }
+      const data = await businessDataService.existsEntityByCode(code);
+      ctx.body = { code: 200, message: '查询实体是否存在成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async existsEnum(ctx) {
+    try {
+      const code = String(ctx.query.code || '').trim();
+      if (!code) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: '缺少 query 参数 code', data: null };
+        return;
+      }
+      const data = await businessDataService.existsEnumByCode(code);
+      ctx.body = { code: 200, message: '查询枚举是否存在成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
+  static async existsScope(ctx) {
+    try {
+      const code = String(ctx.query.code || '').trim();
+      if (!code) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: '缺少 query 参数 code', data: null };
+        return;
+      }
+      const data = await businessDataService.existsScopeByCode(code);
+      ctx.body = { code: 200, message: '查询 Scope 是否存在成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error);
+    }
+  }
+
   static async createEntity(ctx) {
     try {
       const data = await businessDataService.createEntity(ctx.request.body);

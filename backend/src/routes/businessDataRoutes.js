@@ -18,6 +18,10 @@ const router = new Router({ prefix: '/api/v1/business-data' });
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataSchema'
  */
 router.get('/schema', authWithBuiltinApiGuard, BusinessDataController.getSchema);
 
@@ -48,6 +52,10 @@ router.get('/schema', authWithBuiltinApiGuard, BusinessDataController.getSchema)
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEntityList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建实体 [需要认证]
@@ -69,9 +77,41 @@ router.get('/schema', authWithBuiltinApiGuard, BusinessDataController.getSchema)
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEntity'
  */
 router.get('/entities', authWithBuiltinApiGuard, BusinessDataController.listEntities);
 router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createEntity);
+
+/**
+ * @swagger
+ * /api/v1/business-data/entities/exists:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 判断实体 code 是否存在 [需要认证]
+ *     description: |
+ *       AI 自动新建前的准备：按精确 code 查询实体是否已存在。
+ *       始终返回 200；exists=true 时 item 为实体摘要（不含 fields）。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema: { type: string }
+ *         description: 实体 code，如 sales:order:Order
+ *     responses:
+ *       200:
+ *         description: 查询成功，data.exists 为布尔值
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataExistsEntity'
+ *       400:
+ *         description: 缺少 code
+ */
+router.get('/entities/exists', authWithBuiltinApiGuard, BusinessDataController.existsEntity);
 
 /**
  * @swagger
@@ -88,6 +128,10 @@ router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createE
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEntity'
  *   patch:
  *     tags: [BusinessData]
  *     summary: 更新实体（version+1） [需要认证]
@@ -115,6 +159,10 @@ router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createE
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEntity'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 简单删除实体（无下游清理；遇 RESTRICT 引用会失败，请改用 deletion-analysis / deletion-execute） [需要认证]
@@ -127,6 +175,10 @@ router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createE
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.getEntity);
 router.patch('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.updateEntity);
@@ -148,6 +200,10 @@ router.delete('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.d
  *     responses:
  *       200:
  *         description: 分析成功，返回连通子图实体、关系、API 服务/采集管道/物化/指标/元数据目录等影响面
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDeletionAnalysis'
  *       404:
  *         description: 实体不存在
  */
@@ -183,6 +239,10 @@ router.post(
  *     responses:
  *       200:
  *         description: 删除成功，data.summary 含删除计数与物理表 DROP 结果
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDeletionExecute'
  */
 router.post(
   '/entities/deletion-execute',
@@ -238,6 +298,10 @@ router.post(
  *     responses:
  *       200:
  *         description: 保存成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEntity'
  */
 router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataController.upsertFields);
 
@@ -248,9 +312,20 @@ router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataControll
  *     tags: [BusinessData]
  *     summary: 获取枚举列表 [需要认证]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: size
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEnumList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建枚举 [需要认证]
@@ -258,12 +333,56 @@ router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataControll
  *       body 含 code、enumInfo、values、items。
  *       values 与 items 会互相同步：仅传 values 时自动补齐 items（label/sort），仅传 items 时自动补齐 values。
  *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code]
+ *             properties:
+ *               code: { type: string, description: 枚举编码，如 sales:OrderStatus }
+ *               enumInfo: { type: object }
+ *               values: { type: object, description: 值映射，key 为枚举值 }
+ *               items: { type: object, description: 项列表（含 label/sort） }
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEnum'
  */
 router.get('/enums', authWithBuiltinApiGuard, BusinessDataController.listEnums);
 router.post('/enums', authWithBuiltinApiGuard, BusinessDataController.createEnum);
+
+/**
+ * @swagger
+ * /api/v1/business-data/enums/exists:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 判断枚举 code 是否存在 [需要认证]
+ *     description: |
+ *       AI 自动新建前的准备：按精确 code 查询枚举是否已存在。
+ *       始终返回 200；exists=true 时 item 为枚举详情。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema: { type: string }
+ *         description: 枚举 code，如 production:WorkOrderStatus
+ *     responses:
+ *       200:
+ *         description: 查询成功，data.exists 为布尔值
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataExistsEnum'
+ *       400:
+ *         description: 缺少 code
+ */
+router.get('/enums/exists', authWithBuiltinApiGuard, BusinessDataController.existsEnum);
 
 /**
  * @swagger
@@ -280,9 +399,22 @@ router.post('/enums', authWithBuiltinApiGuard, BusinessDataController.createEnum
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               enumInfo: { type: object }
+ *               values: { type: object }
+ *               items: { type: object }
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataEnum'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除枚举 [需要认证]
@@ -295,6 +427,10 @@ router.post('/enums', authWithBuiltinApiGuard, BusinessDataController.createEnum
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.patch('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.updateEnum);
 router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.deleteEnum);
@@ -318,6 +454,10 @@ router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.dele
  *     responses:
  *       200:
  *         description: 获取成功；每条含 fromEntityCode、toEntityCode、directionSummary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataRelationList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建关系（关联实体 version+1；同一 from 内 name 唯一） [需要认证]
@@ -340,6 +480,10 @@ router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.dele
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataRelation'
  *       400:
  *         description: 重名或同边已存在（错误信息含 from/to entityCode）
  */
@@ -358,9 +502,24 @@ router.post('/relations', authWithBuiltinApiGuard, BusinessDataController.create
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type: { type: string, enum: [oneToMany, manyToOne, oneToOne, manyToMany] }
+ *               name: { type: string }
+ *               inverseName: { type: string }
+ *               config: { type: object }
+ *               joinTable: { type: string }
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataRelation'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除关系 [需要认证]
@@ -373,6 +532,10 @@ router.post('/relations', authWithBuiltinApiGuard, BusinessDataController.create
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.patch('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.updateRelation);
 router.delete('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.deleteRelation);
@@ -398,6 +561,10 @@ router.delete('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.
  *     responses:
  *       200:
  *         description: 预览成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMaterializationPreview'
  */
 router.post('/materialization/preview', authWithBuiltinApiGuard, BusinessDataController.previewMaterialization);
 
@@ -429,6 +596,10 @@ router.post('/materialization/preview', authWithBuiltinApiGuard, BusinessDataCon
  *     responses:
  *       200:
  *         description: 执行成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMaterializationExecute'
  *       409:
  *         description: 目标 Schema/数据库不存在，需用户确认后带 createTargetIfMissing 重试
  */
@@ -448,6 +619,10 @@ router.post('/materialization/execute', authWithBuiltinApiGuard, BusinessDataCon
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMaterializationStatus'
  */
 router.get('/materialization/status', authWithBuiltinApiGuard, BusinessDataController.getMaterializationStatus);
 
@@ -471,6 +646,10 @@ router.get('/materialization/status', authWithBuiltinApiGuard, BusinessDataContr
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMaterializationRunList'
  */
 router.get('/materialization/runs', authWithBuiltinApiGuard, BusinessDataController.listMaterializationRuns);
 
@@ -489,6 +668,10 @@ router.get('/materialization/runs', authWithBuiltinApiGuard, BusinessDataControl
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMaterializationRun'
  */
 router.get('/materialization/runs/:id', authWithBuiltinApiGuard, BusinessDataController.getMaterializationRun);
 
@@ -511,6 +694,10 @@ router.get('/materialization/runs/:id', authWithBuiltinApiGuard, BusinessDataCon
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataTableSchema'
  */
 router.get(
   '/materialization/tables/:entityId/schema',
@@ -543,6 +730,10 @@ router.get(
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataTableRows'
  */
 router.get(
   '/materialization/tables/:entityId/rows',
@@ -580,6 +771,10 @@ router.get(
  *     responses:
  *       200:
  *         description: 插入成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataTableRows'
  */
 router.post(
   '/materialization/tables/:entityId/mock-data',
@@ -597,6 +792,10 @@ router.post(
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDatabaseConnectionList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建数据库连接 [需要认证]
@@ -620,6 +819,10 @@ router.post(
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDatabaseConnection'
  */
 router.get('/database-connections', authWithBuiltinApiGuard, BusinessDataController.listDatabaseConnections);
 router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataController.createDatabaseConnection);
@@ -636,9 +839,28 @@ router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataContro
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               dbType: { type: string, enum: [postgresql, mongodb, redis] }
+ *               host: { type: string }
+ *               port: { type: integer }
+ *               username: { type: string }
+ *               password: { type: string }
+ *               databaseName: { type: string }
+ *               targetSchema: { type: string }
+ *               isDefault: { type: boolean }
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDatabaseConnection'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除数据库连接 [需要认证]
@@ -651,6 +873,10 @@ router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataContro
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.put('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.updateDatabaseConnection);
 router.delete('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.deleteDatabaseConnection);
@@ -670,6 +896,10 @@ router.delete('/database-connections/:id', authWithBuiltinApiGuard, BusinessData
  *     responses:
  *       200:
  *         description: 测试成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataConnectionTest'
  */
 router.post('/database-connections/:id/test', authWithBuiltinApiGuard, BusinessDataController.testDatabaseConnection);
 
@@ -683,8 +913,41 @@ router.post('/database-connections/:id/test', authWithBuiltinApiGuard, BusinessD
  *     responses:
  *       200:
  *         description: 获取成功，data.tree 为树形结构，data.items 为扁平列表
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataScopeList'
  */
 router.get('/scopes', authWithBuiltinApiGuard, BusinessDataController.listScopes);
+
+/**
+ * @swagger
+ * /api/v1/business-data/scopes/exists:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 判断 Scope 是否存在 [需要认证]
+ *     description: |
+ *       AI 自动新建前的准备：判断实体 code 前缀（Scope）下是否已有实体。
+ *       Scope 由实体 code 冒号路径推导，无独立 create_scope。
+ *       始终返回 200；exists=true 时附带 item（code/name）与 entityCount。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema: { type: string }
+ *         description: Scope code，如 sales 或 sales:order
+ *     responses:
+ *       200:
+ *         description: 查询成功，data.exists 为布尔值
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataExistsScope'
+ *       400:
+ *         description: 缺少 code
+ */
+router.get('/scopes/exists', authWithBuiltinApiGuard, BusinessDataController.existsScope);
 
 /**
  * @swagger
@@ -701,6 +964,10 @@ router.get('/scopes', authWithBuiltinApiGuard, BusinessDataController.listScopes
  *     responses:
  *       200:
  *         description: 获取成功，data 为含 code、updatedAt、hasContent 的对象数组
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataScopeDocList'
  *   put:
  *     tags: [BusinessData]
  *     summary: 保存 Scope 业务说明（Markdown）；空内容则删除 [需要认证]
@@ -722,6 +989,10 @@ router.get('/scopes', authWithBuiltinApiGuard, BusinessDataController.listScopes
  *     responses:
  *       200:
  *         description: 保存成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataScopeDoc'
  */
 router.get('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.listScopeDocs);
 router.put('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.upsertScopeDoc);
@@ -746,6 +1017,10 @@ router.put('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.upsert
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataScopeDoc'
  */
 router.get('/scope-docs/content', authWithBuiltinApiGuard, BusinessDataController.getScopeDoc);
 
@@ -771,6 +1046,10 @@ router.get('/scope-docs/content', authWithBuiltinApiGuard, BusinessDataControlle
  *     responses:
  *       200:
  *         description: 获取成功，data.domains[].cards 含水合 value/trend/series
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricDashboard'
  */
 router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDashboard);
 
@@ -797,6 +1076,10 @@ router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDa
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricCardList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建指标卡片 [需要认证]
@@ -822,6 +1105,10 @@ router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDa
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricCard'
  */
 router.get('/metrics/cards', authWithBuiltinApiGuard, MetricController.listCards);
 router.post('/metrics/cards', authWithBuiltinApiGuard, MetricController.createCard);
@@ -843,6 +1130,10 @@ router.post('/metrics/cards', authWithBuiltinApiGuard, MetricController.createCa
  *     responses:
  *       200:
  *         description: 建议成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricCard'
  */
 router.get('/metrics/cards/suggest', authWithBuiltinApiGuard, MetricController.suggestCard);
 
@@ -861,6 +1152,10 @@ router.get('/metrics/cards/suggest', authWithBuiltinApiGuard, MetricController.s
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricCard'
  *   patch:
  *     tags: [BusinessData]
  *     summary: 更新指标卡片 [需要认证]
@@ -870,9 +1165,29 @@ router.get('/metrics/cards/suggest', authWithBuiltinApiGuard, MetricController.s
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               code: { type: string }
+ *               title: { type: string }
+ *               description: { type: string }
+ *               domainCode: { type: string }
+ *               metricId: { type: string, format: uuid }
+ *               metricCode: { type: string }
+ *               vizType: { type: string, enum: [statistic_trend, line, bar, ring] }
+ *               config: { type: object }
+ *               sortOrder: { type: integer }
+ *               status: { type: string, enum: [enabled, disabled] }
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricCard'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除指标卡片 [需要认证]
@@ -885,6 +1200,10 @@ router.get('/metrics/cards/suggest', authWithBuiltinApiGuard, MetricController.s
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.getCard);
 router.patch('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.updateCard);
@@ -907,6 +1226,10 @@ router.delete('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.de
  *     responses:
  *       200:
  *         description: 执行完成
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricRunList'
  */
 router.post('/metrics/execute-batch', authWithBuiltinApiGuard, MetricController.executeBatch);
 
@@ -936,13 +1259,43 @@ router.post('/metrics/execute-batch', authWithBuiltinApiGuard, MetricController.
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建指标 [需要认证]
  *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, label, metricType]
+ *             properties:
+ *               code: { type: string }
+ *               label: { type: string }
+ *               description: { type: string }
+ *               metricType: { type: string, enum: [sql, formula] }
+ *               connectionId: { type: string, format: uuid }
+ *               queryScript: { type: string, description: SQL 型必填 }
+ *               formulaConfig: { type: object, description: 公式型配置 }
+ *               computeMode: { type: string }
+ *               scheduleType: { type: string }
+ *               scheduleConfig: { type: object }
+ *               unit: { type: string }
+ *               category: { type: string }
+ *               scopeCode: { type: string }
+ *               status: { type: string, enum: [enabled, disabled] }
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetric'
  */
 router.get('/metrics', authWithBuiltinApiGuard, MetricController.listMetrics);
 router.post('/metrics', authWithBuiltinApiGuard, MetricController.createMetric);
@@ -962,6 +1315,10 @@ router.post('/metrics', authWithBuiltinApiGuard, MetricController.createMetric);
  *     responses:
  *       200:
  *         description: 执行成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetric'
  */
 router.post('/metrics/:id/execute', authWithBuiltinApiGuard, MetricController.executeMetric);
 
@@ -980,6 +1337,10 @@ router.post('/metrics/:id/execute', authWithBuiltinApiGuard, MetricController.ex
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricRunList'
  */
 router.get('/metrics/:id/runs', authWithBuiltinApiGuard, MetricController.listRuns);
 
@@ -998,6 +1359,10 @@ router.get('/metrics/:id/runs', authWithBuiltinApiGuard, MetricController.listRu
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricValueList'
  */
 router.get('/metrics/:id/values', authWithBuiltinApiGuard, MetricController.listValues);
 
@@ -1019,6 +1384,10 @@ router.get('/metrics/:id/values', authWithBuiltinApiGuard, MetricController.list
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetricValue'
  */
 router.get('/metrics/:id/value', authWithBuiltinApiGuard, MetricController.getValue);
 
@@ -1037,6 +1406,10 @@ router.get('/metrics/:id/value', authWithBuiltinApiGuard, MetricController.getVa
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetric'
  *   patch:
  *     tags: [BusinessData]
  *     summary: 更新指标 [需要认证]
@@ -1046,9 +1419,32 @@ router.get('/metrics/:id/value', authWithBuiltinApiGuard, MetricController.getVa
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               label: { type: string }
+ *               description: { type: string }
+ *               metricType: { type: string, enum: [sql, formula] }
+ *               connectionId: { type: string, format: uuid }
+ *               queryScript: { type: string }
+ *               formulaConfig: { type: object }
+ *               computeMode: { type: string }
+ *               scheduleType: { type: string }
+ *               scheduleConfig: { type: object }
+ *               unit: { type: string }
+ *               category: { type: string }
+ *               scopeCode: { type: string }
+ *               status: { type: string, enum: [enabled, disabled] }
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetric'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除指标 [需要认证]
@@ -1061,6 +1457,10 @@ router.get('/metrics/:id/value', authWithBuiltinApiGuard, MetricController.getVa
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/metrics/:id', authWithBuiltinApiGuard, MetricController.getMetric);
 router.patch('/metrics/:id', authWithBuiltinApiGuard, MetricController.updateMetric);
@@ -1089,13 +1489,34 @@ router.delete('/metrics/:id', authWithBuiltinApiGuard, MetricController.deleteMe
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDataStandardList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建数据标准 [需要认证]
  *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, code]
+ *             properties:
+ *               name: { type: string }
+ *               code: { type: string }
+ *               version: { type: string }
+ *               description: { type: string }
+ *               status: { type: string, enum: [enabled, disabled] }
  *     responses:
  *       201:
  *         description: 创建成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDataStandard'
  */
 router.get('/data-standards', authWithBuiltinApiGuard, DataStandardController.list);
 router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.create);
@@ -1115,6 +1536,10 @@ router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.c
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDataStandard'
  *   put:
  *     tags: [BusinessData]
  *     summary: 更新数据标准 [需要认证]
@@ -1127,6 +1552,10 @@ router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.c
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDataStandard'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除数据标准 [需要认证]
@@ -1139,6 +1568,10 @@ router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.c
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.get);
 router.put('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.update);
@@ -1154,13 +1587,36 @@ router.delete('/data-standards/:id', authWithBuiltinApiGuard, DataStandardContro
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTableList'
  *   post:
  *     tags: [BusinessData]
  *     summary: 创建或按 target 保存元数据表 [需要认证]
  *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               code: { type: string }
+ *               targetType: { type: string, enum: [entity, metric, enum] }
+ *               targetId: { type: string, format: uuid }
+ *               metadataCode: { type: string }
+ *               standardId: { type: string, format: uuid }
+ *               businessMeaning: { type: string }
+ *               status: { type: string }
+ *               fields: { type: array, items: { type: object } }
  *     responses:
  *       200:
  *         description: 保存成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
 router.get('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogController.listTables);
 router.post('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogController.upsertTable);
@@ -1185,6 +1641,10 @@ router.post('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogControll
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
 router.get('/metadata/by-target', authWithBuiltinApiGuard, MetadataCatalogController.getByTarget);
 
@@ -1198,6 +1658,10 @@ router.get('/metadata/by-target', authWithBuiltinApiGuard, MetadataCatalogContro
  *     responses:
  *       200:
  *         description: 同步成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTableList'
  */
 router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatalogController.syncFromSchema);
 
@@ -1216,6 +1680,10 @@ router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatal
  *     responses:
  *       200:
  *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  *   put:
  *     tags: [BusinessData]
  *     summary: 更新元数据表 [需要认证]
@@ -1223,6 +1691,10 @@ router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatal
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  *   delete:
  *     tags: [BusinessData]
  *     summary: 删除元数据表 [需要认证]
@@ -1230,6 +1702,10 @@ router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatal
  *     responses:
  *       200:
  *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.getTable);
 router.put('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.updateTable);
@@ -1245,6 +1721,10 @@ router.delete('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogCo
  *     responses:
  *       200:
  *         description: 更新成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
 router.put('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatalogController.updateFields);
 
@@ -1258,6 +1738,10 @@ router.put('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatal
  *     responses:
  *       200:
  *         description: 保存成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
 router.post('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatalogController.upsertField);
 

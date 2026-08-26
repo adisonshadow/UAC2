@@ -1,7 +1,7 @@
-import { DownloadOutlined, EyeOutlined, PauseCircleOutlined, PlayCircleOutlined, UploadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, EyeOutlined, PauseCircleOutlined, PlayCircleOutlined, ScissorOutlined, UploadOutlined } from '@ant-design/icons';
 import { ActionType, PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
-import { Button, Image, Modal, Progress, Space, Upload, Tooltip, Typography } from 'antd';
+import { Button, Image, Input, Modal, Progress, Select, Space, Table, Upload, Tooltip, Typography } from 'antd';
 import { message } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
@@ -10,10 +10,12 @@ import { buildStorageObjectReference } from '@/ai/chatReferenceBuilders';
 import { augmentColumnsWithChatReference } from '@/utils/augmentColumnsWithChatReference';
 import {
   getStorageBuckets,
+  getStorageCropUrl,
   getStorageDownloadUrl,
   getStorageObjects,
   getStoragePreviewUrl,
 } from '@/services/UAC/api/storage';
+import { resolveApiUrl } from '@/constants/env';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
 import { TABLE_ACTION_COLUMN_BASE, TableActionButton, TableActions } from '@/components/TableActions';
@@ -62,6 +64,11 @@ function triggerBlobDownload(blob: Blob, filename: string) {
 const BrowserPage: React.FC = () => {
   const actionRef = useRef<ActionType | undefined>(undefined);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [cropGuideOpen, setCropGuideOpen] = useState(false);
+  const [demoObjectId, setDemoObjectId] = useState('');
+  const [demoW, setDemoW] = useState('200');
+  const [demoH, setDemoH] = useState('200');
+  const [demoFit, setDemoFit] = useState<'cover' | 'contain'>('contain');
   const [previewUrl, setPreviewUrl] = useState<string>();
   const [previewName, setPreviewName] = useState<string>();
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -74,6 +81,18 @@ const BrowserPage: React.FC = () => {
   const chatPrompts = useMemo(() => buildStorageBrowserPrompts(references), [references]);
   useAIChatPrompts(chatPrompts);
   const search = useProTableSearchCollapse('file-storage.browser');
+
+  const demoCropUrl = useMemo(() => {
+    const objectId = demoObjectId.trim() || '{objectId}';
+    const params: { w?: number; h?: number; fit?: typeof demoFit } = {};
+    const w = Number.parseInt(demoW, 10);
+    const h = Number.parseInt(demoH, 10);
+    if (!Number.isNaN(w) && w > 0) params.w = w;
+    if (!Number.isNaN(h) && h > 0) params.h = h;
+    if (demoFit) params.fit = demoFit;
+    const path = getStorageCropUrl(objectId, params);
+    return demoObjectId.trim() ? resolveApiUrl(path) : path;
+  }, [demoObjectId, demoW, demoH, demoFit]);
 
   const closePreview = () => {
     setPreviewOpen(false);
@@ -121,6 +140,9 @@ const BrowserPage: React.FC = () => {
         toolBarRender={() => [
           <Button key="upload" type="primary" className="btn-gradient-primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
             上传文件
+          </Button>,
+          <Button key="crop-guide" icon={<ScissorOutlined />} onClick={() => setCropGuideOpen(true)}>
+            自动裁剪
           </Button>,
         ]}
         request={async (params) => {
@@ -307,6 +329,115 @@ const BrowserPage: React.FC = () => {
               },
             ]}
           />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="图片自动裁剪与缓存 API"
+        open={cropGuideOpen}
+        onCancel={() => setCropGuideOpen(false)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setCropGuideOpen(false)}>
+            知道了
+          </Button>,
+        ]}
+        width={720}
+        destroyOnHidden
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Typography.Paragraph style={{ marginBottom: 0 }}>
+            在 URL 中传入<strong>资源 ID</strong>（本页列表「资源 ID」列）与裁剪参数，即可获取指定尺寸的 webp 图片。
+            服务端首次生成后会写入磁盘缓存，相同参数再次请求直接返回缓存文件。
+          </Typography.Paragraph>
+
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            URL 模板
+          </Typography.Title>
+          <Typography.Paragraph copyable code style={{ marginBottom: 0 }}>
+            /api/v1/storage/objects/&#123;objectId&#125;/crop?w=200&amp;h=200&amp;fit=contain
+          </Typography.Paragraph>
+
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            两种用法
+          </Typography.Title>
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            <li>
+              <strong>同时指定 w、h</strong>：用 <Typography.Text code>fit</Typography.Text> 选择模式。
+              <Typography.Text code>cover</Typography.Text> = 覆盖裁剪到精确宽高；
+              <Typography.Text code>contain</Typography.Text> = 按原图比例缩放以适配框内（取 w 或 h 中更紧的一边，另一边按比例算出，不留白边，输出未必等于 w×h）。
+            </li>
+            <li>
+              <strong>只指定 w 或 h</strong>：按原图宽高比自动计算另一边，忽略 <Typography.Text code>fit</Typography.Text>。
+            </li>
+          </ol>
+
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            查询参数
+          </Typography.Title>
+          <Table
+            size="small"
+            pagination={false}
+            rowKey="name"
+            dataSource={[
+              { name: 'w', desc: '目标宽度（像素），1–4096；与 h 均未传时默认 480' },
+              { name: 'h', desc: '目标高度（像素），1–4096' },
+              {
+                name: 'fit',
+                desc: '仅同时指定 w、h 时生效：cover（覆盖裁剪）| contain（按比例适配，默认；不留白）',
+              },
+            ]}
+            columns={[
+              { title: '参数', dataIndex: 'name', width: 72 },
+              { title: '说明', dataIndex: 'desc' },
+            ]}
+          />
+
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            URL 拼装
+          </Typography.Title>
+          <Space wrap style={{ width: '100%' }}>
+            <Input
+              placeholder="资源 ID（UUID）"
+              value={demoObjectId}
+              onChange={(e) => setDemoObjectId(e.target.value)}
+              style={{ width: 280 }}
+              allowClear
+            />
+            <Input
+              placeholder="w"
+              value={demoW}
+              onChange={(e) => setDemoW(e.target.value)}
+              style={{ width: 72 }}
+            />
+            <Input
+              placeholder="h"
+              value={demoH}
+              onChange={(e) => setDemoH(e.target.value)}
+              style={{ width: 72 }}
+            />
+            <Select
+              value={demoFit}
+              onChange={setDemoFit}
+              style={{ width: 120 }}
+              options={[
+                { value: 'contain', label: 'contain' },
+                { value: 'cover', label: 'cover' },
+              ]}
+            />
+          </Space>
+          <Typography.Paragraph copyable code style={{ marginBottom: 0, wordBreak: 'break-all' }}>
+            {demoCropUrl}
+          </Typography.Paragraph>
+
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            使用注意
+          </Typography.Title>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            <li>仅支持 <Typography.Text code>image/*</Typography.Text> 类型；响应固定为 <Typography.Text code>image/webp</Typography.Text>。</li>
+            <li>鉴权与预览相同：公开 Bucket 可匿名；私有 Bucket 需携带 JWT（用户或应用 Token）。</li>
+            <li>可直接用于 <Typography.Text code>&lt;img src=&quot;...&quot; /&gt;</Typography.Text>；内置 API 编码为 <Typography.Text code>storage:object:crop</Typography.Text>。</li>
+            <li>缓存目录由环境变量 <Typography.Text code>IMG_CROP_CACHE_DIR</Typography.Text> 配置，默认 <Typography.Text code>backend/img_crop_cache</Typography.Text>。</li>
+          </ul>
         </Space>
       </Modal>
     </PageContainer>

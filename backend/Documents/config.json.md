@@ -114,7 +114,8 @@
     "maxSize": 5368709120,         // 单文件上限，默认 5GB；STORAGE_TUS_MAX_SIZE（字节）
     "expirationMs": 86400000,      // 未完成会话过期，默认 24h；STORAGE_TUS_EXPIRATION_MS
     "dirName": ".tus"              // 临时目录名，实际路径为 {root}/.tus；STORAGE_TUS_DIR_NAME
-  }
+  },
+  "cropCacheDir": "img_crop_cache" // 图片裁剪缓存目录；IMG_CROP_CACHE_DIR（相对 backend 根目录）
 }
 ```
 
@@ -197,6 +198,7 @@
   - `maxSize`: 单文件上限，默认 5GB（`STORAGE_TUS_MAX_SIZE`）
   - `expirationMs`: 未完成上传过期时间，默认 24 小时（`STORAGE_TUS_EXPIRATION_MS`）
   - `dirName`: tus 临时目录名，默认 `.tus`，完整路径 `{root}/.tus`
+- `cropCacheDir`: 图片裁剪缓存目录，默认 `img_crop_cache`（`IMG_CROP_CACHE_DIR`，相对 backend 根目录）
 - 轻量接口 `POST /api/v1/storage/objects/upload` 硬上限 **100MB**；超过必须走 `/api/v1/storage/tus`
 - 已有库需执行 `scripts/migrate-storage-tus.sql`（`content_md5` + `storage_upload_sessions`）
 

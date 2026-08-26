@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const storageService = require('../services/storage/storageService');
+const imgCropService = require('../services/storage/imgCropService');
 const { assertObjectAccess } = require('../services/storage/storageAccessService');
 const { getSession, isOwner } = require('../services/storage/tusProgressStore');
 const StorageBucket = require('../models/storage_bucket');
@@ -213,6 +214,54 @@ class StorageController {
 
   static async previewObject(ctx) {
     await StorageController.streamObject(ctx, 'inline');
+  }
+
+  static async cropObject(ctx) {
+    try {
+      const objectRow = await StorageObject.findByPk(ctx.params.id, {
+        include: [{ model: StorageBucket, as: 'StorageBucket', required: true }],
+      });
+      if (!objectRow) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '文件不存在', data: null };
+        return;
+      }
+
+      const mime = objectRow.mime_type || '';
+      if (!mime.startsWith('image/')) {
+        ctx.status = 400;
+        ctx.body = { code: 400, message: '仅支持图片类型', data: null };
+        return;
+      }
+
+      const bucket = objectRow.StorageBucket;
+      await assertObjectAccess({
+        bucket,
+        object: objectRow,
+        authContext: ctx.state.authContext,
+      });
+
+      const filePath = await storageService.getObjectFilePath(objectRow);
+      if (!fs.existsSync(filePath)) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '物理文件不存在', data: null };
+        return;
+      }
+
+      const croppedPath = await imgCropService.cropImage({
+        objectId: objectRow.object_id,
+        sourcePath: filePath,
+        query: ctx.query,
+      });
+
+      const baseName = path.basename(objectRow.name || 'image', path.extname(objectRow.name || ''));
+      ctx.set('Content-Type', 'image/webp');
+      ctx.set('Content-Disposition', `inline; filename="${encodeURIComponent(baseName)}.webp"`);
+      ctx.set('Cache-Control', 'public, max-age=31536000, immutable');
+      ctx.body = fs.createReadStream(croppedPath);
+    } catch (error) {
+      StorageController.sendError(ctx, error, error.status || 500);
+    }
   }
 
   static async streamObject(ctx, disposition) {

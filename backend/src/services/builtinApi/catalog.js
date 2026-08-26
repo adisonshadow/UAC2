@@ -395,6 +395,15 @@ const BUILTIN_API_CATALOG = [
     actions: ['read'],
     description: '预览文件（图片 inline）',
   },
+  {
+    code: 'storage:object:crop',
+    domain: 'storage',
+    label: '图片自动裁剪',
+    routePath: '/api/v1/storage/objects/:id/crop',
+    httpMethods: ['GET'],
+    actions: ['read'],
+    description: '按 w/h 缩放图片并缓存；同时指定宽高时 fit=cover|contain',
+  },
 
   // ===== bizdata 域：业务数据 - 实体 =====
   {
@@ -414,6 +423,15 @@ const BUILTIN_API_CATALOG = [
     httpMethods: ['GET'],
     actions: ['read'],
     description: '获取业务数据 Scope 树',
+  },
+  {
+    code: 'bizdata:scope:exists',
+    domain: 'bizdata',
+    label: '判断 Scope 是否存在',
+    routePath: '/api/v1/business-data/scopes/exists',
+    httpMethods: ['GET'],
+    actions: ['read'],
+    description: '判断实体 code 前缀（Scope）下是否已有实体（AI 自动新建前准备）',
   },
   {
     code: 'bizdata:scope-doc:list',
@@ -450,6 +468,15 @@ const BUILTIN_API_CATALOG = [
     httpMethods: ['GET'],
     actions: ['read'],
     description: '获取实体列表',
+  },
+  {
+    code: 'bizdata:entity:exists',
+    domain: 'bizdata',
+    label: '判断实体是否存在',
+    routePath: '/api/v1/business-data/entities/exists',
+    httpMethods: ['GET'],
+    actions: ['read'],
+    description: '按精确 code 判断实体是否存在（AI 自动新建前准备）',
   },
   {
     code: 'bizdata:entity:create',
@@ -506,6 +533,15 @@ const BUILTIN_API_CATALOG = [
     httpMethods: ['GET'],
     actions: ['read'],
     description: '获取枚举列表',
+  },
+  {
+    code: 'bizdata:enum:exists',
+    domain: 'bizdata',
+    label: '判断枚举是否存在',
+    routePath: '/api/v1/business-data/enums/exists',
+    httpMethods: ['GET'],
+    actions: ['read'],
+    description: '按精确 code 判断枚举是否存在（AI 自动新建前准备）',
   },
   {
     code: 'bizdata:enum:create',

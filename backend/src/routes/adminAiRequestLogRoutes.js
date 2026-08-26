@@ -27,7 +27,11 @@ const router = new Router({ prefix: '/api/v1/admin/ai-request-logs' });
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为分页 { items, total, page, size }
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiRequestLogList'
  */
 router.get('/', authWithBuiltinApiGuard, AiRequestLogController.list);
 
@@ -45,7 +49,11 @@ router.get('/', authWithBuiltinApiGuard, AiRequestLogController.list);
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功，data 为 AiRequestLog
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeAiRequestLog'
  */
 router.get('/:id', authWithBuiltinApiGuard, AiRequestLogController.getById);
 

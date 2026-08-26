@@ -138,8 +138,15 @@ const systemApplication = {
   appSecret: process.env.SYSTEM_APPLICATION_SECRET || '',
 };
 
+const backendRoot = path.join(__dirname, '../..');
+const cropCacheDirRaw = process.env.IMG_CROP_CACHE_DIR || 'img_crop_cache';
+const cropCacheDir = path.isAbsolute(cropCacheDirRaw)
+  ? cropCacheDirRaw
+  : path.join(backendRoot, cropCacheDirRaw);
+
 const storage = {
   root: process.env.STORAGE_ROOT || 'upload_test',
+  cropCacheDir,
   systemBucket: {
     code: process.env.SYSTEM_STORAGE_BUCKET_CODE || 'eadaf-system',
     name: process.env.SYSTEM_STORAGE_BUCKET_NAME || 'EADAF系统资源',
