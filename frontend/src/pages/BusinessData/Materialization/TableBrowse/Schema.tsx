@@ -12,6 +12,7 @@ function formatDbType(dbType?: string) {
   if (dbType === 'mongodb') return 'MongoDB';
   if (dbType === 'redis') return 'Redis';
   if (dbType === 'postgresql') return 'PostgreSQL';
+  if (dbType === 'mysql') return 'MySQL';
   return dbType || '-';
 }
 

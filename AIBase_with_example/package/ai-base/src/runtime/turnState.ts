@@ -10,6 +10,7 @@ export {
   beginTurn,
   getCurrent as getTurnState,
   getPlan,
+  getPlanForConversation,
   setPlan,
   recordToolOutcome,
   recordInvokedTool,

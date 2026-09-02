@@ -36,7 +36,7 @@ import { runJavaScriptCode } from './runJavaScript';
       runJavaScriptCode('return await tools.missing({});', async () => {
         throw new Error('未注册');
       }),
-    /未注册/,
+    /未授权或不在本回合可编排名: missing/,
   );
 }
 
@@ -49,7 +49,7 @@ import { runJavaScriptCode } from './runJavaScript';
         invoked = name;
         return {};
       }, { toolNames: ['echo'] }),
-    /未注册的 client Tool: filter/,
+    /未授权或不在本回合可编排名: filter/,
   );
   assert.equal(invoked, '');
 }

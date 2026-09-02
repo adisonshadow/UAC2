@@ -3,6 +3,7 @@ const SkillController = require('../controllers/skillController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/admin/skills' });
 
 /**
@@ -91,7 +92,13 @@ const router = new Router({ prefix: '/api/v1/admin/skills' });
  *               $ref: '#/components/schemas/EnvelopeAdminSkill'
  */
 router.get('/', authWithBuiltinApiGuard, SkillController.list);
-router.post('/', authWithBuiltinApiGuard, SkillController.create);
+router.post('/', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'CREATE',
+  resourceType: 'ai_skill',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['name', 'slug'],
+}), SkillController.create);
 
 /**
  * @swagger
@@ -162,7 +169,18 @@ router.post('/', authWithBuiltinApiGuard, SkillController.create);
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, SkillController.getById);
-router.patch('/:id', authWithBuiltinApiGuard, SkillController.update);
-router.delete('/:id', authWithBuiltinApiGuard, SkillController.remove);
+router.patch('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'UPDATE',
+  resourceType: 'ai_skill',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['name', 'slug'],
+}), SkillController.update);
+router.delete('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'DELETE',
+  resourceType: 'ai_skill',
+  resourceId: (ctx) => ctx.params.id,
+}), SkillController.remove);
 
 module.exports = router;

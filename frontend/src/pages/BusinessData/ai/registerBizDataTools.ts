@@ -628,7 +628,25 @@ export function registerBizDataTools() {
         },
         status: { type: 'string', enum: ['enabled', 'disabled', 'archived'] },
         replaceFields: { type: 'boolean', description: 'true=全量替换字段，false=与已有合并（默认）' },
-        layout: { type: 'object', description: '实体 layout；indexes 建议用 bizdata_upsert_entity_indexes' },
+        layout: {
+          type: 'object',
+          description:
+            '实体 layout（与已有 merge；未传的 indexes 不会被清空）。索引请用 bizdata_upsert_entity_indexes，禁止用残缺 layout 整表替换 indexes',
+        },
+        indexes: {
+          type: 'array',
+          description: '可选；写入/合并 layout.indexes（等同 bizdata_upsert_entity_indexes）。优先用专用 Tool',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              fields: { type: 'array', items: { type: 'string' } },
+              unique: { type: 'boolean' },
+              type: { type: 'string', enum: ['btree', 'hash', 'gin', 'gist'] },
+            },
+            required: ['name', 'fields'],
+          },
+        },
         jsonSchema: { type: 'object', description: 'JSON Schema 结构（json_schema 实体）' },
         fields: {
           type: 'array',
@@ -667,14 +685,49 @@ export function registerBizDataTools() {
         }
 
         const entityId = await resolveBizDataEntityId(typedArgs);
+        const current = await loadEntity(entityId);
         const patchPayload: Record<string, unknown> = {};
         if (args.label) patchPayload.label = String(args.label);
         if (args.tableName !== undefined) {
           patchPayload.tableName = String(args.tableName).trim() || undefined;
         }
         if (args.status) patchPayload.status = String(args.status);
-        if (args.layout !== undefined) patchPayload.layout = args.layout;
         if (args.jsonSchema !== undefined) patchPayload.jsonSchema = args.jsonSchema;
+
+        const hasLayoutArg = args.layout !== undefined;
+        const hasIndexesArg = Array.isArray(args.indexes);
+        if (hasLayoutArg || hasIndexesArg) {
+          const incomingLayout =
+            hasLayoutArg && args.layout && typeof args.layout === 'object'
+              ? { ...(args.layout as Record<string, unknown>) }
+              : {};
+          const { indexes: layoutIndexes, ...layoutRest } = incomingLayout;
+          const mergedLayout: Record<string, unknown> = {
+            ...(current.layout || {}),
+            ...layoutRest,
+          };
+          const rawIndexes = hasIndexesArg
+            ? args.indexes
+            : layoutIndexes !== undefined
+              ? layoutIndexes
+              : undefined;
+          if (rawIndexes !== undefined) {
+            if (!Array.isArray(rawIndexes) || !rawIndexes.length) {
+              throw new Error('indexes 不能为空数组；清空索引请用 bizdata_upsert_entity_indexes(replaceIndexes=true)');
+            }
+            const incoming = rawIndexes.map((idx, index) =>
+              normalizeBizDataIndex(idx as Record<string, unknown>, index),
+            );
+            mergedLayout.indexes = mergeEntityIndexes(
+              readEntityIndexes(current),
+              incoming,
+              false,
+            );
+          } else {
+            mergedLayout.indexes = readEntityIndexes(current);
+          }
+          patchPayload.layout = mergedLayout;
+        }
 
         if (Object.keys(patchPayload).length) {
           const patchRes = await patchBusinessDataEntity(entityId, patchPayload);
@@ -696,6 +749,9 @@ export function registerBizDataTools() {
           return buildEntityUpdateVerification(entityId, `已验证实体「${data.code}」字段已更新`);
         }
 
+        if (hasLayoutArg || hasIndexesArg) {
+          await resetEntityModelValidated(entityId);
+        }
         return buildEntityUpdateVerification(entityId);
       },
     }),
@@ -1172,7 +1228,8 @@ export function registerBizDataTools() {
 
         if (args.entityId || args.entityCode) {
           const entityId = await resolveBizDataEntityId(args as Record<string, unknown>);
-          const entity = data?.entities?.find((e) => e.id === entityId) || (await loadEntity(entityId));
+          // 以 loadEntity 最新 layout.indexes 为准，避免 schema 列表缓存导致误报缺索引
+          const entity = await loadEntity(entityId);
           if (!entity) return { isValid: false, errors: ['实体不存在'], entity: null };
 
           const errors: string[] = [];
@@ -1184,7 +1241,14 @@ export function registerBizDataTools() {
           const fieldKeys = new Set((entity.fields || []).map((f) => f.fieldKey).filter(Boolean));
           const indexes = readEntityIndexes(entity);
           if (!indexes.length && (entity.fields?.length || 0) > 0) {
-            errors.push('建议为主键/外键/唯一/常用查询字段创建索引（bizdata_upsert_entity_indexes）');
+            const code = entity.code || String(args.entityCode || entityId);
+            const pk =
+              (entity.fields || []).find(
+                (f) => f.typeormConfig?.primary === true || f.fieldKey === 'id',
+              )?.fieldKey || 'id';
+            errors.push(
+              `建议为主键/外键/唯一/常用查询字段创建索引。请先调用 bizdata_upsert_entity_indexes({ entityCode: "${code}", indexes: [{ name: "pk_${pk}", fields: ["${pk}"], unique: true }] })，再重新 bizdata_validate_model；禁止同参重复校验`,
+            );
           }
           indexes.forEach((idx) => {
             const invalid = (idx.fields || []).filter((k) => !fieldKeys.has(k));

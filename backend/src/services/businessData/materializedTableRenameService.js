@@ -7,7 +7,9 @@ const {
 const databaseConnectionService = require('./databaseConnectionService');
 const {
   withPgClient,
+  withMysqlClient,
   quotePgIdentifier,
+  quoteMysqlIdentifier,
 } = require('./materialization/connectionRunner');
 
 let mongoClientPromise;
@@ -130,6 +132,33 @@ async function renamePgTable(runtime, targetSchema, oldTableName, newTableName) 
   });
 }
 
+async function mysqlTableExists(conn, schemaName, tableName) {
+  const [rows] = await conn.query(
+    'SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1',
+    [schemaName, tableName],
+  );
+  return rows.length > 0;
+}
+
+async function renameMysqlTable(runtime, targetSchema, oldTableName, newTableName) {
+  return withMysqlClient(runtime, async (conn) => {
+    const oldExists = await mysqlTableExists(conn, targetSchema, oldTableName);
+    if (!oldExists) {
+      const newExists = await mysqlTableExists(conn, targetSchema, newTableName);
+      if (newExists) return { status: 'already_renamed' };
+      return { status: 'old_missing' };
+    }
+    const newExists = await mysqlTableExists(conn, targetSchema, newTableName);
+    if (newExists) {
+      throw new Error(`物理表「${targetSchema}.${newTableName}」已存在，无法将「${oldTableName}」重命名`);
+    }
+    const from = `${quoteMysqlIdentifier(targetSchema)}.${quoteMysqlIdentifier(oldTableName)}`;
+    const to = `${quoteMysqlIdentifier(targetSchema)}.${quoteMysqlIdentifier(newTableName)}`;
+    await conn.query(`RENAME TABLE ${from} TO ${to}`);
+    return { status: 'renamed' };
+  });
+}
+
 async function renameMongoCollection(runtime, targetSchema, oldTableName, newTableName) {
   return withMongoClient(runtime, async (client) => {
     const db = client.db(targetSchema);
@@ -198,6 +227,8 @@ async function renameOnTarget(target, oldTableName, newTableName, { allowMissing
   let result;
   if (runtime.dbType === 'postgresql') {
     result = await renamePgTable(runtime, schema, oldTableName, newTableName);
+  } else if (runtime.dbType === 'mysql') {
+    result = await renameMysqlTable(runtime, schema, oldTableName, newTableName);
   } else if (runtime.dbType === 'mongodb') {
     result = await renameMongoCollection(runtime, schema, oldTableName, newTableName);
   } else if (runtime.dbType === 'redis') {

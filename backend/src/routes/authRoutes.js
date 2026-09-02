@@ -1,6 +1,8 @@
 const Router = require('koa-router');
 const authController = require('../controllers/authController');
 const auth = require('../middlewares/auth');
+const { operationAudit } = require('../middlewares/operationAudit');
+const { skipLoginAudit } = require('../services/operationAudit/skipLoginAudit');
 
 const router = new Router({ prefix: '/api/v1/auth' });
 
@@ -19,6 +21,8 @@ const router = new Router({ prefix: '/api/v1/auth' });
  *          - 2.1 首次登录：输入 username、password，返回需要验证码
  *          - 2.2 验证码验证：输入 username、password、captcha_data 完成登录
  *       3. **SSO登录模式**：如果包含 application_id 则进入 SSO 模式，返回包含 SSO 信息
+ *
+ *       登录成功时写入操作日志（LOGIN）；失败、以及首次请求返回的验证码挑战（HTTP 202）不记入操作日志。
  *     requestBody:
  *       required: true
  *       content:
@@ -262,7 +266,16 @@ const router = new Router({ prefix: '/api/v1/auth' });
  *                   type: null
  *                   example: null
  */
-router.post('/login', authController.login);
+router.post(
+  '/login',
+  operationAudit({
+    domain: 'auth',
+    operationType: 'LOGIN',
+    resourceType: 'user',
+    skip: skipLoginAudit,
+  }),
+  authController.login,
+);
 
 /**
  * @swagger
@@ -379,7 +392,7 @@ router.post('/refresh', auth, authController.refreshToken);
  *     tags:
  *       - Auth
  *     summary: 用户登出 [需要认证]
- *     description: 用户登出接口，使当前访问令牌失效
+ *     description: 用户登出接口，使当前访问令牌失效；成功时写入操作日志（LOGOUT）。
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -443,7 +456,17 @@ router.post('/refresh', auth, authController.refreshToken);
  *                   type: null
  *                   example: null
  */
-router.post('/logout', auth, authController.logout);
+router.post(
+  '/logout',
+  auth,
+  operationAudit({
+    domain: 'auth',
+    operationType: 'LOGOUT',
+    resourceType: 'user',
+    resourceId: (ctx) => ctx.state.user?.user_id,
+  }),
+  authController.logout,
+);
 
 /**
  * @swagger

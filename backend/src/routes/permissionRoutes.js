@@ -2,10 +2,12 @@ const Router = require('koa-router');
 const PermissionController = require('../controllers/permissionController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({
   prefix: '/api/v1/permissions'
 });
 
+const permissionResourceId = (ctx) => ctx.params.permission_id;
 /**
  * @swagger
  * /api/v1/permissions:
@@ -13,7 +15,7 @@ const router = new Router({
  *     tags:
  *       - Permissions
  *     summary: 创建权限 [需要认证]
- *     description: 创建新的权限
+ *     description: 创建新的权限；成功时写入操作日志（CREATE）。
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -134,7 +136,18 @@ const router = new Router({
  *                   type: null
  *                   example: null
  */
-router.post('/', authWithBuiltinApiGuard, PermissionController.create);
+router.post(
+  '/',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'permission',
+    operationType: 'CREATE',
+    resourceType: 'permission',
+    resourceId: (ctx) => ctx.body?.data?.permission_id,
+    summaryKeys: ['code', 'resource_type'],
+  }),
+  PermissionController.create,
+);
 
 /**
  * @swagger
@@ -309,7 +322,18 @@ router.get('/check', authWithBuiltinApiGuard, PermissionController.checkPermissi
  *       500:
  *         description: 服务器错误
  */
-router.post('/rules', authWithBuiltinApiGuard, PermissionController.createRule);
+router.post(
+  '/rules',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'permission',
+    operationType: 'CREATE',
+    resourceType: 'data_permission_rule',
+    resourceId: (ctx) => ctx.body?.data?.rule_id,
+    summaryKeys: ['role_id', 'resource_type'],
+  }),
+  PermissionController.createRule,
+);
 
 /**
  * @swagger
@@ -559,7 +583,17 @@ router.get('/:permission_id', authWithBuiltinApiGuard, PermissionController.getB
  *       500:
  *         description: 服务器错误
  */
-router.put('/:permission_id', authWithBuiltinApiGuard, PermissionController.update);
+router.put(
+  '/:permission_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'permission',
+    operationType: 'UPDATE',
+    resourceType: 'permission',
+    resourceId: permissionResourceId,
+  }),
+  PermissionController.update,
+);
 
 /**
  * @swagger
@@ -597,7 +631,17 @@ router.put('/:permission_id', authWithBuiltinApiGuard, PermissionController.upda
  *       500:
  *         description: 服务器错误
  */
-router.delete('/:permission_id', authWithBuiltinApiGuard, PermissionController.delete);
+router.delete(
+  '/:permission_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'permission',
+    operationType: 'DELETE',
+    resourceType: 'permission',
+    resourceId: permissionResourceId,
+  }),
+  PermissionController.delete,
+);
 
 /**
  * @swagger
@@ -652,7 +696,18 @@ router.delete('/:permission_id', authWithBuiltinApiGuard, PermissionController.d
  *       500:
  *         description: 服务器错误
  */
-router.post('/:permission_id/roles', authWithBuiltinApiGuard, PermissionController.assignRole);
+router.post(
+  '/:permission_id/roles',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'permission',
+    operationType: 'ASSIGN_ROLE',
+    resourceType: 'permission',
+    resourceId: permissionResourceId,
+    summaryKeys: ['role_ids', 'permission_ids'],
+  }),
+  PermissionController.assignRole,
+);
 
 /**
  * @swagger

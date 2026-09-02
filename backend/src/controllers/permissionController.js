@@ -80,6 +80,12 @@ class PermissionController {
         await RolePermission.bulkCreate(rolePermissions, { transaction: t });
       });
 
+      ctx.state.auditContext = {
+        resource_id: role_id,
+        resource_name: role.role_name,
+        new_data: { permission_ids },
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -238,6 +244,18 @@ class PermissionController {
         status: 'ACTIVE'
       });
 
+      ctx.state.auditContext = {
+        resource_id: rule.rule_id,
+        resource_name: `${role.role_name}:${resource_type}`,
+        new_data: {
+          rule_id: rule.rule_id,
+          role_id,
+          resource_type,
+          conditions,
+          status: rule.status,
+        },
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -343,6 +361,19 @@ class PermissionController {
         status: 'ACTIVE'
       });
 
+      ctx.state.auditContext = {
+        resource_id: permission.permission_id,
+        resource_name: permission.code,
+        new_data: {
+          permission_id: permission.permission_id,
+          code: permission.code,
+          description: permission.description,
+          resource_type: permission.resource_type,
+          actions: permission.actions,
+          status: permission.status,
+        },
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -447,7 +478,26 @@ class PermissionController {
         ...(access_restriction !== undefined && { access_restriction: normalizePermissionAccessRestriction(access_restriction) }),
       };
 
+      const oldData = {
+        description: permission.description,
+        resource_type: permission.resource_type,
+        actions: permission.actions,
+        access_restriction: permission.access_restriction,
+      };
+
       await permission.update(updateData);
+
+      ctx.state.auditContext = {
+        resource_id: permission_id,
+        resource_name: permission.code,
+        old_data: oldData,
+        new_data: {
+          description: permission.description,
+          resource_type: permission.resource_type,
+          actions: permission.actions,
+          access_restriction: permission.access_restriction,
+        },
+      };
 
       ctx.status = 200;
       ctx.body = {
@@ -485,6 +535,18 @@ class PermissionController {
 
       // 使用 Sequelize 软删除
       await permission.destroy();
+
+      ctx.state.auditContext = {
+        resource_id: permission_id,
+        resource_name: permission.code,
+        old_data: {
+          code: permission.code,
+          description: permission.description,
+          resource_type: permission.resource_type,
+          actions: permission.actions,
+          status: permission.status,
+        },
+      };
 
       ctx.status = 200;
       ctx.body = {

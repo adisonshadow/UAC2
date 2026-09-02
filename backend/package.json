@@ -42,6 +42,7 @@
     "koa-router": "^12.0.1",
     "koa2-swagger-ui": "^5.11.0",
     "mongodb": "^6.21.0",
+    "mysql2": "^3.14.0",
     "node-cron": "^3.0.3",
     "pg": "^8.15.6",
     "pg-hstore": "^2.3.4",

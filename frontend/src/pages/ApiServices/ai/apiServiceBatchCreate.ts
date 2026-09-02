@@ -147,12 +147,16 @@ function operationSuffix(operation: string): string {
   return OPERATION_SUFFIX[operation] || operation.charAt(0).toUpperCase() + operation.slice(1);
 }
 
-function buildDefaultSql(
+export function buildDefaultSql(
   tableName: string,
   targetSchema: string,
   operation: string,
+  dbType: string = 'postgresql',
 ): string {
-  const qualified = `"${targetSchema}"."${tableName}"`;
+  const isMysql = dbType === 'mysql';
+  const qualified = isMysql
+    ? `\`${targetSchema}\`.\`${tableName}\``
+    : `"${targetSchema}"."${tableName}"`;
   switch (operation) {
     case 'find':
       return `SELECT *\nFROM ${qualified}\nWHERE 1 = 1\n-- 业务字段等值过滤由网关 filter / 顶层参数自动施加（勿在注释中写 :param）\nORDER BY id DESC\n-- 分页由网关施加 limit/skip，勿在 SQL 内写 LIMIT/OFFSET`;
@@ -163,9 +167,13 @@ function buildDefaultSql(
     case 'insertOne':
       return `-- create 操作：Gateway 将基于请求体生成 INSERT\n-- 以下为结构参考\nSELECT *\nFROM ${qualified}\nWHERE 1 = 0`;
     case 'updateOne':
-      return `UPDATE ${qualified}\nSET updated_at = NOW()\n--  SET col = value（写操作字段来自 body/set，勿在注释中写 :param）\nWHERE id = :id\nRETURNING *`;
+      return isMysql
+        ? `UPDATE ${qualified}\nSET updated_at = NOW()\n--  SET col = value（写操作字段来自 body/set，勿在注释中写 :param）\nWHERE id = :id`
+        : `UPDATE ${qualified}\nSET updated_at = NOW()\n--  SET col = value（写操作字段来自 body/set，勿在注释中写 :param）\nWHERE id = :id\nRETURNING *`;
     case 'deleteOne':
-      return `DELETE FROM ${qualified}\nWHERE id = :id\nRETURNING id`;
+      return isMysql
+        ? `DELETE FROM ${qualified}\nWHERE id = :id`
+        : `DELETE FROM ${qualified}\nWHERE id = :id\nRETURNING id`;
     case 'count':
       return `SELECT COUNT(*) AS total\nFROM ${qualified}\nWHERE 1 = 1`;
     case 'aggregate':
@@ -188,11 +196,12 @@ function requireTargetSchema(targetSchema: string | undefined, context: string):
 export function buildCrudServiceDrafts(
   entity: API.BusinessDataEntity,
   operations: string[],
-  options?: { namePrefix?: string; targetSchema?: string },
+  options?: { namePrefix?: string; targetSchema?: string; dbType?: string },
 ): BatchServiceDraft[] {
   const tableName = entity.tableName || entity.code?.split(':').pop() || 'Entity';
   const targetSchema = requireTargetSchema(options?.targetSchema, `实体 ${entity.code || entity.id}`);
   const label = options?.namePrefix || entity.label || entity.code || 'API';
+  const dbType = options?.dbType || 'postgresql';
 
   return operations.map((operation) => {
     const suffix = operationSuffix(operation);
@@ -201,7 +210,7 @@ export function buildCrudServiceDrafts(
     return {
       code,
       name: `${label} - ${opLabel}`,
-      definitionScript: buildDefaultSql(tableName, targetSchema, operation),
+      definitionScript: buildDefaultSql(tableName, targetSchema, operation, dbType),
       enabledOperations: [operation],
       entityId: entity.id,
       entityCode: entity.code,
@@ -213,6 +222,7 @@ export function normalizeBatchDrafts(
   args: BatchCreateArgs,
   entities: API.BusinessDataEntity[],
   targetSchema?: string,
+  dbType: string = 'postgresql',
 ): BatchServiceDraft[] {
   if (Array.isArray(args.services) && args.services.length) {
     const entity = entities[0];
@@ -235,7 +245,7 @@ export function normalizeBatchDrafts(
         code,
         name: item.name || code,
         definitionScript:
-          item.definitionScript || buildDefaultSql(tableName, schema, operation),
+          item.definitionScript || buildDefaultSql(tableName, schema, operation, dbType),
         enabledOperations: [operation],
         entityId: entity?.id,
         entityCode: entity?.code,
@@ -254,6 +264,7 @@ export function normalizeBatchDrafts(
     buildCrudServiceDrafts(entity, operations, {
       namePrefix: args.namePrefix,
       targetSchema,
+      dbType,
     }),
   );
 }
@@ -285,7 +296,7 @@ export async function executeBatchCreateServices(args: BatchCreateArgs): Promise
     resolved.targetSchema,
     `连接推断（${resolved.reason}）`,
   );
-  const drafts = normalizeBatchDrafts(args, entities, targetSchema);
+  const drafts = normalizeBatchDrafts(args, entities, targetSchema, resolved.dbType || 'postgresql');
   const created: API.ApiService[] = [];
   const skipped: BatchCreateResult['skipped'] = [];
   const failed: BatchCreateResult['failed'] = [];

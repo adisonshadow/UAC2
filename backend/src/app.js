@@ -206,6 +206,7 @@ if (process.env.NODE_ENV !== 'test') {
       const { startTusCleanupScheduler } = require('./services/storage/tusCleanupScheduler');
       const { recoverPendingFinalizes } = require('./services/storage/finalizeTusUpload');
       const { attachApiServiceWebSocket } = require('./services/apiService/apiServiceWebSocket');
+      const { startHookScheduler } = require('./services/automation/hookScheduler');
       attachApiServiceWebSocket(server);
       startAutoBackupScheduler();
       startTusCleanupScheduler();
@@ -213,10 +214,14 @@ if (process.env.NODE_ENV !== 'test') {
         logger.warn('tus finalize 启动回收推迟', { message: error.message });
       });
       connectRedis()
-        .then(() => startMetricScheduler())
+        .then(() => {
+          startMetricScheduler();
+          startHookScheduler();
+        })
         .catch((error) => {
           logger.warn('Metrics module init deferred', { message: error.message });
           startMetricScheduler();
+          startHookScheduler();
         });
     });
   } catch (error) {

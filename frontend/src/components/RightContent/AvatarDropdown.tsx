@@ -1,4 +1,4 @@
-import { LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
+import { AuditOutlined, LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons';
 import { history } from '@/utils/navigation';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import { Spin, Avatar } from 'antd';
@@ -64,6 +64,10 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ menu, childre
         history.push('/system/settings');
         return;
       }
+      if (key === 'operation-logs') {
+        history.push('/system/operation-logs');
+        return;
+      }
     },
     [setInitialState],
   );
@@ -108,6 +112,11 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({ menu, childre
             key: 'settings',
             icon: <SettingOutlined />,
             label: '系统设置',
+          },
+          {
+            key: 'operation-logs',
+            icon: <AuditOutlined />,
+            label: '系统日志',
           },
           {
             type: 'divider' as const,

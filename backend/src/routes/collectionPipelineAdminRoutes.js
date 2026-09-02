@@ -3,6 +3,7 @@ const CollectionPipelineController = require('../controllers/collectionPipelineC
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/business-data/collection-pipelines' });
 
 /**
@@ -70,7 +71,13 @@ const router = new Router({ prefix: '/api/v1/business-data/collection-pipelines'
  *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
 router.get('/', authWithBuiltinApiGuard, CollectionPipelineController.list);
-router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
+router.post('/', authWithBuiltinApiGuard, operationAudit({
+  domain: 'collection',
+  operationType: 'CREATE',
+  resourceType: 'collection_pipeline',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), CollectionPipelineController.create);
 
 /**
  * @swagger
@@ -147,8 +154,19 @@ router.post('/', authWithBuiltinApiGuard, CollectionPipelineController.create);
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, CollectionPipelineController.getById);
-router.patch('/:id', authWithBuiltinApiGuard, CollectionPipelineController.update);
-router.delete('/:id', authWithBuiltinApiGuard, CollectionPipelineController.remove);
+router.patch('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'collection',
+  operationType: 'UPDATE',
+  resourceType: 'collection_pipeline',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), CollectionPipelineController.update);
+router.delete('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'collection',
+  operationType: 'DELETE',
+  resourceType: 'collection_pipeline',
+  resourceId: (ctx) => ctx.params.id,
+}), CollectionPipelineController.remove);
 
 /**
  * @swagger
@@ -170,7 +188,12 @@ router.delete('/:id', authWithBuiltinApiGuard, CollectionPipelineController.remo
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
-router.post('/:id/publish', authWithBuiltinApiGuard, CollectionPipelineController.publish);
+router.post('/:id/publish', authWithBuiltinApiGuard, operationAudit({
+  domain: 'collection',
+  operationType: 'PUBLISH',
+  resourceType: 'collection_pipeline',
+  resourceId: (ctx) => ctx.params.id,
+}), CollectionPipelineController.publish);
 
 /**
  * @swagger
@@ -192,7 +215,12 @@ router.post('/:id/publish', authWithBuiltinApiGuard, CollectionPipelineControlle
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeCollectionPipeline'
  */
-router.post('/:id/disable', authWithBuiltinApiGuard, CollectionPipelineController.disable);
+router.post('/:id/disable', authWithBuiltinApiGuard, operationAudit({
+  domain: 'collection',
+  operationType: 'UNPUBLISH',
+  resourceType: 'collection_pipeline',
+  resourceId: (ctx) => ctx.params.id,
+}), CollectionPipelineController.disable);
 
 /**
  * @swagger

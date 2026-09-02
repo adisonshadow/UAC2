@@ -20,6 +20,6 @@ module.exports = async (ctx, next) => {
     // 非内置 API 清单路由：放行，由既有逻辑（auth 等）决定
     return await next();
   }
-  assertBuiltinApiAccess(ctx, matched);
+  await assertBuiltinApiAccess(ctx, matched);
   await next();
 };

@@ -87,7 +87,7 @@ CREATE INDEX idx_bizdata_relations_to ON bizdata.relations (to_entity_id);
 CREATE TABLE bizdata.database_connections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(128) NOT NULL,
-    db_type VARCHAR(32) NOT NULL CHECK (db_type IN ('postgresql', 'mongodb', 'redis')),
+    db_type VARCHAR(32) NOT NULL,
     host VARCHAR(255) NOT NULL DEFAULT 'localhost',
     port INTEGER NOT NULL DEFAULT 5432,
     username VARCHAR(128) NOT NULL,

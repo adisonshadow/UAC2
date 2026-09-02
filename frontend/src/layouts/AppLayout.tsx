@@ -6,6 +6,7 @@ import {
   FolderOutlined,
   PartitionOutlined,
   RobotOutlined,
+  SettingOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -27,6 +28,7 @@ const iconMap: Record<string, ReactNode> = {
   DatabaseOutlined: <DatabaseOutlined />,
   ApiOutlined: <ApiOutlined />,
   RobotOutlined: <RobotOutlined />,
+  SettingOutlined: <SettingOutlined />,
   UserOutlined: <UserOutlined />,
 };
 

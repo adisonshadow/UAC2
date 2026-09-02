@@ -4,9 +4,10 @@ const { validate: isUuid } = require('uuid');
 const { UniqueConstraintError, Op } = require('sequelize');
 const config = require('../config');
 const logger = require('../utils/logger');
-const { User, LoginAttempt, OperationLog, RefreshToken, Department: _Department, Role: _Role, Captcha, PasswordReset } = require('../models');
+const { User, LoginAttempt, RefreshToken, Department: _Department, Role: _Role, Captcha, PasswordReset } = require('../models');
 const { sequelize: _sequelize } = require('../models');
 const { _ValidationError, _NotFoundError } = require('../utils/errors');
+const { redactFields } = require('../utils/redactFields');
 const {
   formatRole,
   mergeRolesById,
@@ -133,6 +134,22 @@ class UserController {
 
       logger.debug('User created successfully', { user_id: user.user_id });
 
+      ctx.state.auditContext = {
+        resource_id: user.user_id,
+        resource_name: user.username,
+        target_user_id: user.user_id,
+        new_data: redactFields({
+          user_id: user.user_id,
+          username: user.username,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          status: user.status,
+          department_id: user.department_id,
+          role_ids: roleIds,
+        }),
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -231,6 +248,21 @@ class UserController {
       // 重新获取更新后的用户数据
       const updatedUser = await User.findOne({ where: { user_id: user_id } });
 
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: updatedUser.username,
+        target_user_id: user_id,
+        old_data: redactFields(oldData),
+        new_data: redactFields({
+          name: updatedUser.name,
+          avatar: updatedUser.avatar,
+          gender: updatedUser.gender,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          status: updatedUser.status,
+        }),
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -248,33 +280,6 @@ class UserController {
           updated_at: updatedUser.updatedAt
         }
       };
-
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          user_id: user_id, // 使用被更新的用户ID
-          operation_type: 'UPDATE',
-          resource_type: 'user',
-          resource_id: user_id,
-          old_data: oldData,
-          new_data: {
-            name: updatedUser.name,
-            avatar: updatedUser.avatar,
-            gender: updatedUser.gender,
-            email: updatedUser.email,
-            phone: updatedUser.phone,
-            status: updatedUser.status
-          },
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        // 如果记录日志失败，只记录错误但不影响主流程
-        logger.error('Failed to create operation log', {
-          error: logError,
-          user_id,
-          operation_type: 'UPDATE'
-        });
-      }
     } catch (error) {
       logger.error('Error updating user', {
         name: error.name,
@@ -782,40 +787,29 @@ class UserController {
       await user.softDelete();
       logger.debug('User deleted successfully', { user_id });
 
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: user.username,
+        target_user_id: user_id,
+        old_data: redactFields({
+          username: user.username,
+          email: user.email,
+          phone: user.phone,
+          status: user.status,
+          deleted_at: null,
+        }),
+        new_data: {
+          status: 'ARCHIVED',
+          deleted_at: new Date(),
+        },
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
         message: 'success',
         data: null
       };
-
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          user_id: user_id,
-          operation_type: 'DELETE',
-          resource_type: 'user',
-          resource_id: user_id,
-          old_data: {
-            username: user.username,
-            email: user.email,
-            phone: user.phone,
-            status: user.status,
-            deleted_at: null
-          },
-          new_data: {
-            status: 'ARCHIVED',
-            deleted_at: new Date()
-          },
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        logger.error('Failed to create operation log', {
-          error: logError,
-          user_id,
-          operation_type: 'DELETE'
-        });
-      }
     } catch (error) {
       logger.error('Error deleting user', {
         name: error.name,
@@ -867,122 +861,33 @@ class UserController {
       }
 
       // 恢复用户
+      const oldDeletedAt = user.deleted_at;
+      const oldStatus = user.status;
       await User.restore(user);
       logger.debug('User restored successfully', { user_id });
 
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: user.username,
+        target_user_id: user_id,
+        old_data: {
+          deleted_at: oldDeletedAt,
+          status: oldStatus,
+        },
+        new_data: {
+          deleted_at: null,
+          status: 'ACTIVE',
+        },
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
         message: 'success',
         data: null
       };
-
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          user_id: user_id,
-          operation_type: 'RESTORE',
-          resource_type: 'user',
-          resource_id: user_id,
-          old_data: {
-            deleted_at: user.deleted_at,
-            status: user.status
-          },
-          new_data: {
-            deleted_at: null,
-            status: 'ACTIVE'
-          },
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        logger.error('Failed to create operation log', {
-          error: logError,
-          user_id,
-          operation_type: 'RESTORE'
-        });
-      }
     } catch (error) {
       logger.error('Error restoring user', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
-
-      ctx.status = 500;
-      ctx.body = {
-        code: 500,
-        message: '服务器内部错误',
-        data: null
-      };
-    }
-  }
-
-  // 用户登出
-  static async logout(ctx) {
-    try {
-      const { refresh_token } = ctx.request.body;
-      
-      if (!refresh_token) {
-        ctx.status = 400;
-        ctx.body = {
-          code: 400,
-          message: '刷新令牌不能为空',
-          data: null
-        };
-        return;
-      }
-
-      // 验证访问令牌
-      if (!ctx.state.user || !ctx.state.user.user_id) {
-        ctx.status = 401;
-        ctx.body = {
-          code: 401,
-          message: '未授权',
-          data: null
-        };
-        return;
-      }
-
-      // 查找并更新刷新令牌状态
-      const tokenRecord = await RefreshToken.findOne({
-        where: {
-          token: refresh_token,
-          status: 'ACTIVE'
-        }
-      });
-
-      if (tokenRecord) {
-        await tokenRecord.update({
-          status: 'REVOKED',
-          updated_at: new Date()
-        });
-      }
-
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          user_id: ctx.state.user.user_id,
-          operation_type: 'LOGOUT',
-          resource_type: 'user',
-          resource_id: ctx.state.user.user_id,
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        logger.error('Failed to create operation log', {
-          error: logError,
-          user_id: ctx.state.user.user_id,
-          operation_type: 'LOGOUT'
-        });
-      }
-
-      ctx.status = 200;
-      ctx.body = {
-        code: 200,
-        message: 'success',
-        data: null
-      };
-    } catch (error) {
-      logger.error('Error during logout', {
         name: error.name,
         message: error.message,
         stack: error.stack
@@ -1169,22 +1074,11 @@ class UserController {
 
       logger.debug('User password reset successfully', { user_id });
 
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          user_id: user_id,
-          operation_type: 'RESET_PASSWORD',
-          resource_type: 'user',
-          resource_id: user_id,
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        logger.error('Failed to create operation log', {
-          error: logError,
-          user_id,
-          operation_type: 'RESET_PASSWORD'
-        });
-      }
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: user.username,
+        target_user_id: user_id,
+      };
 
       ctx.status = 200;
       ctx.body = {
@@ -1236,6 +1130,13 @@ class UserController {
       }
 
       const roles = await _sequelize.transaction((t) => assignRolesToEntity(user, role_ids, { transaction: t }));
+
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: user.username,
+        target_user_id: user_id,
+        new_data: { role_ids },
+      };
 
       ctx.status = 200;
       ctx.body = {
@@ -1312,6 +1213,12 @@ class UserController {
       await user.update({ password_hash: hashedPassword, last_password_updated: new Date(), must_change_password: false });
       await revokeUserRefreshTokens(user_id);
 
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: user.username,
+        target_user_id: user_id,
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -1372,7 +1279,16 @@ class UserController {
         return;
       }
 
+      const oldStatus = user.status;
       await user.update({ status });
+
+      ctx.state.auditContext = {
+        resource_id: user_id,
+        resource_name: user.username,
+        target_user_id: user_id,
+        old_data: { status: oldStatus },
+        new_data: { status },
+      };
 
       ctx.status = 200;
       ctx.body = {

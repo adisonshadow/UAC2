@@ -14,6 +14,7 @@ const adminScopeRoutes = require('./adminScopeRoutes');
 const adminToolRoutes = require('./adminToolRoutes');
 const adminSkillRoutes = require('./adminSkillRoutes');
 const adminAiRequestLogRoutes = require('./adminAiRequestLogRoutes');
+const adminOperationLogRoutes = require('./adminOperationLogRoutes');
 const aiRoutes = require('./aiRoutes');
 const demoSalesRoutes = require('./demoSalesRoutes');
 const businessDataRoutes = require('./businessDataRoutes');
@@ -26,6 +27,7 @@ const builtinApiRoutes = require('./builtinApiRoutes');
 const outboundWebhookRoutes = require('./outboundWebhookRoutes');
 const exceptionResponseRoutes = require('./exceptionResponseRoutes');
 const systemRoutes = require('./systemRoutes');
+const automationHookRoutes = require('./automationHookRoutes');
 
 const router = new Router();
 
@@ -409,6 +411,7 @@ router.use(adminScopeRoutes.routes());
 router.use(adminToolRoutes.routes());
 router.use(adminSkillRoutes.routes());
 router.use(adminAiRequestLogRoutes.routes());
+router.use(adminOperationLogRoutes.routes());
 router.use(aiRoutes.routes());
 router.use(demoSalesRoutes.routes());
 router.use(businessDataRoutes.routes());
@@ -421,5 +424,6 @@ router.use(builtinApiRoutes.routes());
 router.use(outboundWebhookRoutes.routes());
 router.use(exceptionResponseRoutes.routes());
 router.use(systemRoutes.routes());
+router.use(automationHookRoutes.routes());
 
 module.exports = router; 

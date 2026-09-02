@@ -11,6 +11,23 @@ const LoginAttempt = require('../models/loginAttempt');
 const RefreshToken = require('../models/refreshToken');
 const { CustomValidationError, UnauthorizedError, ValidationError: _ValidationError, AuthenticationError: _AuthenticationError } = require('../utils/errors');
 const Application = require('../models/application');
+
+let _emitHookEvent = null;
+/** 延迟加载钩子事件分发器（避免加载顺序依赖；失败静默） */
+function emitHookEvent(type, payload) {
+  try {
+    if (_emitHookEvent === null) {
+      try {
+        _emitHookEvent = require('../services/automation/eventDispatcher').emit;
+      } catch {
+        _emitHookEvent = false;
+      }
+    }
+    if (_emitHookEvent) _emitHookEvent(type, payload);
+  } catch (e) {
+    logger.warn('认证事件分发失败（不影响登录/登出）', { type, error: e.message });
+  }
+}
  
 class AuthController {
   /**
@@ -284,6 +301,28 @@ class AuthController {
         }
       }
 
+      // 登录成功钩子事件（fire-and-forget，不阻塞响应）
+      emitHookEvent('auth.user.login', {
+        user_id: user.user_id,
+        username: user.username,
+        ip: ctx.ip,
+        user_agent: ctx.headers['user-agent'] || null,
+        login_at: new Date().toISOString(),
+        application_id: application?.application_id || application_id || null,
+      });
+
+      // 登录时尚无 ctx.state.user，由控制器提供操作者
+      ctx.state.auditContext = {
+        resource_id: user.user_id,
+        resource_name: user.username,
+        target_user_id: user.user_id,
+        operator: {
+          operator_type: 'USER',
+          operator_id: user.user_id,
+          operator_name: user.username,
+        },
+      };
+
       // 登录成功
       ctx.status = 200;
       ctx.body = {
@@ -455,6 +494,20 @@ class AuthController {
           }
         );
       }
+
+      // 登出成功钩子事件（fire-and-forget，不阻塞响应）
+      emitHookEvent('auth.user.logout', {
+        user_id: ctx.state?.user?.user_id || null,
+        username: ctx.state?.user?.username || null,
+        ip: ctx.ip,
+        logout_at: new Date().toISOString(),
+      });
+
+      ctx.state.auditContext = {
+        resource_id: ctx.state?.user?.user_id,
+        resource_name: ctx.state?.user?.username || null,
+        target_user_id: ctx.state?.user?.user_id || null,
+      };
 
       ctx.body = {
         code: 200,

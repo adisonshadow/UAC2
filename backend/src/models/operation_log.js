@@ -11,6 +11,23 @@ const OperationLog = sequelize.define('OperationLog', {
     type: DataTypes.UUID,
     allowNull: true
   },
+  operator_id: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
+  operator_name: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
+  operator_type: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'USER'
+  },
+  application_id: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
   operation_type: {
     type: DataTypes.STRING(50),
     allowNull: false
@@ -20,8 +37,16 @@ const OperationLog = sequelize.define('OperationLog', {
     allowNull: false
   },
   resource_id: {
-    type: DataTypes.STRING(50),
+    type: DataTypes.STRING(200),
     allowNull: false
+  },
+  resource_name: {
+    type: DataTypes.STRING(200),
+    allowNull: true
+  },
+  domain: {
+    type: DataTypes.STRING(50),
+    allowNull: true
   },
   old_data: {
     type: DataTypes.JSONB,
@@ -37,6 +62,26 @@ const OperationLog = sequelize.define('OperationLog', {
   },
   error_message: {
     type: DataTypes.TEXT,
+    allowNull: true
+  },
+  ip: {
+    type: DataTypes.STRING(45),
+    allowNull: true
+  },
+  user_agent: {
+    type: DataTypes.STRING(500),
+    allowNull: true
+  },
+  trace_id: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
+  duration_ms: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  request_summary: {
+    type: DataTypes.JSONB,
     allowNull: true
   },
   created_at: {
@@ -55,4 +100,4 @@ const OperationLog = sequelize.define('OperationLog', {
   updatedAt: 'updated_at'
 });
 
-module.exports = OperationLog; 
+module.exports = OperationLog;

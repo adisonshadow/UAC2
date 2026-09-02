@@ -1,5 +1,9 @@
 import type { PlanItem, SkillCompletionStrategy } from '../types';
 import type { ToolResponse } from '../types/toolResponse';
+import {
+  getSessionPlan,
+  setSessionPlan,
+} from '../memory/sessionWorkingMemory';
 
 /**
  * 结构化终止（task_complete / update_plan）的权威状态载体。
@@ -10,11 +14,14 @@ import type { ToolResponse } from '../types/toolResponse';
  * （当前 plan、tool outcomes、激活 skill 的完成策略），两个 harness Tool 的
  * handler 通过 `getCurrent()` 读取。
  *
- * holder 只保存「最近一次 active turn」的引用，turn 之间互相隔离靠 beginTurn/endTurn。
+ * plan 同时写入会话级 store（按 conversationKey），跨 turn / ask_user 恢复后仍连续。
+ * holder 只保存「最近一次 active turn」的引用；并发 turn 靠 conversationKey 隔离写回。
  */
 
 export interface AgentTurnContext {
-  /** 当前权威 plan（由 update_plan 维护） */
+  /** 会话键：plan 跨 turn 持久化依据 */
+  conversationKey: string;
+  /** 当前权威 plan（由 update_plan 维护；与会话 store 同步） */
   plan: PlanItem[];
   /** 本回合已执行的 Tool 结果信封（由 loop 同步写入） */
   toolOutcomes: ToolResponse[];
@@ -28,6 +35,22 @@ export interface AgentTurnContext {
    * 可被 expandAvailableTools 就地扩展（同回合 skill 懒加载后立即生效）。
    */
   availableToolNames?: Set<string>;
+  /**
+   * 与 native 同源分派：run_code 用此调用已授权业务 Tool（含 server_builtin）。
+   * 未注入时 run_code 回退为仅 client handler。
+   */
+  invokeAuthorizedTool?: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<unknown>;
+  /**
+   * 本回合 Skill Tool 契约（供 run_code tools.schema / 参数校验）。
+   * 优先于空的 function-registry fallback。
+   */
+  resolveToolBrief?: (name: string) => {
+    description: string;
+    parameters: Record<string, unknown>;
+  } | undefined;
 }
 
 let current: AgentTurnContext | null = null;
@@ -35,6 +58,10 @@ let current: AgentTurnContext | null = null;
 /** 本回合开始时注入上下文。返回的 handle 用于结束时清理。 */
 export function beginTurn(ctx: AgentTurnContext): () => void {
   current = ctx;
+  // 保证会话 store 与 turn 初始 plan 对齐
+  if (ctx.conversationKey) {
+    setSessionPlan(ctx.conversationKey, ctx.plan);
+  }
   return () => {
     // 仅在仍是本回合时清理，避免被后开的 turn 误清
     if (current === ctx) current = null;
@@ -58,12 +85,22 @@ export function expandAvailableTools(names: Iterable<string>): void {
 }
 
 export function getPlan(): PlanItem[] {
-  return current?.plan ?? [];
+  if (current) return current.plan;
+  return [];
+}
+
+/** 读取会话级 plan（跨 turn；无活跃 turn 时也可用） */
+export function getPlanForConversation(conversationKey: string): PlanItem[] {
+  return getSessionPlan(conversationKey);
 }
 
 /** update_plan handler 写入新的 plan（已做单一 in_progress 等校验） */
 export function setPlan(plan: PlanItem[]): void {
-  if (current) current.plan = plan;
+  if (!current) return;
+  current.plan = plan;
+  if (current.conversationKey) {
+    setSessionPlan(current.conversationKey, plan);
+  }
 }
 
 /** loop 每次执行完 Tool 后同步追加结果，供 task_complete 校验 */

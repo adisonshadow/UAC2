@@ -2,6 +2,7 @@ const Router = require('koa-router');
 const OutboundWebhookController = require('../controllers/outboundWebhookController');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/admin/outbound-webhooks' });
 
 /**
@@ -186,7 +187,13 @@ const router = new Router({ prefix: '/api/v1/admin/outbound-webhooks' });
  *         description: 创建成功
  */
 router.get('/', authWithBuiltinApiGuard, OutboundWebhookController.list);
-router.post('/', authWithBuiltinApiGuard, OutboundWebhookController.create);
+router.post('/', authWithBuiltinApiGuard, operationAudit({
+  domain: 'apiservice',
+  operationType: 'CREATE',
+  resourceType: 'outbound_webhook',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), OutboundWebhookController.create);
 
 /**
  * @swagger
@@ -247,8 +254,19 @@ router.post('/', authWithBuiltinApiGuard, OutboundWebhookController.create);
  *         description: 已删除
  */
 router.get('/:id', authWithBuiltinApiGuard, OutboundWebhookController.getById);
-router.patch('/:id', authWithBuiltinApiGuard, OutboundWebhookController.update);
-router.delete('/:id', authWithBuiltinApiGuard, OutboundWebhookController.remove);
+router.patch('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'apiservice',
+  operationType: 'UPDATE',
+  resourceType: 'outbound_webhook',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), OutboundWebhookController.update);
+router.delete('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'apiservice',
+  operationType: 'DELETE',
+  resourceType: 'outbound_webhook',
+  resourceId: (ctx) => ctx.params.id,
+}), OutboundWebhookController.remove);
 
 /**
  * @swagger
@@ -270,7 +288,12 @@ router.delete('/:id', authWithBuiltinApiGuard, OutboundWebhookController.remove)
  *       200:
  *         description: 发布成功
  */
-router.post('/:id/publish', authWithBuiltinApiGuard, OutboundWebhookController.publish);
+router.post('/:id/publish', authWithBuiltinApiGuard, operationAudit({
+  domain: 'apiservice',
+  operationType: 'PUBLISH',
+  resourceType: 'outbound_webhook',
+  resourceId: (ctx) => ctx.params.id,
+}), OutboundWebhookController.publish);
 
 /**
  * @swagger
@@ -292,7 +315,12 @@ router.post('/:id/publish', authWithBuiltinApiGuard, OutboundWebhookController.p
  *       200:
  *         description: 已禁用
  */
-router.post('/:id/disable', authWithBuiltinApiGuard, OutboundWebhookController.disable);
+router.post('/:id/disable', authWithBuiltinApiGuard, operationAudit({
+  domain: 'apiservice',
+  operationType: 'UNPUBLISH',
+  resourceType: 'outbound_webhook',
+  resourceId: (ctx) => ctx.params.id,
+}), OutboundWebhookController.disable);
 
 /**
  * @swagger

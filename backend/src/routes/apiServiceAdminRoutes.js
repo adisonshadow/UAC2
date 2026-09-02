@@ -2,6 +2,7 @@ const Router = require('koa-router');
 const ApiServiceController = require('../controllers/apiServiceController');
 const auth = require('../middlewares/auth');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/admin/api-services' });
 
 /**
@@ -87,7 +88,13 @@ const router = new Router({ prefix: '/api/v1/admin/api-services' });
  *                     responseExample: {}
  */
 router.get('/', auth, ApiServiceController.list);
-router.post('/', auth, ApiServiceController.create);
+router.post('/', auth, operationAudit({
+  domain: 'apiservice',
+  operationType: 'CREATE',
+  resourceType: 'api_service',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), ApiServiceController.create);
 
 /**
  * @swagger
@@ -270,8 +277,19 @@ router.get('/by-code/:code', auth, ApiServiceController.getByCode);
  *         description: 删除成功
  */
 router.get('/:id', auth, ApiServiceController.getById);
-router.patch('/:id', auth, ApiServiceController.update);
-router.delete('/:id', auth, ApiServiceController.remove);
+router.patch('/:id', auth, operationAudit({
+  domain: 'apiservice',
+  operationType: 'UPDATE',
+  resourceType: 'api_service',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), ApiServiceController.update);
+router.delete('/:id', auth, operationAudit({
+  domain: 'apiservice',
+  operationType: 'DELETE',
+  resourceType: 'api_service',
+  resourceId: (ctx) => ctx.params.id,
+}), ApiServiceController.remove);
 
 /**
  * @swagger
@@ -291,7 +309,12 @@ router.delete('/:id', auth, ApiServiceController.remove);
  *       409:
  *         description: 发布未持久化（并发更新冲突，可重试）
  */
-router.post('/:id/publish', auth, ApiServiceController.publish);
+router.post('/:id/publish', auth, operationAudit({
+  domain: 'apiservice',
+  operationType: 'PUBLISH',
+  resourceType: 'api_service',
+  resourceId: (ctx) => ctx.params.id,
+}), ApiServiceController.publish);
 
 /**
  * @swagger
@@ -309,7 +332,12 @@ router.post('/:id/publish', auth, ApiServiceController.publish);
  *       200:
  *         description: 禁用成功
  */
-router.post('/:id/disable', auth, ApiServiceController.disable);
+router.post('/:id/disable', auth, operationAudit({
+  domain: 'apiservice',
+  operationType: 'UNPUBLISH',
+  resourceType: 'api_service',
+  resourceId: (ctx) => ctx.params.id,
+}), ApiServiceController.disable);
 
 /**
  * @swagger
@@ -327,7 +355,12 @@ router.post('/:id/disable', auth, ApiServiceController.disable);
  *       200:
  *         description: 启用成功
  */
-router.post('/:id/enable', auth, ApiServiceController.enable);
+router.post('/:id/enable', auth, operationAudit({
+  domain: 'apiservice',
+  operationType: 'STATUS_CHANGE',
+  resourceType: 'api_service',
+  resourceId: (ctx) => ctx.params.id,
+}), ApiServiceController.enable);
 
 /**
  * @swagger
@@ -411,6 +444,10 @@ router.put('/:id/test-mock-parameters', auth, ApiServiceController.saveTestMockP
  *   post:
  *     tags: [Admin-ApiServices]
  *     summary: 测试 API 服务（zod 校验参数后执行，写操作事务回滚） [需要认证]
+ *     description: |
+ *       支持连接类型：postgresql、mysql。
+ *       其他类型（mongodb/redis 等）返回 501。
+ *       写操作默认在事务内执行并回滚（可由系统特性 apiServiceTestAutoRollback 关闭）。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -428,6 +465,8 @@ router.put('/:id/test-mock-parameters', auth, ApiServiceController.saveTestMockP
  *     responses:
  *       200:
  *         description: 测试成功，返回请求元信息与 preview
+ *       501:
+ *         description: 连接类型暂不支持（非 postgresql/mysql）
  */
 router.post('/:id/test', auth, ApiServiceController.test);
 

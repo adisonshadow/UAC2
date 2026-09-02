@@ -5,11 +5,18 @@ const systemService = require('../system/systemService');
 const { resolveEntityTableName } = require('../businessData/entityTableName');
 const { getOperationMeta } = require('./operationCatalog');
 const {
-  withPgClient,
-  withPgWriteTest,
-  quotePgIdentifier,
-} = require('../businessData/materialization/connectionRunner');
-const { DEFAULT_SECURITY_CONFIG } = require('./apiServiceConstants');
+  assertSqlDbType,
+  quoteIdent,
+  qualifiedTable: dialectQualifiedTable,
+  countExpr,
+  adaptSqlIdentifiers,
+  withSqlClient,
+  withSqlWriteTest,
+  insertThenSelect,
+  updateThenSelect,
+  selectThenDelete,
+  assertNoReturningForMysql,
+} = require('./sqlDialect');
 const {
   validateParameters,
   buildRequestPreview,
@@ -41,6 +48,10 @@ function pickDefaultOperation(enabledOperations) {
   return enabled[0] || null;
 }
 
+function clientDbType(client, execContext = {}) {
+  return client?.dbType || execContext.dbType || 'postgresql';
+}
+
 /**
  * 去掉 SQL 末尾的 LIMIT / OFFSET（含 :limit/:skip 或已替换数字）。
  * 网关会在外层统一分页；definition 内再写会导致双重 OFFSET、COUNT 被裁剪。
@@ -56,11 +67,12 @@ function stripTrailingLimitOffset(sql) {
   return next.trimEnd();
 }
 
-function applyScriptParams(script, parameters, { limit, skip, optionalSqlParams } = {}) {
+function applyScriptParams(script, parameters, { limit, skip, optionalSqlParams, dbType = 'postgresql' } = {}) {
   const optional = optionalSqlParams instanceof Set
     ? optionalSqlParams
     : new Set(optionalSqlParams || []);
   let next = script.replace(/;\s*$/, '');
+  next = adaptSqlIdentifiers(next, dbType);
   next = next.replace(/:limit\b/gi, String(limit ?? 20));
   next = next.replace(/:skip\b/gi, String(skip ?? 0));
   extractSqlNamedParams(script).forEach((name) => {
@@ -76,7 +88,7 @@ function applyScriptParams(script, parameters, { limit, skip, optionalSqlParams 
     }
     if (optional.has(name)) {
       // 可选参数未填：约定 SQL 写为 column = :column，替换为 column = column 跳过该条件
-      next = next.replace(pattern, quotePgIdentifier(name));
+      next = next.replace(pattern, quoteIdent(name, dbType));
     }
   });
   const remaining = extractSqlNamedParams(next);
@@ -95,6 +107,7 @@ function buildFromSource(service, parameters, {
   operation,
   entity,
   enumMap,
+  dbType = 'postgresql',
   /** find/count/findOne：剥离 definition 内分页，由网关外层 LIMIT/OFFSET */
   gatewayPagination = false,
 } = {}) {
@@ -109,23 +122,30 @@ function buildFromSource(service, parameters, {
       ? resolveOptionalSqlParamNames(service, operation, entity, enumMap)
       : new Set();
     return {
-      sourceSql: applyScriptParams(definitionScript, sqlParameters, { limit, skip, optionalSqlParams }),
+      sourceSql: applyScriptParams(definitionScript, sqlParameters, {
+        limit,
+        skip,
+        optionalSqlParams,
+        dbType,
+      }),
       fromDefinition: true,
     };
   }
   if (service.tableName) {
-    const qualified = `${quotePgIdentifier(schema)}.${quotePgIdentifier(service.tableName)}`;
-    return { sourceSql: qualified, fromDefinition: false };
+    return {
+      sourceSql: dialectQualifiedTable(schema, service.tableName, dbType),
+      fromDefinition: false,
+    };
   }
   throw Object.assign(new Error('服务未绑定物化表或 SQL 定义，无法测试'), { status: 400 });
 }
 
-function qualifiedTable(service) {
+function qualifiedTable(service, dbType = 'postgresql') {
   const schema = service.targetSchema || 'bizdata_mat';
   if (!service.tableName) {
     throw Object.assign(new Error('写操作测试需要绑定实体表'), { status: 400 });
   }
-  return `${quotePgIdentifier(schema)}.${quotePgIdentifier(service.tableName)}`;
+  return dialectQualifiedTable(schema, service.tableName, dbType);
 }
 
 async function loadEntity(service) {
@@ -151,7 +171,7 @@ async function getTestExecutionOptions() {
 }
 
 async function runWriteTest(runtime, fn, { testAutoRollback = true } = {}) {
-  const result = await withPgWriteTest(runtime, fn, { rollback: testAutoRollback });
+  const result = await withSqlWriteTest(runtime, fn, { rollback: testAutoRollback });
   if (testAutoRollback && result && typeof result === 'object' && result.rolledBack === true) {
     const { rolledBack: _rb, ...rest } = result;
     return { preview: rest, rolledBack: true };
@@ -159,7 +179,8 @@ async function runWriteTest(runtime, fn, { testAutoRollback = true } = {}) {
   return { preview: result, rolledBack: false };
 }
 
-async function executeFindPg(client, service, parameters, execContext = {}) {
+async function executeFind(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
   const limit = parameters.limit ?? 20;
   const skip = parameters.skip ?? 0;
   const { sourceSql, fromDefinition } = buildFromSource(service, parameters, {
@@ -168,15 +189,18 @@ async function executeFindPg(client, service, parameters, execContext = {}) {
     operation: execContext.operation,
     entity: execContext.entity,
     enumMap: execContext.enumMap,
+    dbType,
     gatewayPagination: true,
   });
   const filterEntries = resolveFilterEntries(parameters, service);
-  const { clause, bindings, nextIndex } = buildParameterizedWhere(filterEntries);
+  const { clause, bindings, nextIndex } = buildParameterizedWhere(filterEntries, { dbType });
+  // 子查询闭合 `)` 必须另起一行，否则会落到 definition 末尾 `--` 注释同行被吃掉
+  const nested = fromDefinition ? `(${sourceSql}\n)` : sourceSql;
   const sql = fromDefinition
-    ? `SELECT * FROM (${sourceSql}) AS _svc${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`
-    : `SELECT * FROM ${sourceSql}${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`;
+    ? `SELECT * FROM ${nested} AS _svc${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`
+    : `SELECT * FROM ${nested}${clause} LIMIT $${nextIndex} OFFSET $${nextIndex + 1}`;
   const res = await client.query(sql, [...bindings, limit, skip]);
-  const countResult = await executeCountPg(client, service, parameters, execContext);
+  const countResult = await executeCount(client, service, parameters, execContext);
   return {
     items: res.rows,
     pagination: buildPaginationMeta({
@@ -187,33 +211,39 @@ async function executeFindPg(client, service, parameters, execContext = {}) {
   };
 }
 
-async function executeCountPg(client, service, parameters, execContext = {}) {
+async function executeCount(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
   const { sourceSql, fromDefinition } = buildFromSource(service, parameters, {
     limit: 20,
     skip: 0,
     operation: execContext.operation,
     entity: execContext.entity,
     enumMap: execContext.enumMap,
+    dbType,
     gatewayPagination: true,
   });
   const filterEntries = resolveFilterEntries(parameters, service);
-  const { clause, bindings } = buildParameterizedWhere(filterEntries);
+  const { clause, bindings } = buildParameterizedWhere(filterEntries, { dbType });
+  const countSelect = `${countExpr(dbType)} AS count`;
+  const nested = fromDefinition ? `(${sourceSql}\n)` : sourceSql;
   const sql = fromDefinition
-    ? `SELECT COUNT(*)::int AS count FROM (${sourceSql}) AS _svc${clause}`
-    : `SELECT COUNT(*)::int AS count FROM ${sourceSql}${clause}`;
+    ? `SELECT ${countSelect} FROM ${nested} AS _svc${clause}`
+    : `SELECT ${countSelect} FROM ${nested}${clause}`;
   const res = await client.query(sql, bindings);
-  return { count: res.rows[0]?.count ?? 0 };
+  return { count: Number(res.rows[0]?.count ?? 0) };
 }
 
-async function executeFindByIdPg(client, service, parameters) {
-  const table = qualifiedTable(service);
+async function executeFindById(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
+  const table = qualifiedTable(service, dbType);
   const res = await client.query(`SELECT * FROM ${table} WHERE id = $1 LIMIT 1`, [parameters.id]);
   return { item: res.rows[0] || null };
 }
 
-async function executeFindOnePg(client, service, parameters, execContext = {}) {
+async function executeFindOne(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
   const filterEntries = resolveFilterEntries(parameters, service);
-  const { clause, bindings } = buildParameterizedWhere(filterEntries);
+  const { clause, bindings } = buildParameterizedWhere(filterEntries, { dbType });
   const definitionScript = resolveDefinitionScript(service);
 
   if (definitionScript) {
@@ -223,14 +253,15 @@ async function executeFindOnePg(client, service, parameters, execContext = {}) {
       operation: execContext.operation,
       entity: execContext.entity,
       enumMap: execContext.enumMap,
+      dbType,
       gatewayPagination: true,
     });
-    const sql = `SELECT * FROM (${sourceSql}) AS _svc${clause} LIMIT 1`;
+    const sql = `SELECT * FROM (${sourceSql}\n) AS _svc${clause} LIMIT 1`;
     const res = await client.query(sql, bindings);
     return { item: res.rows[0] || null };
   }
 
-  const table = qualifiedTable(service);
+  const table = qualifiedTable(service, dbType);
   const sql = `SELECT * FROM ${table}${clause} LIMIT 1`;
   const res = await client.query(sql, bindings);
   return { item: res.rows[0] || null };
@@ -250,7 +281,8 @@ function usesCustomWriteSql(service) {
   return Boolean(resolveDefinitionScript(service)) && !service?.tableName;
 }
 
-async function executeCustomWriteSqlPg(client, service, parameters, operation, execContext = {}) {
+async function executeCustomWriteSql(client, service, parameters, operation, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
   const definitionScript = resolveDefinitionScript(service);
   if (!definitionScript) {
     throw Object.assign(new Error('自定义写操作 SQL 未定义'), { status: 400 });
@@ -264,8 +296,9 @@ async function executeCustomWriteSqlPg(client, service, parameters, operation, e
   const sql = applyScriptParams(
     definitionScript,
     flattenSqlParameters(parameters),
-    { optionalSqlParams },
+    { optionalSqlParams, dbType },
   );
+  assertNoReturningForMysql(sql, dbType);
   const res = await client.query(sql);
 
   if (operation === 'create' || operation === 'insertOne') {
@@ -280,8 +313,9 @@ async function executeCustomWriteSqlPg(client, service, parameters, operation, e
   return { rows: res.rows, rowCount: res.rowCount };
 }
 
-async function executeCreatePg(client, service, parameters, execContext = {}) {
-  const table = qualifiedTable(service);
+async function executeCreate(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
+  const table = qualifiedTable(service, dbType);
   let body = parameters.body || {};
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw Object.assign(
@@ -289,23 +323,20 @@ async function executeCreatePg(client, service, parameters, execContext = {}) {
       { status: 400 },
     );
   }
-  // 防御：仅写入实体已建模字段（拒绝未建模列）
+  // 契约：仅写入实体已建模字段（拒绝未建模列）
   body = normalizeWriteBody(body, execContext.entity, 'body') || body;
   body = serializeWriteRow(body, execContext.entity);
   const keys = Object.keys(body);
   if (!keys.length) {
     throw Object.assign(new Error('create 操作需要 body 字段'), { status: 400 });
   }
-  const cols = keys.map((k) => quotePgIdentifier(k)).join(', ');
-  const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-  const values = keys.map((k) => body[k]);
-  const sql = `INSERT INTO ${table} (${cols}) VALUES (${placeholders}) RETURNING *`;
-  const res = await client.query(sql, values);
-  return { item: res.rows[0] };
+  const { item } = await insertThenSelect(client, table, body);
+  return { item };
 }
 
-async function executeUpdateOnePg(client, service, parameters, execContext = {}) {
-  const table = qualifiedTable(service);
+async function executeUpdateOne(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
+  const table = qualifiedTable(service, dbType);
   let patch = parameters.set || parameters.body || {};
   patch = normalizeWriteBody(patch, execContext.entity, parameters.set ? 'set' : 'body') || patch;
   patch = serializeWriteRow(patch, execContext.entity);
@@ -313,45 +344,55 @@ async function executeUpdateOnePg(client, service, parameters, execContext = {})
   if (!keys.length) {
     throw Object.assign(new Error('updateOne 操作需要 set 或 body 字段'), { status: 400 });
   }
-  const sets = keys.map((k, i) => `${quotePgIdentifier(k)} = $${i + 1}`).join(', ');
-  const values = [...keys.map((k) => patch[k]), parameters.id];
-  const sql = `UPDATE ${table} SET ${sets} WHERE id = $${keys.length + 1} RETURNING *`;
-  const res = await client.query(sql, values);
-  return { item: res.rows[0] || null, matched: res.rowCount };
+  const setBindings = keys.map((k) => patch[k]);
+  const setSql = keys.map((k, i) => `${quoteIdent(k, dbType)} = $${i + 1}`).join(', ');
+  const whereClause = ` WHERE ${quoteIdent('id', dbType)} = $${keys.length + 1}`;
+  const { item, matched, before } = await updateThenSelect(client, table, {
+    setSql,
+    setBindings,
+    whereClause,
+    whereBindings: [parameters.id],
+  });
+  return { item, matched, before };
 }
 
-async function executeDeleteOnePg(client, service, parameters) {
-  const table = qualifiedTable(service);
-  const res = await client.query(`DELETE FROM ${table} WHERE id = $1 RETURNING *`, [parameters.id]);
-  return { item: res.rows[0] || null, deleted: res.rowCount };
+async function executeDeleteOne(client, service, parameters, execContext = {}) {
+  const dbType = clientDbType(client, execContext);
+  const table = qualifiedTable(service, dbType);
+  const whereClause = ` WHERE ${quoteIdent('id', dbType)} = $1`;
+  const { item, deleted, before } = await selectThenDelete(client, table, {
+    whereClause,
+    whereBindings: [parameters.id],
+  });
+  return { item, deleted, before };
 }
 
 async function executeOperation(client, service, operation, parameters, execContext = {}) {
-  const ctx = { ...execContext, operation };
+  const ctx = { ...execContext, operation, dbType: clientDbType(client, execContext) };
   if (usesCustomWriteSql(service) && isWriteOperation(operation)) {
-    return executeCustomWriteSqlPg(client, service, parameters, operation, ctx);
+    return executeCustomWriteSql(client, service, parameters, operation, ctx);
   }
 
   if (operation === 'find') {
-    return executeFindPg(client, service, parameters, ctx);
+    return executeFind(client, service, parameters, ctx);
   }
   if (operation === 'count' || operation === 'countDocuments') {
-    return executeCountPg(client, service, parameters, ctx);
+    return executeCount(client, service, parameters, ctx);
   }
   if (operation === 'findById') {
-    return executeFindByIdPg(client, service, parameters);
+    return executeFindById(client, service, parameters, ctx);
   }
   if (operation === 'findOne' || operation === 'exists') {
-    return executeFindOnePg(client, service, parameters, ctx);
+    return executeFindOne(client, service, parameters, ctx);
   }
   if (operation === 'create' || operation === 'insertOne') {
-    return executeCreatePg(client, service, parameters, ctx);
+    return executeCreate(client, service, parameters, ctx);
   }
   if (operation === 'updateOne' || operation === 'findOneAndUpdate') {
-    return executeUpdateOnePg(client, service, parameters, ctx);
+    return executeUpdateOne(client, service, parameters, ctx);
   }
   if (operation === 'deleteOne' || operation === 'findOneAndDelete') {
-    return executeDeleteOnePg(client, service, parameters);
+    return executeDeleteOne(client, service, parameters, ctx);
   }
   throw Object.assign(new Error(`暂不支持测试 operation: ${operation}`), { status: 400 });
 }
@@ -427,8 +468,8 @@ async function executeTypeScriptHandler(runtime, service, operation, parameters,
       const res = await client.query(resolved.sql, resolved.bindings);
       return res.rows;
     }
-    return withPgClient(runtime, async (pgClient) => {
-      const res = await pgClient.query(resolved.sql, resolved.bindings);
+    return withSqlClient(runtime, async (sqlClient) => {
+      const res = await sqlClient.query(resolved.sql, resolved.bindings);
       return res.rows;
     });
   };
@@ -451,12 +492,58 @@ async function executeTypeScriptHandler(runtime, service, operation, parameters,
   });
 }
 
-async function testService(serviceId, {
+/** 网关实体写 operation → 记录事件种类（自定义写 SQL / TS Handler 不在此列，不发记录事件） */
+const GATEWAY_WRITE_RECORD_KINDS = {
+  create: 'created',
+  insertOne: 'created',
+  updateOne: 'updated',
+  findOneAndUpdate: 'updated',
+  deleteOne: 'deleted',
+  findOneAndDelete: 'deleted',
+};
+
+function diffChangedFields(before, after) {
+  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  const changed = [];
+  keys.forEach((k) => {
+    if (JSON.stringify(before?.[k]) !== JSON.stringify(after?.[k])) changed.push(k);
+  });
+  return changed;
+}
+
+/** 从网关实体写结果提取 before/after（供 bizdata.record.* 事件负载使用） */
+function buildWriteInfo(operation, rawPreview) {
+  const kind = GATEWAY_WRITE_RECORD_KINDS[operation];
+  if (!kind || !rawPreview || typeof rawPreview !== 'object') return null;
+  if (kind === 'created') {
+    return { kind, before: null, after: rawPreview.item ?? null, changedFields: null };
+  }
+  if (kind === 'updated') {
+    const before = rawPreview.before ?? null;
+    const after = rawPreview.item ?? null;
+    return {
+      kind,
+      before,
+      after,
+      changedFields: before && after ? diffChangedFields(before, after) : null,
+    };
+  }
+  return { kind, before: rawPreview.before ?? rawPreview.item ?? null, after: null, changedFields: null };
+}
+
+/**
+ * 服务执行共享核心。
+ * writeMode:
+ *  - 'test'   写操作按系统特性 apiServiceTestAutoRollback 决定回滚（Admin 测试台 / AI 测试）
+ *  - 'commit' 写操作永不回滚、真实 COMMIT（生产 Data API / 钩子 internal_api 动作）
+ */
+async function runServiceOperation(serviceId, {
   operation,
   parameters,
   bypassAccessControl = true,
   authContext = null,
   enforceHandlerTypeCheck = false,
+  writeMode = 'test',
 } = {}) {
   const service = await apiServiceService.getServiceById(serviceId, {
     includeOperations: true,
@@ -493,12 +580,7 @@ async function testService(serviceId, {
 
   const conn = await databaseConnectionService.resolveConnectionRecord(serviceForTest.connectionId);
   const runtime = databaseConnectionService.buildRuntimeConfig(conn);
-  if (runtime.dbType !== 'postgresql') {
-    throw Object.assign(
-      new Error(`暂不支持 ${runtime.dbType} 连接类型的测试请求`),
-      { status: 501 },
-    );
-  }
+  assertSqlDbType(runtime);
 
   const start = Date.now();
   const requestMeta = buildRequestMeta(serviceForTest, op, validated);
@@ -517,15 +599,22 @@ async function testService(serviceId, {
     };
   }
 
+  const testAutoRollback = writeMode === 'commit' ? false : executionOptions.testAutoRollback;
+
   let preview;
   let rolledBack = false;
+  let rawWritePreview = null;
+  const execContext = { entity, enumMap, dbType: runtime.dbType };
+  const isGatewayEntityWrite = serviceForTest.scriptMode !== 'typescript'
+    && !usesCustomWriteSql(serviceForTest)
+    && Boolean(GATEWAY_WRITE_RECORD_KINDS[op]);
 
   if (serviceForTest.scriptMode === 'typescript') {
     if (isWriteOperation(op)) {
       const { preview: writePreview, rolledBack: writeRolledBack } = await runWriteTest(
         runtime,
         async (client) => executeTypeScriptHandler(runtime, serviceForTest, op, validated, client),
-        { testAutoRollback: executionOptions.testAutoRollback },
+        { testAutoRollback },
       );
       preview = writePreview;
       rolledBack = writeRolledBack;
@@ -533,27 +622,25 @@ async function testService(serviceId, {
       preview = await executeTypeScriptHandler(runtime, serviceForTest, op, validated);
     }
   } else {
-    const run = async (client) => executeOperation(client, serviceForTest, op, validated, {
-      entity,
-      enumMap,
-    });
+    const run = async (client) => executeOperation(client, serviceForTest, op, validated, execContext);
 
     if (isWriteOperation(op)) {
       const { preview: writePreview, rolledBack: writeRolledBack } = await runWriteTest(
         runtime,
         run,
-        { testAutoRollback: executionOptions.testAutoRollback },
+        { testAutoRollback },
       );
       preview = writePreview;
       rolledBack = writeRolledBack;
+      if (isGatewayEntityWrite) rawWritePreview = preview;
     } else {
-      preview = await withPgClient(runtime, run);
+      preview = await withSqlClient(runtime, run);
     }
   }
 
   preview = normalizeListResult(preview, validated);
 
-  return {
+  const result = {
     serviceId: serviceForTest.id,
     code: serviceForTest.code,
     ...requestMeta,
@@ -564,10 +651,35 @@ async function testService(serviceId, {
     rolledBack,
     preview,
   };
+
+  if (writeMode === 'commit') {
+    result.entityCode = serviceForTest.entityCode
+      || entity?.code
+      || null;
+    result.operation = op;
+    // 网关实体写才有 write 信息（自定义写 SQL / TS Handler 不发 bizdata.record.*）
+    result.write = isGatewayEntityWrite ? buildWriteInfo(op, rawWritePreview) : null;
+  }
+
+  return result;
+}
+
+/** Admin 测试台 / AI 测试：写操作按系统特性默认回滚 */
+async function testService(serviceId, opts = {}) {
+  return runServiceOperation(serviceId, { ...opts, writeMode: 'test' });
+}
+
+/**
+ * 生产执行：已发布 Data API 与钩子 internal_api 动作专用。
+ * 写操作永不回滚（真实 COMMIT）；返回值附执行元信息（entityCode / operation / write）供事件层使用。
+ */
+async function executePublished(serviceId, opts = {}) {
+  return runServiceOperation(serviceId, { ...opts, writeMode: 'commit' });
 }
 
 module.exports = {
   pickDefaultOperation,
   testService,
+  executePublished,
   stripTrailingLimitOffset,
 };

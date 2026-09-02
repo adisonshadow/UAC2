@@ -43,6 +43,8 @@ const BizdataApiExceptionResponse = require('./bizdata_api_exception_response');
 const BuiltinApiConfig = require('./builtin_api_config');
 const OutboundWebhook = require('./outbound_webhook');
 const OutboundWebhookRun = require('./outbound_webhook_run');
+const AutomationHook = require('./automation_hook');
+const AutomationHookRun = require('./automation_hook_run');
 const BizdataMetric = require('./bizdata_metric');
 const BizdataMetricRun = require('./bizdata_metric_run');
 const BizdataMetricValue = require('./bizdata_metric_value');
@@ -189,6 +191,9 @@ StorageUploadSession.belongsTo(User, { foreignKey: 'created_by', as: 'creator' }
 OutboundWebhook.hasMany(OutboundWebhookRun, { foreignKey: 'webhook_id', as: 'runs' });
 OutboundWebhookRun.belongsTo(OutboundWebhook, { foreignKey: 'webhook_id', as: 'webhook' });
 
+AutomationHook.hasMany(AutomationHookRun, { foreignKey: 'hook_id', as: 'runs' });
+AutomationHookRun.belongsTo(AutomationHook, { foreignKey: 'hook_id', as: 'hook' });
+
 module.exports = {
   sequelize,
   User,
@@ -246,4 +251,6 @@ module.exports = {
   StorageUploadSession,
   OutboundWebhook,
   OutboundWebhookRun,
+  AutomationHook,
+  AutomationHookRun,
 }; 

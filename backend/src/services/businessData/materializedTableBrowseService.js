@@ -6,7 +6,9 @@ const materializationService = require('./materializationService');
 const { resolveEntityTableName } = require('./entityTableName');
 const {
   withPgClient,
+  withMysqlClient,
   quotePgIdentifier,
+  quoteMysqlIdentifier,
 } = require('./materialization/connectionRunner');
 
 let mongoClientPromise;
@@ -141,6 +143,30 @@ async function getPgTableSchema(runtime, schemaName, tableName) {
   });
 }
 
+async function getMysqlTableSchema(runtime, schemaName, tableName) {
+  return withMysqlClient(runtime, async (conn) => {
+    const [rows] = await conn.query(
+      `SELECT column_name, data_type, is_nullable, column_default, character_maximum_length
+       FROM information_schema.columns
+       WHERE table_schema = ? AND table_name = ?
+       ORDER BY ordinal_position`,
+      [schemaName, tableName],
+    );
+    if (!rows.length) {
+      throw new Error(`物理表 ${schemaName}.${tableName} 不存在或未物化`);
+    }
+    return rows.map((row) => ({
+      name: row.COLUMN_NAME || row.column_name,
+      type: row.DATA_TYPE || row.data_type,
+      nullable: String(row.IS_NULLABLE || row.is_nullable).toUpperCase() === 'YES',
+      default: row.COLUMN_DEFAULT ?? row.column_default,
+      comment: (row.CHARACTER_MAXIMUM_LENGTH || row.character_maximum_length)
+        ? `max ${row.CHARACTER_MAXIMUM_LENGTH || row.character_maximum_length}`
+        : undefined,
+    }));
+  });
+}
+
 async function getMongoTableSchema(ctx) {
   const { entity, runtime, targetSchema, tableName } = ctx;
   const columns = (entity.fields || []).map(mapEntityFieldToColumn);
@@ -189,6 +215,8 @@ async function getTableSchema({ entityId, entityCode, connectionId }) {
   let columns = [];
   if (ctx.dbType === 'postgresql') {
     columns = await getPgTableSchema(ctx.runtime, ctx.targetSchema, ctx.tableName);
+  } else if (ctx.dbType === 'mysql') {
+    columns = await getMysqlTableSchema(ctx.runtime, ctx.targetSchema, ctx.tableName);
   } else if (ctx.dbType === 'mongodb') {
     columns = await getMongoTableSchema(ctx);
   } else if (ctx.dbType === 'redis') {
@@ -220,6 +248,17 @@ async function queryPgRows(runtime, schemaName, tableName, page, size) {
     const total = countRes.rows[0]?.total || 0;
     const dataRes = await client.query(`SELECT * FROM ${qualified} LIMIT $1 OFFSET $2`, [size, offset]);
     return { items: dataRes.rows, total, page, size };
+  });
+}
+
+async function queryMysqlRows(runtime, schemaName, tableName, page, size) {
+  const offset = (page - 1) * size;
+  const qualified = `${quoteMysqlIdentifier(schemaName)}.${quoteMysqlIdentifier(tableName)}`;
+  return withMysqlClient(runtime, async (conn) => {
+    const [countRows] = await conn.query(`SELECT COUNT(*) AS total FROM ${qualified}`);
+    const total = Number(countRows[0]?.total || 0);
+    const [dataRows] = await conn.query(`SELECT * FROM ${qualified} LIMIT ? OFFSET ?`, [size, offset]);
+    return { items: dataRows, total, page, size };
   });
 }
 
@@ -282,6 +321,8 @@ async function queryTableRows({ entityId, entityCode, connectionId, page = 1, si
   let result;
   if (ctx.dbType === 'postgresql') {
     result = await queryPgRows(ctx.runtime, ctx.targetSchema, ctx.tableName, safePage, safeSize);
+  } else if (ctx.dbType === 'mysql') {
+    result = await queryMysqlRows(ctx.runtime, ctx.targetSchema, ctx.tableName, safePage, safeSize);
   } else if (ctx.dbType === 'mongodb') {
     result = await queryMongoRows(ctx.runtime, ctx.targetSchema, ctx.tableName, safePage, safeSize);
   } else if (ctx.dbType === 'redis') {
@@ -367,6 +408,29 @@ async function insertPgRows(runtime, schemaName, tableName, rows) {
   });
 }
 
+async function insertMysqlRows(runtime, schemaName, tableName, rows) {
+  if (!rows.length) return { inserted: 0, ids: [] };
+  const qualified = `${quoteMysqlIdentifier(schemaName)}.${quoteMysqlIdentifier(tableName)}`;
+  return withMysqlClient(runtime, async (conn) => {
+    const ids = [];
+    for (const raw of rows) {
+      const row = normalizeRowKeys(raw);
+      if (!row.id) row.id = randomUUID();
+      const keys = Object.keys(row);
+      const cols = keys.map((k) => quoteMysqlIdentifier(k)).join(', ');
+      const placeholders = keys.map(() => '?').join(', ');
+      const values = keys.map((k) => row[k]);
+      // eslint-disable-next-line no-await-in-loop
+      await conn.query(
+        `INSERT INTO ${qualified} (${cols}) VALUES (${placeholders})`,
+        values,
+      );
+      ids.push(row.id);
+    }
+    return { inserted: rows.length, ids };
+  });
+}
+
 async function insertMongoRows(runtime, targetSchema, tableName, rows) {
   if (!rows.length) return { inserted: 0, ids: [] };
   return withMongoClient(runtime, async (client) => {
@@ -419,6 +483,8 @@ async function insertMockData({ entityId, entityCode, connectionId, rows = [], r
   let columns = [];
   if (ctx.dbType === 'postgresql') {
     columns = await getPgTableSchema(ctx.runtime, ctx.targetSchema, ctx.tableName);
+  } else if (ctx.dbType === 'mysql') {
+    columns = await getMysqlTableSchema(ctx.runtime, ctx.targetSchema, ctx.tableName);
   } else if (ctx.dbType === 'mongodb') {
     columns = (ctx.entity.fields || []).map(mapEntityFieldToColumn);
   } else if (ctx.dbType === 'redis') {
@@ -431,6 +497,8 @@ async function insertMockData({ entityId, entityCode, connectionId, rows = [], r
   let result;
   if (ctx.dbType === 'postgresql') {
     result = await insertPgRows(ctx.runtime, ctx.targetSchema, ctx.tableName, dataRows);
+  } else if (ctx.dbType === 'mysql') {
+    result = await insertMysqlRows(ctx.runtime, ctx.targetSchema, ctx.tableName, dataRows);
   } else if (ctx.dbType === 'mongodb') {
     result = await insertMongoRows(ctx.runtime, ctx.targetSchema, ctx.tableName, dataRows);
   } else if (ctx.dbType === 'redis') {

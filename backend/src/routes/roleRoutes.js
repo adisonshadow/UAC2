@@ -2,10 +2,12 @@ const Router = require('koa-router');
 const RoleController = require('../controllers/roleController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({
   prefix: '/api/v1/roles'
 });
 
+const roleResourceId = (ctx) => ctx.params.role_id;
 /**
  * @swagger
  * components:
@@ -132,7 +134,7 @@ const router = new Router({
  *     tags:
  *       - Roles
  *     summary: 创建角色 [需要认证]
- *     description: 创建新角色
+ *     description: 创建新角色；成功时写入操作日志（CREATE）。
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -219,7 +221,18 @@ const router = new Router({
  *                   type: null
  *                   example: null
  */
-router.post('/', authWithBuiltinApiGuard, RoleController.create);
+router.post(
+  '/',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'role',
+    operationType: 'CREATE',
+    resourceType: 'role',
+    resourceId: (ctx) => ctx.body?.data?.role_id,
+    summaryKeys: ['role_name', 'code'],
+  }),
+  RoleController.create,
+);
 
 /**
  * @swagger
@@ -341,7 +354,7 @@ router.get('/:role_id', authWithBuiltinApiGuard, RoleController.getById);
  *     tags:
  *       - Roles
  *     summary: 更新角色信息 [需要认证]
- *     description: 更新指定角色的信息
+ *     description: 更新指定角色的信息；成功时写入操作日志（UPDATE）。
  *     parameters:
  *       - name: role_id
  *         in: path
@@ -374,7 +387,17 @@ router.get('/:role_id', authWithBuiltinApiGuard, RoleController.getById);
  *       500:
  *         description: 服务器错误
  */
-router.put('/:role_id', authWithBuiltinApiGuard, RoleController.update);
+router.put(
+  '/:role_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'role',
+    operationType: 'UPDATE',
+    resourceType: 'role',
+    resourceId: roleResourceId,
+  }),
+  RoleController.update,
+);
 
 /**
  * @swagger
@@ -383,7 +406,7 @@ router.put('/:role_id', authWithBuiltinApiGuard, RoleController.update);
  *     tags:
  *       - Roles
  *     summary: 删除角色 [需要认证]
- *     description: 软删除指定角色
+ *     description: 软删除指定角色；成功时写入操作日志（DELETE）。
  *     parameters:
  *       - name: role_id
  *         in: path
@@ -412,7 +435,17 @@ router.put('/:role_id', authWithBuiltinApiGuard, RoleController.update);
  *       500:
  *         description: 服务器错误
  */
-router.delete('/:role_id', authWithBuiltinApiGuard, RoleController.delete);
+router.delete(
+  '/:role_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'role',
+    operationType: 'DELETE',
+    resourceType: 'role',
+    resourceId: roleResourceId,
+  }),
+  RoleController.delete,
+);
 
 /**
  * @swagger
@@ -469,7 +502,18 @@ router.delete('/:role_id', authWithBuiltinApiGuard, RoleController.delete);
  *       500:
  *         description: 服务器错误
  */
-router.post('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.assignPermissions);
+router.post(
+  '/:role_id/permissions',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'role',
+    operationType: 'ASSIGN_PERMISSIONS',
+    resourceType: 'role',
+    resourceId: roleResourceId,
+    summaryKeys: ['permission_ids'],
+  }),
+  RoleController.assignPermissions,
+);
 
 /**
  * @swagger
@@ -533,7 +577,18 @@ router.post('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.ass
  *       500:
  *         description: 服务器错误
  */
-router.put('/:role_id/permissions', authWithBuiltinApiGuard, RoleController.updatePermissions);
+router.put(
+  '/:role_id/permissions',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'role',
+    operationType: 'ASSIGN_PERMISSIONS',
+    resourceType: 'role',
+    resourceId: roleResourceId,
+    summaryKeys: ['add_permissions', 'remove_permissions'],
+  }),
+  RoleController.updatePermissions,
+);
 
 /**
  * @swagger

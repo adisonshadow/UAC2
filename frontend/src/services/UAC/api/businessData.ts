@@ -240,7 +240,13 @@ export async function postMaterializationExecute(
   );
 }
 
-export async function getMaterializationStatus(params?: { connectionId?: string }) {
+export async function getMaterializationStatus(params?: {
+  connectionId?: string;
+  entityCodes?: string | string[];
+  entityIds?: string | string[];
+  entityCode?: string;
+  entityId?: string;
+}) {
   return request<{ code: number; message: string; data: API.MaterializationStatusItem[] }>(
     `${BASE}/materialization/status`,
     { method: 'GET', params },
@@ -292,6 +298,13 @@ export async function postMaterializedMockData(
 export async function getDatabaseConnections() {
   return request<{ code: number; message: string; data: API.DatabaseConnection[] }>(
     `${BASE}/database-connections`,
+    { method: 'GET' },
+  );
+}
+
+export async function getDatabaseConnection(id: string) {
+  return request<{ code: number; message: string; data: API.DatabaseConnection & { password?: string } }>(
+    `${BASE}/database-connections/${id}`,
     { method: 'GET' },
   );
 }

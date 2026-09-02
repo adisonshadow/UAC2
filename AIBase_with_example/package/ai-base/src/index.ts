@@ -33,7 +33,7 @@ export {
   getAIChatStorageNamespace,
 } from './utils/aiChatBridge';
 export type { AIChatControls, AIChatSessionControls } from './utils/aiChatBridge';
-export { formatMessageWithReferences } from './utils/formatChatReferences';
+export { formatMessageWithReferences, formatReferencePointer } from './utils/formatChatReferences';
 export { extractAiChatErrorMessage, readChatErrorMessage } from './utils/formatAiChatError';
 export { setToolInvokeLogger, logToolInvoke, withToolInvokeLog, formatToolInvokeError, subscribeToolInvoke } from './utils/toolInvokeLogger';
 export type { ToolInvokeLogEntry, ToolInvokeLogger, ToolInvokeSide, ToolInvokeListener } from './utils/toolInvokeLogger';
@@ -44,9 +44,43 @@ export {
   getAISurface,
   getAllAISurfaces,
   readAllAISurfaces,
+  surfaceRegistryKey,
 } from './registry/aiSurfaceRegistry';
 export { emitAIMutation, subscribeAIMutation, emitMutationFromToolResult } from './registry/aiMutationBus';
 export { useAISurface, useAIMutationHandler } from './provider/useAISurface';
+
+export {
+  // Context funnel memory (L0–L4)
+  getSessionWorkingMemory,
+  getSessionPlan,
+  setSessionPlan,
+  appendSessionFacts,
+  getSessionFacts,
+  getSessionSummary,
+  clearSessionPlan,
+  resetSessionWorkingMemory,
+  extractFactsFromEnvelope,
+  buildSceneCard,
+  buildWorkingMemoryInjection,
+  distillSessionSummary,
+  buildCurrentSceneCard,
+} from './memory';
+export type {
+  MemoryFact,
+  MemoryFactType,
+  SessionWorkingMemory,
+} from './memory';
+
+export {
+  compactHistoryForApi,
+  compactTurnToolMessages,
+  estimateMessageChars,
+  getContextUsagePercent,
+  MAX_CONTEXT_CHARS,
+  KEEP_RECENT_MESSAGES,
+  MULTIMODAL_IMAGE_CHARS,
+} from './chat/contextBudget';
+export { sanitizeApiContentForPersist, sanitizeMessagesForPersist } from './storage/chatHistoryDb';
 
 export {
   registerFunctionCall,

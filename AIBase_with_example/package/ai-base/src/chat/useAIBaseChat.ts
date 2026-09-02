@@ -90,9 +90,19 @@ import { useDebouncedEffect } from '../storage/useDebouncedEffect';
 import { extractAiChatErrorMessage, friendlifyBurstError } from '../utils/formatAiChatError';
 import {
   compactHistoryForApi,
+  compactTurnToolMessages,
   getContextUsagePercent,
-  KEEP_RECENT_MESSAGES,
 } from './contextBudget';
+import {
+  appendSessionFacts,
+  buildCurrentSceneCard,
+  buildWorkingMemoryInjection,
+  ensureSessionWorkingMemory,
+  extractFactsFromEnvelope,
+  getSessionPlan,
+  listOtherSessionSummaries,
+} from '../memory';
+import type { MemoryFact } from '../memory';
 
 /** 单次用户消息内，模型连续 Tool 调用的最大轮次（每轮 = 一次 LLM 请求，可含多个并行 Tool） */
 const MAX_TOOL_ROUNDS = 32;
@@ -524,19 +534,8 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       });
 
       const compactResult = compactHistoryForApi(history);
-      if (compactResult.compacted) {
-        history = compactResult.history.filter(
-          (item) =>
-            item.role !== 'system' ||
-            !String(item.content).startsWith('[Context compacted]'),
-        );
-        setMessages((ori) => {
-          const chatMessages = ori.filter(
-            (item) => item.message.role === 'user' || item.message.role === 'assistant',
-          );
-          return chatMessages.slice(-KEEP_RECENT_MESSAGES);
-        });
-      }
+      // 非破坏：只裁 API 视图，禁止 setMessages(slice) 删 IndexedDB
+      const apiHistory = compactResult.history;
 
       const loadingText = enableThinking ? '正在思考中...' : '正在生成回复...';
 
@@ -557,9 +556,22 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         },
       ]);
 
+      // L2/L3/L1/L4 注入块（场景卡异步读取 Surface）
+      const sessionMemory = ensureSessionWorkingMemory(conversationKey);
+      const { sceneCard, focusIds } = await buildCurrentSceneCard({
+        route: typeof window !== 'undefined' ? window.location.pathname : undefined,
+      });
+      const memoryInjection = buildWorkingMemoryInjection({
+        memory: sessionMemory,
+        sceneCard,
+        focusIds,
+        otherSummaries: listOtherSessionSummaries(conversationKey, 2),
+      });
+      const combinedSystem = [systemPrompt, memoryInjection].filter(Boolean).join('\n\n');
+
       let loopMessages: EADAFChatMessage[] = [
-        ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
-        ...(compactResult.compacted ? compactResult.history : history),
+        ...(combinedSystem ? [{ role: 'system' as const, content: combinedSystem }] : []),
+        ...apiHistory,
         { role: 'user', content: apiContent },
       ];
 
@@ -765,13 +777,62 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           harnessParts: { ...harnessParts },
         };
 
-        // 注入本回合上下文给 harness Tool handler（task_complete / update_plan / run_code）
+        /** L1：序列化前收集的结构化信封（供聚合 / 事实抽取，禁止解析裁剪后文本） */
+        const envelopesByCallId = new Map<string, ToolResponse>();
+        const rememberEnvelope = (callId: string | undefined, envelope: ToolResponse) => {
+          if (callId) envelopesByCallId.set(callId, envelope);
+          const facts = extractFactsFromEnvelope(envelope, {
+            turnId,
+            toolCallId: callId,
+          });
+          if (facts.length) appendSessionFacts(conversationKey, facts);
+        };
+
+        // 用户选择题续跑：沉淀 user_decision 事实
+        if (typeof query === 'string' && query.includes('【用户选择】')) {
+          const decisionFact: MemoryFact = {
+            factId: `user_decision:${Date.now().toString(36)}`,
+            type: 'user_decision',
+            subject: { kind: 'UserChoice' },
+            predicate: 'answered',
+            value: query.slice(0, 240),
+            source: { turnId },
+            ts: Date.now(),
+          };
+          appendSessionFacts(conversationKey, [decisionFact]);
+        }
+
+        // 注入本回合上下文：plan 从会话级 store 恢复（ask_user / 下一轮连续）
+        const sessionPlan = getSessionPlan(conversationKey);
         endTurn = beginTurn({
-          plan: [],
+          conversationKey,
+          plan: sessionPlan,
           toolOutcomes,
           invokedToolNames,
           completionStrategy: activeCompletionStrategy,
           availableToolNames,
+          invokeAuthorizedTool: async (name, args) => {
+            const poolTools = turnToolPoolRef.current?.allTools ?? allTools;
+            return invokeToolByMeta(client, poolTools, name, args, {
+              conversationKey,
+              turnId,
+            });
+          },
+          resolveToolBrief: (name) => {
+            const poolTools = turnToolPoolRef.current?.allTools ?? allTools;
+            const meta = poolTools.find((t) => t.functionName === name);
+            if (!meta) return undefined;
+            return {
+              description: meta.description || meta.name || name,
+              parameters:
+                (meta.parametersSchema && typeof meta.parametersSchema === 'object'
+                  ? meta.parametersSchema
+                  : meta.openaiTool?.function?.parameters) || {
+                  type: 'object',
+                  properties: {},
+                },
+            };
+          },
         });
 
         /**
@@ -1273,6 +1334,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               );
               toolOutcomes.push(envelope);
               recordToolOutcome(envelope);
+              rememberEnvelope(call.id, envelope);
               recentErrorFingerprints.push(`${functionName}::${parseError.slice(0, 80)}`);
               applyResultChrome({ ...envelope, meta: { ...envelope.meta, durationMs: 0 } });
               return {
@@ -1294,6 +1356,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               const envelope = buildInvalidArgsEnvelope(functionName, message, 'INVALID_ARGS');
               toolOutcomes.push(envelope);
               recordToolOutcome(envelope);
+              rememberEnvelope(call.id, envelope);
               recentErrorFingerprints.push(`${functionName}::${message.slice(0, 80)}`);
               applyResultChrome({ ...envelope, meta: { ...envelope.meta, durationMs: 0 } });
               return {
@@ -1327,6 +1390,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               );
               toolOutcomes.push(envelope);
               recordToolOutcome(envelope);
+              rememberEnvelope(call.id, envelope);
 
               // 结构化终止：跟踪 task_complete 的校验结果，并写入交付 segment
               if (structuredTermination && functionName === TASK_COMPLETE_TOOL) {
@@ -1394,6 +1458,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
               });
               toolOutcomes.push(envelope);
               recordToolOutcome(envelope);
+              rememberEnvelope(call.id, envelope);
               recentErrorFingerprints.push(`${functionName}::${errorMessage.slice(0, 80)}`);
 
               applyResultChrome(envelope, 'error', errorMessage);
@@ -1490,14 +1555,20 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
           }
           const aggregated =
             aggregationTools.size > 0
-              ? aggregateToolResults(toolMessages, {
-                  resultAggregation: {
-                    tools: Array.from(aggregationTools),
-                    ...(aggregationMinBatch ? { minBatchSize: aggregationMinBatch } : {}),
+              ? aggregateToolResults(
+                  toolMessages,
+                  {
+                    resultAggregation: {
+                      tools: Array.from(aggregationTools),
+                      ...(aggregationMinBatch ? { minBatchSize: aggregationMinBatch } : {}),
+                    },
                   },
-                })
+                  envelopesByCallId,
+                )
               : toolMessages;
           loopMessages.push(...aggregated);
+          // Turn 内装填：较早 tool 结果降级，避免 loop 只增不减撑爆窗口
+          loopMessages = compactTurnToolMessages(loopMessages);
 
           // ask_user 已登记 Choice Card → hard-stop，等用户提交后再续跑
           const pendingChoice = toolOutcomes.find(
@@ -1597,6 +1668,7 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       expandTurnToolPool,
       client,
       config,
+      conversationKey,
       openaiTools,
       selectedSlug,
       setMessages,

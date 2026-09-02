@@ -100,3 +100,48 @@ export const genderEnum: Record<string, ProSchemaValueEnumType> = {
   MALE: { text: '男' },
   FEMALE: { text: '女' },
 };
+
+/** 操作日志模块域 */
+export const OPERATION_LOG_DOMAIN: Record<string, ProSchemaValueEnumType> = {
+  auth: { text: '认证' },
+  user: { text: '用户' },
+  role: { text: '角色' },
+  department: { text: '部门' },
+  permission: { text: '权限' },
+  application: { text: '应用' },
+  bizdata: { text: '业务数据' },
+  apiservice: { text: 'API 服务' },
+  ai: { text: 'AI' },
+  storage: { text: '存储' },
+  collection: { text: '采集' },
+  automation: { text: '自动化' },
+  system: { text: '系统' },
+};
+
+/** 操作日志操作类型 */
+export const OPERATION_LOG_TYPE: Record<string, ProSchemaValueEnumType> = {
+  CREATE: { text: '创建' },
+  UPDATE: { text: '更新' },
+  DELETE: { text: '删除' },
+  RESTORE: { text: '恢复' },
+  STATUS_CHANGE: { text: '状态变更' },
+  RESET_PASSWORD: { text: '重置密码' },
+  CHANGE_PASSWORD: { text: '修改密码' },
+  ASSIGN_ROLES: { text: '分配角色' },
+  ASSIGN_PERMISSIONS: { text: '分配权限' },
+  PUBLISH: { text: '发布' },
+  UNPUBLISH: { text: '取消发布' },
+  ENABLE: { text: '启用' },
+  DISABLE: { text: '停用' },
+  EXECUTE: { text: '执行' },
+  SYNC: { text: '同步' },
+  LOGIN: { text: '登录' },
+  LOGOUT: { text: '登出' },
+};
+
+/** 操作日志状态 */
+export const OPERATION_LOG_STATUS: Record<string, ProSchemaValueEnumType> = {
+  SUCCESS: { text: '成功', status: 'Success' },
+  FAILED: { text: '失败', status: 'Error' },
+  PENDING: { text: '处理中', status: 'Processing' },
+};

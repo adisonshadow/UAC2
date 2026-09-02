@@ -186,9 +186,11 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
         setModels(list);
         modelsLoadDoneRef.current = true;
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         modelsLoadDoneRef.current = true;
-        messageApi.error('加载模型失败');
+        const detail =
+          err instanceof Error ? err.message : typeof err === 'string' ? err : '加载模型失败';
+        messageApi.error(detail || '加载模型失败');
       });
   }, [client, messageApi]);
 
@@ -453,9 +455,15 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
 
   useEffect(() => {
     return subscribeAIChatMessage((text) => {
+      // 流式期间拒绝外部提交，避免并发 turn 污染会话级 plan（P1-3）。
+      // 【用户选择】是 ask_user hard-stop 后的合法续跑，必须放行。
+      if (requestingRef.current && !String(text).includes('【用户选择】')) {
+        messageApi.warning('助手正在处理中，请稍后再试');
+        return;
+      }
       void handleSubmit(text);
     });
-  }, [handleSubmit]);
+  }, [handleSubmit, messageApi]);
 
   // 切换会话时清除瞬态系统消息（错误不入持久化，切回也不复现）
   useEffect(() => {

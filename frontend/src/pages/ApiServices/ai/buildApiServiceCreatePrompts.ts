@@ -44,10 +44,10 @@ function parseReferences(references: ChatReferenceItem[]) {
 }
 
 const DEFAULT_PROMPTS: AIChatPromptItem[] = [
-  { key: 'default-1', description: '如何为业务实体批量创建 CRUD API？' },
+  { key: 'default-1', description: '如何用 apiservice_create_services_batch 为业务实体批量创建 CRUD API？' },
   { key: 'default-2', description: 'find 和 aggregate 分别适合什么场景？' },
   { key: 'default-3', description: 'API 服务 code 命名规则是什么？' },
-  { key: 'default-4', description: '从左侧数据模型树添加 Scope 或实体引用' },
+  { key: 'default-4', description: '从左侧数据模型树添加 Scope 或实体引用后创建 API' },
 ];
 
 function entityLabel(entity: ParsedEntityRef) {
@@ -67,32 +67,32 @@ function promptsForSingleEntity(
   const prompts: AIChatPromptItem[] = [
     {
       key: 'entity-1',
-      description: `为「${label}」生成 find 查询 SQL 并填入表单`,
+      description: `先 bizdata_get_entity 读取「${label}」字段，再用 apiservice_create_service 创建 find API（勿只写 SQL）`,
     },
     {
       key: 'entity-2',
-      description: `为「${label}」批量创建 CRUD API（find/create/update/delete）`,
+      description: `先 bizdata_get_entity，再 apiservice_create_services_batch 为「${label}」批量创建 CRUD API`,
     },
     {
       key: 'entity-3',
-      description: `推荐「${label}」的 API code 与显示名称`,
+      description: `推荐「${label}」的 API code 与显示名称（仍须走创建 Tool 落库）`,
     },
   ];
 
   if (ctx.hasDefinitionScript) {
     prompts.push({
       key: 'entity-4',
-      description: `检查当前 SQL 是否适合「${label}」的 ${ctx.primaryOperation || 'find'} 操作`,
+      description: `对照 bizdata_get_entity 字段，检查当前 SQL 是否适合「${label}」的 ${ctx.primaryOperation || 'find'}，并用 apiservice_create_service / update 落库`,
     });
   } else if (entity.tableName) {
     prompts.push({
       key: 'entity-4',
-      description: `根据物化表「${entity.tableName}」生成 SELECT 语句`,
+      description: `读取「${label}」字段后，用 apiservice_create_service 创建（可省略 definitionScript，由 Tool 按物化表「${entity.tableName}」生成默认 SQL）`,
     });
   } else {
     prompts.push({
       key: 'entity-4',
-      description: `查看「${label}」（${code}）字段并生成查询 SQL`,
+      description: `bizdata_get_entity 查看「${label}」（${code}）字段，再 apiservice_create_service 创建`,
     });
   }
 
@@ -104,15 +104,15 @@ function promptsForMultipleEntities(entities: ParsedEntityRef[]): AIChatPromptIt
   return [
     {
       key: 'multi-1',
-      description: `为「${names}」编写跨表 JOIN 查询 SQL`,
+      description: `分别 bizdata_get_entity 读取「${names}」字段，再为各实体 apiservice_create_service 创建 find API`,
     },
     {
       key: 'multi-2',
-      description: `分别为引用的 ${entities.length} 个实体各创建一个 find API`,
+      description: `分别为引用的 ${entities.length} 个实体调用 apiservice_create_service 创建 find API`,
     },
     {
       key: 'multi-3',
-      description: '为引用的实体批量创建 CRUD API 服务',
+      description: '对引用实体先 get_entity，再 apiservice_create_services_batch 批量创建 CRUD',
     },
     {
       key: 'multi-4',
@@ -130,7 +130,7 @@ function promptsForSingleScope(scope: ParsedScopeRef): AIChatPromptItem[] {
     },
     {
       key: 'scope-2',
-      description: `为「${label}」域下的核心实体批量创建 CRUD API`,
+      description: `列出「${label}」核心实体后，逐个 get_entity 并用 create_services_batch 创建 CRUD API`,
     },
     {
       key: 'scope-3',
@@ -209,9 +209,9 @@ export function buildApiServiceCreatePrompts(
 
   if (ctx.serviceCode) {
     return [
-      { key: 'form-1', description: '优化当前 SQL 脚本' },
+      { key: 'form-1', description: '用 apiservice_create_service / update_service 优化并落库当前 SQL（勿只改对话文案）' },
       { key: 'form-2', description: `检查 code「${ctx.serviceCode}」与操作类型是否匹配` },
-      { key: 'form-3', description: '如何为业务实体批量创建 CRUD API？' },
+      { key: 'form-3', description: '如何用 Tool 为业务实体批量创建 CRUD API？' },
       { key: 'form-4', description: '从左侧数据模型树添加 Scope 或实体引用' },
     ];
   }

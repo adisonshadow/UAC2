@@ -2,6 +2,7 @@ const Router = require('koa-router');
 const BuiltinApiController = require('../controllers/builtinApiController');
 const auth = require('../middlewares/auth');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/admin/builtin-apis' });
 
 /**
@@ -88,8 +89,25 @@ const router = new Router({ prefix: '/api/v1/admin/builtin-apis' });
  *       200: { description: 清除成功 }
  */
 router.get('/', auth, BuiltinApiController.list);
-router.put('/batch/access-restriction', auth, BuiltinApiController.batchUpdateAccessRestriction);
-router.put('/:code/access-restriction', auth, BuiltinApiController.updateAccessRestriction);
-router.delete('/:code/access-restriction', auth, BuiltinApiController.deleteAccessRestriction);
+router.put('/batch/access-restriction', auth, operationAudit({
+  domain: 'system',
+  operationType: 'UPDATE',
+  resourceType: 'builtin_api_config',
+  resourceId: () => 'batch',
+  summaryKeys: ['items', 'codes'],
+}), BuiltinApiController.batchUpdateAccessRestriction);
+router.put('/:code/access-restriction', auth, operationAudit({
+  domain: 'system',
+  operationType: 'UPDATE',
+  resourceType: 'builtin_api_config',
+  resourceId: (ctx) => ctx.params.code,
+  summaryKeys: ['mode', 'roleIds', 'departmentIds'],
+}), BuiltinApiController.updateAccessRestriction);
+router.delete('/:code/access-restriction', auth, operationAudit({
+  domain: 'system',
+  operationType: 'DELETE',
+  resourceType: 'builtin_api_config',
+  resourceId: (ctx) => ctx.params.code,
+}), BuiltinApiController.deleteAccessRestriction);
 
 module.exports = router;

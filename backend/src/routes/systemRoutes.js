@@ -7,6 +7,7 @@ const SystemController = require('../controllers/systemController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/system' });
 
 // 恢复备份的文件上传中间件：.dump 格式、单文件、上限 1GB，落在系统临时目录
@@ -65,7 +66,13 @@ const restoreUploadMiddleware = koaBody({
  *               $ref: '#/components/schemas/EnvelopeSystemFeatures'
  */
 router.get('/features', authWithBuiltinApiGuard, SystemController.getFeatures);
-router.put('/features', authWithBuiltinApiGuard, SystemController.updateFeatures);
+router.put('/features', authWithBuiltinApiGuard, operationAudit({
+  domain: 'system',
+  operationType: 'UPDATE',
+  resourceType: 'system_features',
+  resourceId: () => 'features',
+  summaryKeys: ['features'],
+}), SystemController.updateFeatures);
 
 /**
  * @swagger
@@ -99,7 +106,12 @@ router.get('/backups', authWithBuiltinApiGuard, SystemController.listBackups);
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeSystemBackupRun'
  */
-router.post('/backups/run', authWithBuiltinApiGuard, SystemController.runBackup);
+router.post('/backups/run', authWithBuiltinApiGuard, operationAudit({
+  domain: 'system',
+  operationType: 'EXECUTE',
+  resourceType: 'system_backup',
+  resourceId: () => 'run',
+}), SystemController.runBackup);
 
 /**
  * @swagger
@@ -126,6 +138,12 @@ router.post('/backups/run', authWithBuiltinApiGuard, SystemController.runBackup)
 router.post(
   '/backups/restore',
   authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'system',
+    operationType: 'EXECUTE',
+    resourceType: 'system_backup',
+    resourceId: () => 'restore',
+  }),
   restoreUploadMiddleware,
   SystemController.restoreBackup,
 );

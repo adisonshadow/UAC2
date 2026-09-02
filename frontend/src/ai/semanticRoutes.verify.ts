@@ -191,7 +191,7 @@ const CRITICAL_PATHS = [
   '/api_services/collection-pipelines/:id/edit', '/api_services/collection-pipelines/:id/test',
   '/ai_management', '/ai_management/providers', '/ai_management/models', '/ai_management/scopes',
   '/ai_management/tools', '/ai_management/skills', '/ai_management/chat-demo',
-  '/ai_management/request-logs', '/system/settings', '/account/center',
+  '/ai_management/request-logs', '/system', '/system/operation-logs', '/system/settings', '/account/center',
 ];
 for (const p of CRITICAL_PATHS) {
   assert.ok(metaByPath.has(p), `appRouteMeta 缺少关键 path: ${p}`);
@@ -211,11 +211,14 @@ assert.equal(metaByPath.get('/api_services/list')?.noContentPadding, true);
 assert.equal(metaByPath.get('/api_services/:id/edit')?.hideInMenu, true);
 assert.equal(metaByPath.get('/api_services/:id/edit')?.noContentPadding, true);
 assert.equal(metaByPath.get('/ai_management/scopes')?.hideInMenu, true);
+assert.equal(metaByPath.get('/system')?.name, '系统');
+assert.equal(metaByPath.get('/system')?.icon, 'SettingOutlined');
+assert.equal(metaByPath.get('/system/operation-logs')?.name, '操作日志');
 assert.equal(metaByPath.get('/system/settings')?.hideInMenu, true);
 assert.equal(metaByPath.get('/account/center')?.layout, false);
 assert.equal(metaByPath.get('/account/center')?.hideMenu, true);
 
-// 菜单根顺序与现网一致（system/settings 非根不进菜单）
+// 菜单根顺序（含系统分组）
 const menu = buildMenuData();
 const rootPaths = menu.map((m) => m.path);
 assert.deepEqual(rootPaths, [
@@ -226,6 +229,7 @@ assert.deepEqual(rootPaths, [
   '/business_data',
   '/api_services',
   '/ai_management',
+  '/system',
 ]);
 
 // 抽样：member_org 子菜单

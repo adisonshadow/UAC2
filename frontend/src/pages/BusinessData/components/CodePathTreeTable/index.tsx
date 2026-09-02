@@ -113,9 +113,6 @@ const CodePathTreeTable = <T extends CodePathItem>({
           <div style={{ paddingLeft: indent, display: 'flex', alignItems: 'center', gap: 8 }}>
             {record.isScopeNode ? <PartitionOutlined /> : leafIcon ?? <LineChartOutlined />}
             <Text strong={!record.isScopeNode}>{record.name}</Text>
-            {!record.isScopeNode && record.data?.code && (
-              <Text type="secondary" style={{ fontSize: 12 }}>{record.data.code}</Text>
-            )}
             {record.isScopeNode && getScopeReference && (
               <ChatReferenceTarget
                 onClick={() => addReference(getScopeReference(record.code, record.name))}

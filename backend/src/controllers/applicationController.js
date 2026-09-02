@@ -10,9 +10,16 @@ const { mergeSsoLoginPage, normalizeSsoLoginPage } = require('../utils/ssoLoginP
 const { getPublicApiCatalog } = require('../services/applicationApiCatalogService');
 const { getPublicApiOpenApi } = require('../services/applicationApiOpenApiService');
 const { existsBuiltinApiCode } = require('../services/builtinApi/catalog');
+const { redactFields } = require('../utils/redactFields');
 
 const SYSTEM_APPLICATION_CODE = 'EADAF';
+const APP_SECRET_REDACT_PATHS = ['sso_config.client_secret', 'api_connect_config.app_secret'];
 
+function redactApplicationSnapshot(appLike) {
+  if (!appLike) return appLike;
+  const raw = typeof appLike.toJSON === 'function' ? appLike.toJSON() : { ...appLike };
+  return redactFields(raw, ['app_secret', 'client_secret'], APP_SECRET_REDACT_PATHS);
+}
 function normalizeBizdataScopeCodes(value) {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) {
@@ -286,6 +293,12 @@ class ApplicationController {
 
       const application = await Application.create(createPayload);
 
+      ctx.state.auditContext = {
+        resource_id: application.application_id,
+        resource_name: application.name,
+        new_data: redactApplicationSnapshot(application),
+      };
+
       ctx.status = 201;
       ctx.body = {
         code: 201,
@@ -501,6 +514,8 @@ class ApplicationController {
         return;
       }
 
+      const oldSnapshot = redactApplicationSnapshot(application);
+
       if (application.code === SYSTEM_APPLICATION_CODE && code && code !== SYSTEM_APPLICATION_CODE) {
         ctx.status = 400;
         ctx.body = {
@@ -632,6 +647,13 @@ class ApplicationController {
         description
       });
 
+      ctx.state.auditContext = {
+        resource_id: id,
+        resource_name: application.name,
+        old_data: oldSnapshot,
+        new_data: redactApplicationSnapshot(application),
+      };
+
       ctx.body = {
         code: 200,
         message: 'success',
@@ -694,6 +716,12 @@ class ApplicationController {
         return;
       }
 
+      ctx.state.auditContext = {
+        resource_id: id,
+        resource_name: application.name,
+        old_data: redactApplicationSnapshot(application),
+      };
+
       await application.destroy();
       ctx.body = {
         code: 200,
@@ -740,6 +768,7 @@ class ApplicationController {
 
       // 生成应用统一密钥（不再依赖 salt）
       const app_secret = crypto.randomBytes(32).toString('hex');
+      const oldSnapshot = redactApplicationSnapshot(application);
 
       await application.update({
         api_connect_config: {
@@ -751,6 +780,13 @@ class ApplicationController {
           client_secret: app_secret
         }
       });
+
+      ctx.state.auditContext = {
+        resource_id: id,
+        resource_name: application.name,
+        old_data: oldSnapshot,
+        new_data: redactApplicationSnapshot(application),
+      };
 
       ctx.body = {
         code: 200,
@@ -1087,9 +1123,18 @@ class ApplicationController {
         return;
       }
 
+      const oldMarkdown = application.top_level_skill_markdown || '';
+
       await application.update({
         top_level_skill_markdown: contentMarkdown ?? '',
       });
+
+      ctx.state.auditContext = {
+        resource_id: id,
+        resource_name: application.name,
+        old_data: { top_level_skill_markdown: oldMarkdown },
+        new_data: { top_level_skill_markdown: application.top_level_skill_markdown || '' },
+      };
 
       ctx.body = {
         code: 200,

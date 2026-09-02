@@ -870,6 +870,8 @@ declare namespace API {
   type MaterializationStatusItem = {
     entityId?: string;
     code?: string;
+    /** 与 code 相同，便于按 entityCode 过滤/匹配 */
+    entityCode?: string;
     label?: string;
     tableName?: string;
     currentVersion?: number;
@@ -954,7 +956,7 @@ declare namespace API {
   type DatabaseConnection = {
     id?: string;
     name?: string;
-    dbType?: 'postgresql' | 'mongodb' | 'redis';
+    dbType?: 'postgresql' | 'mysql' | 'mongodb' | 'redis';
     host?: string;
     port?: number;
     username?: string;
@@ -1603,5 +1605,149 @@ declare namespace API {
     errorMessage?: string;
     durationMs?: number;
     createdAt: string;
+  };
+
+  // ===== 钩子管理（Hook Center） =====
+  type HookListResult = {
+    total: number;
+    page: number;
+    size: number;
+    items: API.HookListItem[];
+  };
+
+  type HookListItem = API.Hook & {
+    latestRun?: { status: string; triggerSource: string; startedAt: string; error?: string | null } | null;
+    stats7d?: { total: number; success: number; successRate: number | null };
+  };
+
+  type Hook = {
+    id: string;
+    name: string;
+    description?: string | null;
+    status: 'draft' | 'enabled' | 'disabled' | 'auto_disabled';
+    eventType: string;
+    eventFilter: API.HookEventFilter;
+    conditionExpr?: string | null;
+    actionType: 'http_request' | 'internal_api' | 'script';
+    actionConfig: API.HookActionConfig;
+    failurePolicy: API.HookFailurePolicy;
+    consecutiveFailures: number;
+    version: number;
+    createdBy?: string | null;
+    updatedBy?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    recentRuns?: API.HookRun[];
+  };
+
+  type HookSaveInput = {
+    id?: string;
+    name: string;
+    description?: string | null;
+    status?: 'draft' | 'enabled' | 'disabled';
+    eventType: string;
+    eventFilter: API.HookEventFilter;
+    conditionExpr?: string | null;
+    actionType: 'http_request' | 'internal_api' | 'script';
+    actionConfig: API.HookActionConfig;
+    failurePolicy: API.HookFailurePolicy;
+  };
+
+  type HookEventFilter = {
+    entityCodes?: string[];
+    apiServiceIds?: string[];
+    operations?: string[];
+    changedFields?: string[];
+    invokeStatus?: string[];
+    cron?: string;
+    [key: string]: unknown;
+  };
+
+  type HookActionConfig = {
+    // http_request
+    method?: 'POST' | 'PUT' | 'PATCH';
+    url?: string;
+    headers?: Record<string, string>;
+    query?: Record<string, string>;
+    bodyTemplate?: unknown;
+    transformScript?: string;
+    auth?: {
+      type: 'none' | 'bearer' | 'api_key';
+      keyName?: string;
+      sendMode?: 'header' | 'query';
+      secret?: string;
+      secretSet?: boolean;
+      secretMasked?: string | null;
+    };
+    responseConfig?: Record<string, unknown>;
+    timeoutMs?: number;
+    // internal_api
+    apiServiceId?: string;
+    apiServiceCode?: string | null;
+    operation?: string;
+    parametersTemplate?: Record<string, unknown>;
+    // script
+    source?: string;
+    connectionId?: string | null;
+    [key: string]: unknown;
+  };
+
+  type HookFailurePolicy = {
+    retry?: number;
+    disableThreshold?: number;
+    concurrency?: number;
+    timeoutMs?: number;
+  };
+
+  type HookRunListResult = {
+    total: number;
+    page: number;
+    size: number;
+    items: API.HookRun[];
+  };
+
+  type HookRun = {
+    id: string;
+    runGroupId: string;
+    hookId: string;
+    hookVersion: number;
+    eventId: string;
+    eventType: string;
+    eventDepth: number;
+    triggerSource: 'event' | 'test' | 'replay' | 'schedule';
+    payload: { id: string; type: string; occurredAt: string; depth: number; payload: Record<string, unknown> };
+    actionConfigSnapshot?: Record<string, unknown> | null;
+    status: 'success' | 'failed' | 'timeout' | 'skipped' | 'suppressed';
+    attempt: number;
+    durationMs?: number | null;
+    error?: string | null;
+    output?: unknown;
+    logs?: string[] | null;
+    startedAt: string;
+    finishedAt?: string | null;
+  };
+
+  type HookEventType = {
+    type: string;
+    label: string;
+    category: string;
+    description: string;
+    filterFields: string[];
+    payloadSchema: Record<string, unknown>;
+    example: Record<string, unknown>;
+  };
+
+  type HookTestResult = {
+    conditionMatched?: boolean;
+    reason?: string | null;
+    result?: { status?: string; error?: string | null };
+    run?: API.HookRun | null;
+  };
+
+  type HookScriptDiagnostic = {
+    line: number;
+    column: number;
+    message: string;
+    code?: number;
   };
 }

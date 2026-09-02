@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const config = require('../../config');
 const { BizdataDatabaseConnection, BizdataMaterializationRun } = require('../../models');
 const { encryptApiKey, decryptApiKey } = require('../../utils/encryption');
+const { SUPPORTED_DB_TYPES } = require('./materialization/dialects');
 
 function formatConnection(row, { includePasswordSet = true } = {}) {
   const d = row.toJSON ? row.toJSON() : row;
@@ -26,7 +27,29 @@ function formatConnection(row, { includePasswordSet = true } = {}) {
 function getDefaultPort(dbType) {
   if (dbType === 'mongodb') return 27017;
   if (dbType === 'redis') return 6379;
+  if (dbType === 'mysql') return 3306;
   return 5432;
+}
+
+function assertSupportedDbType(dbType) {
+  if (!SUPPORTED_DB_TYPES.includes(dbType)) {
+    throw new Error(
+      `dbType「${dbType || ''}」不被接受，当前支持：${SUPPORTED_DB_TYPES.join('、')}`,
+    );
+  }
+}
+
+/** Sequelize/PG 约束类错误 → 可读文案，避免 AI 拿原始 check constraint 去猜枚举 */
+function mapDbWriteError(error, dbType) {
+  const msg = String(error?.message || error || '');
+  const parentMsg = String(error?.parent?.message || error?.original?.message || '');
+  const combined = `${msg} ${parentMsg}`;
+  if (/database_connections_db_type_check|db_type_check|violates check constraint/i.test(combined)) {
+    return new Error(
+      `dbType「${dbType || ''}」不被接受，当前支持：${SUPPORTED_DB_TYPES.join('、')}`,
+    );
+  }
+  return error instanceof Error ? error : new Error(msg || '数据库连接写入失败');
 }
 
 async function resolveConnectionRecord(connectionId) {
@@ -67,35 +90,52 @@ async function listConnections() {
   return rows.map((row) => formatConnection(row));
 }
 
-async function getConnectionById(id) {
+async function getConnectionById(id, { includePassword = false } = {}) {
   const row = await BizdataDatabaseConnection.findByPk(id);
   if (!row) return null;
-  return formatConnection(row);
+  const base = formatConnection(row);
+  if (!includePassword) return base;
+  const d = row.toJSON ? row.toJSON() : row;
+  let password = d.password_enc ? decryptApiKey(d.password_enc) : null;
+  if (d.is_default && d.db_type === 'postgresql' && !password) {
+    password = config.postgresql.password;
+  }
+  return { ...base, password: password || undefined };
 }
 
 async function createConnection(payload) {
   const dbType = payload.dbType || payload.db_type;
-  if (!['postgresql', 'mongodb', 'redis'].includes(dbType)) {
-    throw new Error('dbType 仅支持 postgresql、mongodb 或 redis');
-  }
+  assertSupportedDbType(dbType);
 
   if (payload.isDefault) {
     await BizdataDatabaseConnection.update({ is_default: false }, { where: { is_default: true } });
   }
 
-  const row = await BizdataDatabaseConnection.create({
-    name: payload.name,
-    db_type: dbType,
-    host: payload.host || 'localhost',
-    port: payload.port || getDefaultPort(dbType),
-    username: payload.username,
-    password_enc: payload.password ? encryptApiKey(payload.password) : null,
-    database_name: payload.databaseName || payload.database_name,
-    target_schema: payload.targetSchema || payload.target_schema || 'bizdata_mat',
-    is_default: !!payload.isDefault
-  });
+  const databaseName = payload.databaseName || payload.database_name;
+  let targetSchema = payload.targetSchema || payload.target_schema;
+  if (!targetSchema && dbType === 'mongodb') {
+    targetSchema = databaseName;
+  }
+  if (!targetSchema) {
+    targetSchema = 'bizdata_mat';
+  }
 
-  return formatConnection(row);
+  try {
+    const row = await BizdataDatabaseConnection.create({
+      name: payload.name,
+      db_type: dbType,
+      host: payload.host || 'localhost',
+      port: payload.port || getDefaultPort(dbType),
+      username: payload.username != null ? payload.username : '',
+      password_enc: payload.password ? encryptApiKey(payload.password) : null,
+      database_name: databaseName,
+      target_schema: targetSchema,
+      is_default: !!payload.isDefault
+    });
+    return formatConnection(row);
+  } catch (error) {
+    throw mapDbWriteError(error, dbType);
+  }
 }
 
 async function updateConnection(id, payload) {
@@ -111,7 +151,11 @@ async function updateConnection(id, payload) {
 
   const updates = {};
   if (payload.name != null) updates.name = payload.name;
-  if (payload.dbType != null || payload.db_type != null) updates.db_type = payload.dbType || payload.db_type;
+  if (payload.dbType != null || payload.db_type != null) {
+    const nextType = payload.dbType || payload.db_type;
+    assertSupportedDbType(nextType);
+    updates.db_type = nextType;
+  }
   if (payload.host != null) updates.host = payload.host;
   if (payload.port != null) updates.port = payload.port;
   if (payload.username != null) updates.username = payload.username;
@@ -124,7 +168,11 @@ async function updateConnection(id, payload) {
   }
   if (payload.isDefault != null) updates.is_default = !!payload.isDefault;
 
-  await row.update(updates);
+  try {
+    await row.update(updates);
+  } catch (error) {
+    throw mapDbWriteError(error, updates.db_type || row.db_type);
+  }
   return formatConnection(row);
 }
 
@@ -167,5 +215,6 @@ module.exports = {
   testConnectionById,
   resolveConnectionRecord,
   buildRuntimeConfig,
-  getDefaultPort
+  getDefaultPort,
+  SUPPORTED_DB_TYPES,
 };

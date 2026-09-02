@@ -1,4 +1,4 @@
-const { Role, Permission, RolePermission, sequelize, User, OperationLog } = require('../models');
+const { Role, Permission, RolePermission, sequelize, User } = require('../models');
 const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
 const jwt = require('jsonwebtoken');
@@ -75,6 +75,17 @@ class RoleController {
       });
 
       console.log('角色创建成功:', role.toJSON());
+      ctx.state.auditContext = {
+        resource_id: role.role_id,
+        resource_name: role.role_name,
+        new_data: {
+          role_id: role.role_id,
+          role_name: role.role_name,
+          code: role.code,
+          description: role.description,
+          status: role.status,
+        },
+      };
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -240,23 +251,16 @@ class RoleController {
         status
       });
 
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          operation_type: 'UPDATE',
-          resource_type: 'role',
-          resource_id: role_id,
-          old_data: oldData,
-          new_data: {
-            role_name,
-            description,
-            status
-          },
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        console.error('记录操作日志失败:', logError);
-      }
+      ctx.state.auditContext = {
+        resource_id: role_id,
+        resource_name: role.role_name,
+        old_data: oldData,
+        new_data: {
+          role_name,
+          description,
+          status,
+        },
+      };
 
       ctx.status = 200;
       ctx.body = {
@@ -305,21 +309,14 @@ class RoleController {
       // 执行软删除
       await role.softDelete();
 
-      // 记录操作日志
-      try {
-        await OperationLog.create({
-          operation_type: 'DELETE',
-          resource_type: 'role',
-          resource_id: role_id,
-          old_data: oldData,
-          new_data: {
-            deleted_at: new Date()
-          },
-          status: 'SUCCESS'
-        });
-      } catch (logError) {
-        console.error('记录操作日志失败:', logError);
-      }
+      ctx.state.auditContext = {
+        resource_id: role_id,
+        resource_name: oldData.role_name,
+        old_data: oldData,
+        new_data: {
+          deleted_at: new Date(),
+        },
+      };
 
       ctx.status = 200;
       ctx.body = {
@@ -398,6 +395,12 @@ class RoleController {
         await RolePermission.bulkCreate(rolePermissions, { transaction: t });
       });
 
+      ctx.state.auditContext = {
+        resource_id: role_id,
+        resource_name: role.role_name,
+        new_data: { permission_ids },
+      };
+
       ctx.status = 200;
       ctx.body = {
         code: 200,
@@ -463,6 +466,12 @@ class RoleController {
           });
         }
       });
+
+      ctx.state.auditContext = {
+        resource_id: role_id,
+        resource_name: role.role_name,
+        new_data: { add_permissions, remove_permissions },
+      };
 
       ctx.status = 200;
       ctx.body = {

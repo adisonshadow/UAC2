@@ -26,8 +26,8 @@ export function useAISurface(def: AISurfaceDefinition): void {
     };
 
     registerAISurface(surface);
-    return () => unregisterAISurface(defRef.current.id);
-  }, [def.id]);
+    return () => unregisterAISurface(defRef.current.id, defRef.current.domain);
+  }, [def.id, def.domain]);
 }
 
 /** 订阅指定 domain 的 mutation 事件（不注册 Surface） */

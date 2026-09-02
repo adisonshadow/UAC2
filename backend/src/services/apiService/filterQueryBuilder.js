@@ -1,4 +1,4 @@
-const { quotePgIdentifier } = require('../businessData/materialization/connectionRunner');
+const { quoteIdent } = require('./sqlDialect');
 const { extractSqlNamedParams, resolveDefinitionScript } = require('./operationParameterSchemas');
 
 /** 不参与 filter 解析的结构化参数字段 */
@@ -78,20 +78,27 @@ function resolveFilterEntries(parameters, service) {
 
 /**
  * 将过滤条目转为参数化 WHERE 子句（等值 / IS NULL）。
+ * @param {{ startIndex?: number, qualifier?: string, dbType?: string, quoteIdentFn?: (name: string) => string }} [options]
  * @returns {{ clause: string, bindings: unknown[], nextIndex: number }}
  */
-function buildParameterizedWhere(entries, { startIndex = 1, qualifier = '' } = {}) {
+function buildParameterizedWhere(entries, {
+  startIndex = 1,
+  qualifier = '',
+  dbType = 'postgresql',
+  quoteIdentFn,
+} = {}) {
   if (!entries.length) {
     return { clause: '', bindings: [], nextIndex: startIndex };
   }
 
+  const quote = quoteIdentFn || ((name) => quoteIdent(name, dbType));
   const prefix = qualifier ? `${qualifier}.` : '';
   const conditions = [];
   const bindings = [];
   let idx = startIndex;
 
   entries.forEach(({ key, value }) => {
-    const col = `${prefix}${quotePgIdentifier(key)}`;
+    const col = `${prefix}${quote(key)}`;
     if (value === null) {
       conditions.push(`${col} IS NULL`);
       return;

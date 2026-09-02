@@ -71,6 +71,7 @@ echo "Outbound Webhook 数据库结构创建完成"
 echo "开始执行结构对齐增量迁移..."
 
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-builtin-api-system.sql" || { echo "内置 API 系统迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-operation-log-audit.sql" || { echo "操作日志审计迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-permission-access-restriction.sql" || { echo "权限 access_restriction 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-services-optional-entity.sql" || { echo "API 服务可选实体迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-services-form-v2.sql" || { echo "API 服务表单 v2 迁移失败"; exit 1; }
@@ -80,6 +81,8 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metric-cards.sql
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-scope-docs.sql" || { echo "Scope 业务说明表迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-transport-protocols.sql" || { echo "API 服务传输协议迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-skill-completion-strategy.sql" || { echo "Skill 完成策略迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-hook-center.sql" || { echo "钩子管理迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-hook-skill.sql" || { echo "钩子管理 Skill 种子失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/20260710_add_model_rate_limit.sql" || { echo "模型 rate_limit 迁移失败"; exit 1; }
 
 echo "结构对齐增量迁移完成"

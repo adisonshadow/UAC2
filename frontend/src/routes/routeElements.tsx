@@ -55,6 +55,9 @@ const OutboundWebhookFormPage = lazy(
   () => import('@/pages/ApiServices/OutboundWebhooks/FormPage'),
 );
 const OutboundWebhookTest = lazy(() => import('@/pages/ApiServices/OutboundWebhooks/Test'));
+const HookListPage = lazy(() => import('@/pages/ApiServices/Hooks'));
+const HookFormPage = lazy(() => import('@/pages/ApiServices/Hooks/FormPage'));
+const HookRunsPage = lazy(() => import('@/pages/ApiServices/Hooks/Runs'));
 const AIProviders = lazy(() => import('@/pages/AIManagement/Providers'));
 const ProviderFormPage = lazy(() => import('@/pages/AIManagement/Providers/FormPage'));
 const AIModels = lazy(() => import('@/pages/AIManagement/AiModels'));
@@ -68,6 +71,7 @@ const Skills = lazy(() => import('@/pages/AIManagement/Skills'));
 const SkillFormPage = lazy(() => import('@/pages/AIManagement/Skills/FormPage'));
 const RequestLogs = lazy(() => import('@/pages/AIManagement/RequestLogs'));
 const SystemSettings = lazy(() => import('@/pages/System/Settings'));
+const OperationLogs = lazy(() => import('@/pages/System/OperationLogs'));
 const DataStandards = lazy(() => import('@/pages/BusinessData/DataStandards'));
 const MetadataCatalog = lazy(() => import('@/pages/BusinessData/Metadata'));
 
@@ -115,6 +119,7 @@ export const PAGE_ELEMENTS: Record<string, ReactNode | ((mode: string) => ReactN
 
   /* system */
   systemSettings: <SystemSettings />,
+  operationLogs: <OperationLogs />,
 
   /* api_services */
   apiServiceCreate: <ApiServiceCreate />,
@@ -127,6 +132,9 @@ export const PAGE_ELEMENTS: Record<string, ReactNode | ((mode: string) => ReactN
     <OutboundWebhookFormPage mode={mode as 'create' | 'edit'} />
   ),
   outboundWebhookTest: <OutboundWebhookTest />,
+  hooksList: <HookListPage />,
+  hooksForm: (mode) => <HookFormPage mode={mode as 'create' | 'edit'} />,
+  hooksRuns: <HookRunsPage />,
   collectionPipelines: <CollectionPipelineList />,
   collectionPipelineForm: (mode) => (
     <CollectionPipelineFormPage mode={mode as 'create' | 'edit'} />

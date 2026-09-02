@@ -88,6 +88,13 @@ export function registerEadafSkillCompletionPolicies(): void {
     requiredToolsMode: 'any',
     completionKeywords: ['已发布', '发布成功', '创建成功', '已成功创建'],
     blockKeywords: [...BLOCK_SUGGEST_NEXT],
+    // 声称创建/发布成功时，须先读过实体字段（与 requiredTools 并列校验）
+    claimRules: [
+      {
+        keywords: ['已发布', '发布成功', '创建成功', '已成功创建'],
+        requiredTools: ['bizdata_get_entity'],
+      },
+    ],
   });
 
   registerSkillCompletionPolicy('bizdata-api-service-manage', {

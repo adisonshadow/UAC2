@@ -91,10 +91,25 @@ function generateEntityDDL(entity, targetSchema) {
   return `CREATE TABLE IF NOT EXISTS "${targetSchema}"."${tableName}" (\n${lines.join(',\n')}\n);`;
 }
 
+function generateAddMissingColumnsSql(entity, targetSchema) {
+  const tableName = resolveEntityTableName(entity.code, entity.tableName || entity.table_name);
+  const fields = entity.fields || [];
+  return fields
+    .map((f) => {
+      const cfg = f.typeormConfig || f.typeorm_config || {};
+      const colInfo = f.columnInfo || f.column_info || {};
+      const type = mapSqlType(cfg, colInfo);
+      return `ALTER TABLE "${targetSchema}"."${tableName}" ADD COLUMN IF NOT EXISTS "${getFieldKey(f)}" ${type};`;
+    })
+    .join('\n');
+}
+
 function buildPreviewSql(entities, targetSchema) {
   const sqlParts = [`CREATE SCHEMA IF NOT EXISTS "${targetSchema}";`];
   entities.forEach((entity) => {
     sqlParts.push(generateEntityDDL(entity, targetSchema));
+    const alters = generateAddMissingColumnsSql(entity, targetSchema);
+    if (alters) sqlParts.push(alters);
   });
   return sqlParts.join('\n\n');
 }
@@ -111,6 +126,7 @@ module.exports = {
   dbType: 'postgresql',
   mapSqlType,
   generateEntityDDL,
+  generateAddMissingColumnsSql,
   buildPreviewSql,
   splitStatements,
   shouldSkipStatement

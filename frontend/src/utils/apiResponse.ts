@@ -161,6 +161,8 @@ export function getApiResponseData(error: unknown): ApiRecord | undefined {
 export function getMaterializationTargetLabel(dbType?: string): string {
   if (dbType === 'mongodb') return '数据库';
   if (dbType === 'redis') return 'Key 前缀';
+  // MySQL：Schema ≡ 库，界面用语一律叫「库」，避免「Schema（库）」双名
+  if (dbType === 'mysql') return '物化目标库';
   return 'Schema';
 }
 

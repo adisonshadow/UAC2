@@ -50,7 +50,13 @@ ${fieldLines || '  @PrimaryGeneratedColumn(\'uuid\')\n  id!: string;'}
 async function loadErEntities(entityIds) {
   const where = { entity_kind: 'er_table' };
   if (entityIds?.length) {
-    where.id = { [Op.in]: entityIds };
+    const ids = entityIds.filter(
+      (id) =>
+        typeof id === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
+    );
+    if (!ids.length) return [];
+    where.id = { [Op.in]: ids };
   }
 
   const entities = await BizdataEntity.findAll({
@@ -90,9 +96,20 @@ async function buildPreview({ entityIds, targetSchema, connectionId }) {
   };
 }
 
-async function getMaterializationStatus({ connectionId } = {}) {
+async function getMaterializationStatus({ connectionId, entityCodes, entityIds } = {}) {
+  const codeFilter = normalizeStringList(entityCodes);
+  const idFilter = normalizeStringList(entityIds);
+
+  const entityWhere = { entity_kind: 'er_table' };
+  if (codeFilter.length) {
+    entityWhere.code = { [Op.in]: codeFilter };
+  }
+  if (idFilter.length) {
+    entityWhere.id = { [Op.in]: idFilter };
+  }
+
   const entities = await BizdataEntity.findAll({
-    where: { entity_kind: 'er_table' },
+    where: entityWhere,
     order: [['code', 'ASC']]
   });
 
@@ -112,9 +129,13 @@ async function getMaterializationStatus({ connectionId } = {}) {
   });
 
   const runIds = successRuns.map((r) => r.id);
+  const matEntityWhere = { ddl_applied: true, run_id: { [Op.in]: runIds } };
+  if (entities.length && (codeFilter.length || idFilter.length)) {
+    matEntityWhere.entity_id = { [Op.in]: entities.map((e) => e.id) };
+  }
   const matRecords = runIds.length
     ? await BizdataMaterializationEntity.findAll({
-      where: { ddl_applied: true, run_id: { [Op.in]: runIds } },
+      where: matEntityWhere,
       include: [{
         model: BizdataMaterializationRun,
         as: 'run',
@@ -155,6 +176,17 @@ async function getMaterializationStatus({ connectionId } = {}) {
   });
 }
 
+function normalizeStringList(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [String(value).trim()].filter(Boolean);
+}
+
 function formatStatusItem(entity, latest, conn) {
   const materializedVersion = latest ? latest.entity_version : null;
   const currentVersion = entity.version;
@@ -165,6 +197,7 @@ function formatStatusItem(entity, latest, conn) {
   return {
     entityId: entity.id,
     code: entity.code,
+    entityCode: entity.code,
     label: entity.label,
     tableName: entity.table_name,
     currentVersion,

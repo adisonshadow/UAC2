@@ -3,6 +3,7 @@ const AiModelController = require('../controllers/aiModelController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({
   prefix: '/api/v1/admin/models'
 });
@@ -163,7 +164,13 @@ const router = new Router({
  *               $ref: '#/components/schemas/EnvelopeAdminAiModel'
  */
 router.get('/', authWithBuiltinApiGuard, AiModelController.list);
-router.post('/', authWithBuiltinApiGuard, AiModelController.create);
+router.post('/', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'CREATE',
+  resourceType: 'ai_model',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['name', 'code', 'providerId'],
+}), AiModelController.create);
 
 /**
  * @swagger
@@ -263,7 +270,18 @@ router.post('/', authWithBuiltinApiGuard, AiModelController.create);
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, AiModelController.getById);
-router.patch('/:id', authWithBuiltinApiGuard, AiModelController.update);
-router.delete('/:id', authWithBuiltinApiGuard, AiModelController.delete);
+router.patch('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'UPDATE',
+  resourceType: 'ai_model',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['name', 'code', 'providerId'],
+}), AiModelController.update);
+router.delete('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'DELETE',
+  resourceType: 'ai_model',
+  resourceId: (ctx) => ctx.params.id,
+}), AiModelController.delete);
 
 module.exports = router;

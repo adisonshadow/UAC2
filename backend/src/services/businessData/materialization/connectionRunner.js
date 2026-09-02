@@ -1,7 +1,10 @@
 const { Client: PgClient } = require('pg');
+const mysql = require('mysql2/promise');
 
 let mongoClientPromise;
 let redisPromise;
+
+const MYSQL_MIN_VERSION = { major: 8, minor: 0, patch: 13 };
 
 async function getMongoClient() {
   if (!mongoClientPromise) {
@@ -31,6 +34,31 @@ function buildRedisUrl(runtime) {
   return `redis://${auth}${runtime.host}:${runtime.port}/${runtime.databaseName || '0'}`;
 }
 
+function parseMysqlVersion(versionStr) {
+  const m = String(versionStr || '').match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+}
+
+function isMysqlVersionAtLeast(parsed, min = MYSQL_MIN_VERSION) {
+  if (!parsed) return false;
+  if (parsed.major !== min.major) return parsed.major > min.major;
+  if (parsed.minor !== min.minor) return parsed.minor > min.minor;
+  return parsed.patch >= min.patch;
+}
+
+async function assertMysqlVersion(conn) {
+  const [rows] = await conn.query('SELECT VERSION() AS version');
+  const version = rows?.[0]?.version;
+  const parsed = parseMysqlVersion(version);
+  if (!isMysqlVersionAtLeast(parsed)) {
+    throw new Error(
+      `MySQL 版本须 ≥ ${MYSQL_MIN_VERSION.major}.${MYSQL_MIN_VERSION.minor}.${MYSQL_MIN_VERSION.patch}（当前: ${version || '未知'}）`,
+    );
+  }
+  return version;
+}
+
 async function withPgClient(runtime, fn) {
   const client = new PgClient({
     host: runtime.host,
@@ -44,6 +72,22 @@ async function withPgClient(runtime, fn) {
     return await fn(client);
   } finally {
     await client.end();
+  }
+}
+
+async function withMysqlClient(runtime, fn, { database } = {}) {
+  const conn = await mysql.createConnection({
+    host: runtime.host,
+    port: runtime.port || 3306,
+    user: runtime.username,
+    password: runtime.password || undefined,
+    database: database !== undefined ? database : runtime.databaseName,
+    multipleStatements: false,
+  });
+  try {
+    return await fn(conn);
+  } finally {
+    await conn.end();
   }
 }
 
@@ -79,6 +123,14 @@ async function testConnection(runtime) {
     return;
   }
 
+  if (runtime.dbType === 'mysql') {
+    await withMysqlClient(runtime, async (conn) => {
+      await assertMysqlVersion(conn);
+      await conn.query('SELECT 1');
+    });
+    return;
+  }
+
   if (runtime.dbType === 'mongodb') {
     const { MongoClient } = await getMongoClient();
     const client = new MongoClient(buildMongoUri(runtime));
@@ -110,6 +162,10 @@ function quotePgIdentifier(name) {
   return `"${String(name).replace(/"/g, '""')}"`;
 }
 
+function quoteMysqlIdentifier(name) {
+  return `\`${String(name).replace(/`/g, '``')}\``;
+}
+
 async function checkPgSchemaExists(client, schemaName) {
   const res = await client.query(
     'SELECT 1 FROM information_schema.schemata WHERE schema_name = $1 LIMIT 1',
@@ -120,6 +176,18 @@ async function checkPgSchemaExists(client, schemaName) {
 
 async function ensurePgSchema(client, schemaName) {
   await client.query(`CREATE SCHEMA IF NOT EXISTS ${quotePgIdentifier(schemaName)}`);
+}
+
+async function checkMysqlDatabaseExists(conn, dbName) {
+  const [rows] = await conn.query(
+    'SELECT 1 AS ok FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1',
+    [dbName],
+  );
+  return rows.length > 0;
+}
+
+async function ensureMysqlDatabase(conn, dbName) {
+  await conn.query(`CREATE DATABASE IF NOT EXISTS ${quoteMysqlIdentifier(dbName)}`);
 }
 
 async function checkMongoDatabaseExists(client, dbName) {
@@ -140,6 +208,10 @@ async function checkTargetExists(runtime, targetSchema) {
 
   if (runtime.dbType === 'postgresql') {
     return withPgClient(runtime, (client) => checkPgSchemaExists(client, targetSchema));
+  }
+
+  if (runtime.dbType === 'mysql') {
+    return withMysqlClient(runtime, (conn) => checkMysqlDatabaseExists(conn, targetSchema));
   }
 
   if (runtime.dbType === 'mongodb') {
@@ -165,6 +237,13 @@ async function ensureTarget(runtime, targetSchema) {
     return withPgClient(runtime, (client) => ensurePgSchema(client, targetSchema));
   }
 
+  if (runtime.dbType === 'mysql') {
+    return withMysqlClient(runtime, async (conn) => {
+      await assertMysqlVersion(conn);
+      await ensureMysqlDatabase(conn, targetSchema);
+    });
+  }
+
   if (runtime.dbType === 'mongodb') {
     const { MongoClient } = await getMongoClient();
     const client = new MongoClient(buildMongoUri(runtime));
@@ -182,6 +261,25 @@ async function executePostgresql(runtime, sql, dialect) {
     for (const stmt of dialect.splitStatements(sql)) {
       if (dialect.shouldSkipStatement(stmt)) continue;
       await client.query(`${stmt};`);
+    }
+  });
+}
+
+async function executeMysql(runtime, sql, dialect) {
+  await withMysqlClient(runtime, async (conn) => {
+    await assertMysqlVersion(conn);
+    for (const stmt of dialect.splitStatements(sql)) {
+      if (dialect.shouldSkipStatement(stmt)) continue;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await conn.query(`${stmt};`);
+      } catch (err) {
+        // 1060: Duplicate column name（重复物化补列）
+        if (err && (err.errno === 1060 || err.code === 'ER_DUP_FIELDNAME')) {
+          continue;
+        }
+        throw err;
+      }
     }
   });
 }
@@ -235,6 +333,10 @@ async function executeSql(runtime, sql, dialect, { entities, targetSchema } = {}
     await executePostgresql(runtime, sql, dialect);
     return;
   }
+  if (runtime.dbType === 'mysql') {
+    await executeMysql(runtime, sql, dialect);
+    return;
+  }
   if (runtime.dbType === 'mongodb') {
     await executeMongodb(runtime, entities, targetSchema, dialect);
     return;
@@ -252,7 +354,11 @@ module.exports = {
   ensureTarget,
   executeSql,
   withPgClient,
+  withMysqlClient,
   withPgWriteTest,
   withPgTransaction,
   quotePgIdentifier,
+  quoteMysqlIdentifier,
+  assertMysqlVersion,
+  MYSQL_MIN_VERSION,
 };

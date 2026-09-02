@@ -45,7 +45,8 @@ async function handleWebSocketMessage(routePath, message, authContext) {
 
   assertAccessAllowed(service, authContext, { bypass: false });
 
-  return apiServiceExecutionService.testService(service.id, {
+  // 生产 WS 写同样真实 COMMIT（executePublished）；按钩子管理边界，WS 不发事件
+  return apiServiceExecutionService.executePublished(service.id, {
     operation,
     parameters,
     bypassAccessControl: false,

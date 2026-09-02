@@ -56,6 +56,7 @@ const incoming: AIBaseTool[] = [
 {
   const available = new Set(['bizdata_list_entity_summaries']);
   const end = beginTurn({
+    conversationKey: 'verify-same-turn-tools',
     plan: [],
     toolOutcomes: [],
     invokedToolNames: new Set(),

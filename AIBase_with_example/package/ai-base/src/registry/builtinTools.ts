@@ -16,6 +16,7 @@ import {
   getActiveTurnId,
 } from '../observability/turnTrace';
 import type { PlanItem, NavigationRequest } from '../types';
+import { distillSessionSummary } from '../memory/sessionSummary';
 import type { ToolResponse } from '../types/toolResponse';
 import { formatPlanListDisplayName } from '../utils/toolDisplayName';
 import { validateToolArgs } from '../utils/validateToolArgs';
@@ -259,6 +260,15 @@ function handleTaskComplete(args: {
       meta: { tool: TASK_COMPLETE_TOOL },
     };
   }
+
+  // L4：任务验收通过后蒸馏会话摘要并清空 L3 plan（facts 保留）
+  if (ctx.conversationKey) {
+    distillSessionSummary(ctx.conversationKey, {
+      deliverySummary: delivery.summary,
+      clearPlan: true,
+    });
+  }
+  ctx.plan = [];
 
   return {
     ok: true,
@@ -529,9 +539,12 @@ async function handleRunCode(args: {
   }
 
   try {
-    // 与 native / subagent 同源：授权 ∩ 已注册 client Tool（不含调不了的 http_request）
+    const turn = getCurrent();
+    const includeServer = Boolean(turn?.invokeAuthorizedTool);
+    // 有 turn dispatcher 时与 native 同源（含 server_builtin）；否则仅 client
     const { toolNames, contracts } = resolveRunnableClientToolNames(
-      getCurrent()?.availableToolNames,
+      turn?.availableToolNames,
+      { includeAuthorizedServerTools: includeServer },
     );
 
     const { value } = await runJavaScriptCode(
@@ -539,21 +552,26 @@ async function handleRunCode(args: {
       async (name, toolArgs) => {
         if (!toolNames.includes(name)) {
           throw new Error(
-            `未授权或不在沙箱内的 Tool: ${name}。请直接 native 调用业务 Tool，或 tools.list() 查看可编排名。`,
-          );
-        }
-        const def = getFunctionCallDef(name);
-        if (!def) {
-          throw new Error(
-            `未注册的 client Tool: ${name}（run_code 当前仅能编排浏览器已注册的 client Tool）`,
+            `未授权或不在本回合可编排名: ${name}。请直接 native 调用业务 Tool，或 tools.list() 查看可编排名。`,
           );
         }
         const parameters =
           getToolContract(name)?.parameters ||
-          (def.parameters as Record<string, unknown> | undefined);
+          turn?.resolveToolBrief?.(name)?.parameters ||
+          (getFunctionCallDef(name)?.parameters as Record<string, unknown> | undefined) ||
+          { type: 'object', properties: {} };
         const validation = validateToolArgs(toolArgs || {}, parameters);
         if (!validation.valid) {
           throw new Error(`参数校验失败: ${validation.message}`);
+        }
+        if (turn?.invokeAuthorizedTool) {
+          return turn.invokeAuthorizedTool(name, toolArgs || {});
+        }
+        const def = getFunctionCallDef(name);
+        if (!def) {
+          throw new Error(
+            `未授权或不在本回合可编排名: ${name}（无 turn dispatcher 时仅能编排已注册 client Tool）`,
+          );
         }
         return def.handler(toolArgs);
       },
@@ -578,7 +596,7 @@ async function handleRunCode(args: {
       },
       agentHint:
         toolNames.length === 0
-          ? '沙箱内暂无可编排 client Tool。请直接调用 native 业务 Tool（勿用 run_code 探路）。'
+          ? '沙箱内暂无可编排业务 Tool。请直接调用 native 业务 Tool（勿用 run_code 探路）。'
           : undefined,
       meta: { tool: RUN_CODE_TOOL },
     };
@@ -595,7 +613,7 @@ async function handleRunCode(args: {
         retryable: true,
         hint: isInvalidArgs
           ? '请 tools.schema(toolName) 查看必填参数后重试'
-          : '有专用业务 Tool 请直接 native 调用；run_code 仅编排已授权 client Tool',
+          : '有专用业务 Tool 请直接 native 调用；run_code 仅编排本回合已授权业务 Tool（含 server_builtin，不含 http_request/harness）',
       },
       agentHint: isInvalidArgs
         ? '参数错误：先 tools.schema(name) 读取 required，修正后再 await tools.name(args)。'
@@ -628,10 +646,12 @@ export const RUN_CODE_OPENAI_TOOL = {
   function: {
     name: RUN_CODE_TOOL,
     description:
-      '可选：用短脚本编排多个已授权 client Tool 或做数据计算（默认 javascript）。' +
-      '有专用业务 Tool 时必须直接 native 调用，禁止用本工具探路或 tools.list()「发现」能力。' +
+      '可选：用短脚本编排本回合已授权业务 Tool（含 server_builtin）或做数据计算（默认 javascript）。' +
+      '有专用业务 Tool 时优先直接 native 调用；禁止用本工具探路或 tools.list()「发现」能力。' +
+      '禁止编排 http_request 与 harness（skill/ask_user/task_complete/run_code 等）。' +
       '脚本内：await tools.tool_name(args)、tools.list()、tools.schema(name?)。调用前 tools.schema 读必填字段。' +
-      'tools 不是数组：禁止 tools.filter/map/find。禁止重新声明 tools。禁止任意网络与磁盘访问。',
+      'tools 不是数组：禁止 tools.filter/map/find。正确：const names = tools.list(); names.filter(...); await tools[name](args)。' +
+      '禁止重新声明 tools。禁止任意网络与磁盘访问。',
     parameters: {
       type: 'object',
       properties: {

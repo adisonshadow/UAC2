@@ -10,6 +10,7 @@ import {
   useMaterializationActions,
   useMaterializationEntities,
 } from '../hooks/useMaterializationData';
+import { getMaterializationTargetLabel } from '@/utils/apiResponse';
 
 const MaterializationExecutePage: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -71,6 +72,7 @@ const MaterializationExecutePage: React.FC = () => {
     }),
     refresh: refreshAll,
     applyMutation: (mutation) => {
+      if (mutation.type.startsWith('materialization.connection.')) return;
       if (
         mutation.type.startsWith('materialization.') ||
         mutation.scope?.includes('materialization') ||
@@ -83,7 +85,8 @@ const MaterializationExecutePage: React.FC = () => {
       mutation.domain === 'bizdata' &&
       (mutation.type.startsWith('materialization.') ||
         mutation.scope === 'bizdata.materialization.execute' ||
-        mutation.scope === 'bizdata.database.status'),
+        mutation.scope === 'bizdata.database.status') &&
+      !mutation.type.startsWith('materialization.connection.'),
   });
 
   const actionOptions = {
@@ -122,7 +125,11 @@ const MaterializationExecutePage: React.FC = () => {
           }}
         />
         <Input
-          addonBefore={dbType === 'redis' ? 'Key 前缀' : dbType === 'mongodb' ? '数据库' : '目标 Schema'}
+          addonBefore={
+            !dbType || dbType === 'postgresql'
+              ? '目标 Schema'
+              : getMaterializationTargetLabel(dbType)
+          }
           value={targetSchema}
           onChange={(e) => setTargetSchema(e.target.value)}
           style={{ marginTop: 8 }}

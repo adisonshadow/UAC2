@@ -32,6 +32,7 @@ export const ROUTE_UI_BY_PATH: Record<string, Partial<AppRouteMeta>> = {
   '/business_data': { name: '业务数据', icon: 'DatabaseOutlined' },
   '/api_services': { name: 'API', icon: 'ApiOutlined' },
   '/ai_management': { name: 'AI管理', icon: 'RobotOutlined' },
+  '/system': { name: '系统', icon: 'SettingOutlined' },
 
   /* 页面补充（对照原 config.ts appRouteMeta 全量迁移） */
   '/business_data/model-design': { name: '数据模型', noContentPadding: true },
@@ -62,6 +63,10 @@ export const ROUTE_UI_BY_PATH: Record<string, Partial<AppRouteMeta>> = {
   '/api_services/outbound-webhooks/:id/edit': { hideInMenu: true, noContentPadding: true },
   '/api_services/outbound-webhooks/:id/test': { hideInMenu: true, noContentPadding: true },
   '/api_services/exception-responses': { hideInMenu: true },
+  '/api_services/hooks': { name: '钩子管理' },
+  '/api_services/hooks/create': { hideInMenu: true, noContentPadding: true },
+  '/api_services/hooks/:id/edit': { hideInMenu: true, noContentPadding: true },
+  '/api_services/hooks/:id/runs': { hideInMenu: true, noContentPadding: true },
   '/api_services/collection-pipelines/create': { hideInMenu: true, noContentPadding: true },
   '/api_services/collection-pipelines/:id/edit': { hideInMenu: true, noContentPadding: true },
   '/api_services/collection-pipelines/:id/test': { hideInMenu: true, noContentPadding: true },
@@ -72,6 +77,7 @@ export const ROUTE_UI_BY_PATH: Record<string, Partial<AppRouteMeta>> = {
   '/ai_management/scopes/create': { hideInMenu: true },
   '/ai_management/scopes/:id/edit': { hideInMenu: true },
   '/ai_management/scopes/:id': { hideInMenu: true },
+  '/system/operation-logs': { name: '操作日志', icon: 'AuditOutlined' },
   '/system/settings': { hideInMenu: true },
 };
 

@@ -1,10 +1,12 @@
 const Router = require('koa-router');
 const ApplicationController = require('../controllers/applicationController');
 const auth = require('../middlewares/auth');
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({
   prefix: '/api/v1/applications'
 });
 
+const applicationResourceId = (ctx) => ctx.params.id;
 /**
  * @swagger
  * /api/v1/applications:
@@ -12,7 +14,7 @@ const router = new Router({
  *     tags:
  *       - Applications
  *     summary: 创建应用 [需要认证]
- *     description: 创建一个新的应用
+ *     description: 创建一个新的应用；成功时写入操作日志（CREATE，密钥已脱敏）。
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -114,7 +116,18 @@ const router = new Router({
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/', auth, ApplicationController.create);
+router.post(
+  '/',
+  auth,
+  operationAudit({
+    domain: 'application',
+    operationType: 'CREATE',
+    resourceType: 'application',
+    resourceId: (ctx) => ctx.body?.data?.application_id,
+    summaryKeys: ['name', 'code'],
+  }),
+  ApplicationController.create,
+);
 
 /**
  * @swagger
@@ -356,7 +369,18 @@ router.get('/:id', auth, ApplicationController.getById);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:id', auth, ApplicationController.update);
+router.put(
+  '/:id',
+  auth,
+  operationAudit({
+    domain: 'application',
+    operationType: 'UPDATE',
+    resourceType: 'application',
+    resourceId: applicationResourceId,
+    summaryKeys: ['name', 'code', 'status', 'sso_enabled'],
+  }),
+  ApplicationController.update,
+);
 
 /**
  * @swagger
@@ -409,7 +433,17 @@ router.put('/:id', auth, ApplicationController.update);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.delete('/:id', auth, ApplicationController.delete);
+router.delete(
+  '/:id',
+  auth,
+  operationAudit({
+    domain: 'application',
+    operationType: 'DELETE',
+    resourceType: 'application',
+    resourceId: applicationResourceId,
+  }),
+  ApplicationController.delete,
+);
 
 /**
  * @swagger
@@ -418,7 +452,7 @@ router.delete('/:id', auth, ApplicationController.delete);
  *     tags:
  *       - Applications
  *     summary: 生成应用统一密钥 [需要认证]
- *     description: 生成 app_secret 并同步写入 api_connect_config 与 sso_config.client_secret
+ *     description: 生成 app_secret 并同步写入 api_connect_config 与 sso_config.client_secret；成功时写入操作日志（UPDATE，密钥已脱敏）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -476,7 +510,17 @@ router.delete('/:id', auth, ApplicationController.delete);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:id/generate-secret', auth, ApplicationController.generateSecret);
+router.post(
+  '/:id/generate-secret',
+  auth,
+  operationAudit({
+    domain: 'application',
+    operationType: 'UPDATE',
+    resourceType: 'application',
+    resourceId: applicationResourceId,
+  }),
+  ApplicationController.generateSecret,
+);
 
 /**
  * @swagger
@@ -559,7 +603,17 @@ router.post('/:id/generate-secret', auth, ApplicationController.generateSecret);
  *         description: 应用不存在
  */
 router.get('/:id/top-level-skill', auth, ApplicationController.getTopLevelSkill);
-router.put('/:id/top-level-skill', auth, ApplicationController.updateTopLevelSkill);
+router.put(
+  '/:id/top-level-skill',
+  auth,
+  operationAudit({
+    domain: 'application',
+    operationType: 'UPDATE',
+    resourceType: 'application',
+    resourceId: applicationResourceId,
+  }),
+  ApplicationController.updateTopLevelSkill,
+);
 
 /**
  * @swagger

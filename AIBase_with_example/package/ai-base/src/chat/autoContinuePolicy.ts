@@ -246,9 +246,10 @@ function hasPrematureSuccessClaim(
         if (!matchesAnyKeyword(text, rule.keywords)) continue;
         if (hasFailedToolOutcomes(rule.requiredTools, ctx.toolOutcomes)) return true;
       }
-      return false;
+      // claimRules 通过后不提前返回：继续用 completionKeywords + requiredTools 做并列校验
+    } else if (hasUnmetClaimRules(text, claimRules, ctx.invokedToolNames)) {
+      return true;
     }
-    if (hasUnmetClaimRules(text, claimRules, ctx.invokedToolNames)) return true;
   }
 
   // completionKeywords：按各 Skill 的 requiredToolsMode（all/any）判定，避免单条/批量互斥被当成 AND

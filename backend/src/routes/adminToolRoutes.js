@@ -3,6 +3,7 @@ const ToolController = require('../controllers/toolController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({ prefix: '/api/v1/admin/tools' });
 
 /**
@@ -73,7 +74,13 @@ const router = new Router({ prefix: '/api/v1/admin/tools' });
  *               $ref: '#/components/schemas/EnvelopeAdminTool'
  */
 router.get('/', authWithBuiltinApiGuard, ToolController.list);
-router.post('/', authWithBuiltinApiGuard, ToolController.create);
+router.post('/', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'CREATE',
+  resourceType: 'ai_tool',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['name', 'functionName', 'function_name'],
+}), ToolController.create);
 
 /**
  * @swagger
@@ -144,7 +151,18 @@ router.post('/', authWithBuiltinApiGuard, ToolController.create);
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/:id', authWithBuiltinApiGuard, ToolController.getById);
-router.patch('/:id', authWithBuiltinApiGuard, ToolController.update);
-router.delete('/:id', authWithBuiltinApiGuard, ToolController.remove);
+router.patch('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'UPDATE',
+  resourceType: 'ai_tool',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['name', 'functionName', 'function_name'],
+}), ToolController.update);
+router.delete('/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'ai',
+  operationType: 'DELETE',
+  resourceType: 'ai_tool',
+  resourceId: (ctx) => ctx.params.id,
+}), ToolController.remove);
 
 module.exports = router;

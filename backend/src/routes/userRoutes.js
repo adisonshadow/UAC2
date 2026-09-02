@@ -2,10 +2,12 @@ const Router = require('koa-router');
 const UserController = require('../controllers/userController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({
   prefix: '/api/v1/users'
 });
 
+const userResourceId = (ctx) => ctx.params.user_id;
 /**
  * @swagger
  * components:
@@ -233,7 +235,7 @@ const router = new Router({
  *     tags:
  *       - Users
  *     summary: 创建用户 [需要认证]
- *     description: 创建新用户
+ *     description: 创建新用户；成功时写入操作日志（CREATE）。
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -361,7 +363,18 @@ const router = new Router({
  *                   type: null
  *                   example: null
  */
-router.post('/', authWithBuiltinApiGuard, UserController.create);
+router.post(
+  '/',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'CREATE',
+    resourceType: 'user',
+    resourceId: (ctx) => ctx.body?.data?.user_id,
+    summaryKeys: ['username', 'name', 'department_id'],
+  }),
+  UserController.create,
+);
 
 /**
  * @swagger
@@ -591,7 +604,7 @@ router.get('/:user_id', authWithBuiltinApiGuard, UserController.getById);
  *     tags:
  *       - Users
  *     summary: 更新用户信息 [需要认证]
- *     description: 更新指定用户的信息
+ *     description: 更新指定用户的信息；成功时写入操作日志（UPDATE）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -707,7 +720,17 @@ router.get('/:user_id', authWithBuiltinApiGuard, UserController.getById);
  *                   type: null
  *                   example: null
  */
-router.put('/:user_id', authWithBuiltinApiGuard, UserController.update);
+router.put(
+  '/:user_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'UPDATE',
+    resourceType: 'user',
+    resourceId: userResourceId,
+  }),
+  UserController.update,
+);
 
 /**
  * @swagger
@@ -716,7 +739,7 @@ router.put('/:user_id', authWithBuiltinApiGuard, UserController.update);
  *     tags:
  *       - Users
  *     summary: 删除用户 [需要认证]
- *     description: 删除指定用户
+ *     description: 删除指定用户；成功时写入操作日志（DELETE）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -791,7 +814,17 @@ router.put('/:user_id', authWithBuiltinApiGuard, UserController.update);
  *                   type: null
  *                   example: null
  */
-router.delete('/:user_id', authWithBuiltinApiGuard, UserController.delete);
+router.delete(
+  '/:user_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'DELETE',
+    resourceType: 'user',
+    resourceId: userResourceId,
+  }),
+  UserController.delete,
+);
 
 /**
  * @swagger
@@ -800,7 +833,7 @@ router.delete('/:user_id', authWithBuiltinApiGuard, UserController.delete);
  *     tags:
  *       - Users
  *     summary: 更新用户角色 [需要认证]
- *     description: 更新指定用户的角色
+ *     description: 更新指定用户的角色；成功时写入操作日志（ASSIGN_ROLES）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -905,7 +938,18 @@ router.delete('/:user_id', authWithBuiltinApiGuard, UserController.delete);
  *                   type: null
  *                   example: null
  */
-router.put('/:user_id/roles', authWithBuiltinApiGuard, UserController.assignRoles);
+router.put(
+  '/:user_id/roles',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'ASSIGN_ROLES',
+    resourceType: 'user',
+    resourceId: userResourceId,
+    summaryKeys: ['role_ids'],
+  }),
+  UserController.assignRoles,
+);
 
 /**
  * @swagger
@@ -914,7 +958,7 @@ router.put('/:user_id/roles', authWithBuiltinApiGuard, UserController.assignRole
  *     tags:
  *       - Users
  *     summary: 更新用户状态 [需要认证]
- *     description: 更新指定用户的状态
+ *     description: 更新指定用户的状态；成功时写入操作日志（STATUS_CHANGE）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -948,7 +992,18 @@ router.put('/:user_id/roles', authWithBuiltinApiGuard, UserController.assignRole
  *       500:
  *         $ref: '#/components/responses/500'
  */
-router.put('/:user_id/status', authWithBuiltinApiGuard, UserController.updateStatus);
+router.put(
+  '/:user_id/status',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'STATUS_CHANGE',
+    resourceType: 'user',
+    resourceId: userResourceId,
+    summaryKeys: ['status'],
+  }),
+  UserController.updateStatus,
+);
 
 /**
  * @swagger
@@ -987,7 +1042,17 @@ router.put('/:user_id/status', authWithBuiltinApiGuard, UserController.updateSta
  *       500:
  *         description: 服务器错误
  */
-router.post('/:user_id/avatar', authWithBuiltinApiGuard, UserController.update);
+router.post(
+  '/:user_id/avatar',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'UPDATE',
+    resourceType: 'user',
+    resourceId: userResourceId,
+  }),
+  UserController.update,
+);
 
 /**
  * @swagger
@@ -996,7 +1061,7 @@ router.post('/:user_id/avatar', authWithBuiltinApiGuard, UserController.update);
  *     tags:
  *       - Users
  *     summary: 恢复已删除用户 [需要认证]
- *     description: 恢复被软删除的用户
+ *     description: 恢复被软删除的用户；成功时写入操作日志（RESTORE）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1019,7 +1084,17 @@ router.post('/:user_id/avatar', authWithBuiltinApiGuard, UserController.update);
  *       500:
  *         $ref: '#/components/responses/500'
  */
-router.post('/:user_id/restore', authWithBuiltinApiGuard, UserController.restore);
+router.post(
+  '/:user_id/restore',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'RESTORE',
+    resourceType: 'user',
+    resourceId: userResourceId,
+  }),
+  UserController.restore,
+);
 
 /**
  * @swagger
@@ -1028,7 +1103,7 @@ router.post('/:user_id/restore', authWithBuiltinApiGuard, UserController.restore
  *     tags:
  *       - Users
  *     summary: 修改密码 [需要认证]
- *     description: 用户通过旧密码修改为新密码
+ *     description: 用户通过旧密码修改为新密码；成功时写入操作日志（CHANGE_PASSWORD）。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1140,7 +1215,17 @@ router.post('/:user_id/restore', authWithBuiltinApiGuard, UserController.restore
  *                   type: null
  *                   example: null
  */
-router.post('/:user_id/change-password', authWithBuiltinApiGuard, UserController.changePassword);
+router.post(
+  '/:user_id/change-password',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'CHANGE_PASSWORD',
+    resourceType: 'user',
+    resourceId: userResourceId,
+  }),
+  UserController.changePassword,
+);
 
 /**
  * @swagger
@@ -1149,7 +1234,9 @@ router.post('/:user_id/change-password', authWithBuiltinApiGuard, UserController
  *     tags:
  *       - Users
  *     summary: 重置密码 [需要认证]
- *     description: 重置用户密码
+ *     description: 重置用户密码；成功时写入操作日志（RESET_PASSWORD）。
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -1176,7 +1263,17 @@ router.post('/:user_id/change-password', authWithBuiltinApiGuard, UserController
  *       500:
  *         description: 服务器错误
  */
-router.post('/reset-password', UserController.resetPassword);
+router.post(
+  '/reset-password',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'user',
+    operationType: 'RESET_PASSWORD',
+    resourceType: 'user',
+    resourceId: (ctx) => ctx.params.user_id || ctx.request.body?.user_id,
+  }),
+  UserController.resetPassword,
+);
 
 /**
  * @swagger

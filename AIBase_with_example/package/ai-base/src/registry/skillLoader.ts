@@ -51,7 +51,8 @@ function buildStructuredTerminationProtocol(decisionPreference: DecisionPreferen
       : '- 禁止用口头「请确认」代替 ask_user 处理不可逆/高风险操作；常规取舍由你自行决断\n') +
     '- **有专用业务 Tool 时禁止用 http_request 探路**：业务数据用 `bizdata_list_entity_summaries` / `bizdata_list_enums` / `bizdata_entity` / `bizdata_get_entity`；REST 前缀是 `/api/v1/business-data`（不是 `/api/v1/bizdata`）。`http_request` 仅用于确无专用 Tool 的外部探查\n' +
     '- **有专用业务 Tool 时必须直接 native 调用**：禁止用 `run_code` / `run_subagent` 探测可用 Tool 或「发现」能力。`run_code` 仅用于多 Tool 编排或数据计算；`skill` 加载后 grantedTools 已同回合可用\n' +
-    '- 若确需在 run_code 内编排：用 `tools.list()` 查看**已授权** client Tool，禁止因「以为空」去乱猜 HTTP 路径或绕道 subagent'
+    '- 若确需在 run_code 内编排：用 `tools.list()` 查看**本回合已授权**业务 Tool（含 server_builtin，不含 http_request/harness），禁止因「以为空」去乱猜 HTTP 路径或绕道 subagent\n' +
+    '- `tools` 不是数组：正确写法 `const names = tools.list(); const hits = names.filter(n => n.includes("bizdata_")); await tools[hits[0]]({...})`；禁止 `tools.filter` / `tools.map` / `await tools.list()` 后再对 tools 本身做数组操作'
   );
 }
 

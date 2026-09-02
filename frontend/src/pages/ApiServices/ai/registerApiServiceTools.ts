@@ -10,6 +10,7 @@ import {
   patchApiService,
   postApiService,
   postApiServiceCheckHandler,
+  postApiServiceDisable,
   postApiServicePublish,
   postApiServiceSuggestTestParams,
   postApiServiceTest,
@@ -24,7 +25,7 @@ import {
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 import { formatApiServiceTestError, extractApiServiceValidationErrors, isApiServiceTestFailure, describeApiServiceTestFailure } from './apiServiceTestError';
 import { normalizeApiServiceCode, scopeCodeFromEntityCode, suggestServiceSlugFromEntity } from './apiServiceCodeUtils';
-import { executeBatchCreateServices, DEFAULT_CRUD_OPERATIONS, type BatchCreateArgs } from './apiServiceBatchCreate';
+import { buildDefaultSql, executeBatchCreateServices, DEFAULT_CRUD_OPERATIONS, type BatchCreateArgs } from './apiServiceBatchCreate';
 import { resolveApiServiceConnection } from './apiServiceConnectionResolve';
 import { resolveApiServiceId } from './apiServiceResolve';
 import { resolveApiServiceNavigateTarget } from './apiServiceWorkflowNavigation';
@@ -59,6 +60,7 @@ const TOOL_NAMES = [
   'apiservice_update_service',
   'apiservice_check_handler',
   'apiservice_publish_service',
+  'apiservice_disable_service',
   'apiservice_delete_service',
   'apiservice_list_operations',
   'apiservice_get_tree',
@@ -243,10 +245,15 @@ export function registerApiServiceTools() {
   registerFunctionCall({
     name: 'apiservice_create_service',
     description:
-      '创建单个 API 服务（draft，一次一个主 operation）。主实体 entityId 必填；serviceSlug 默认=实体末段+Create/Find 等；connectionId 可省略',
+      '创建单个 API 服务（draft，一次一个主 operation）。须传 entityId 或 entityCodes；勿臆造 requestParameterInterface / definitionScript——省略时 Tool 按实体自动生成；自定义 SQL 前须先 bizdata_get_entity',
     requiresVerification: true,
     parameters: {
       type: 'object',
+      anyOf: [
+        { required: ['entityId'] },
+        { required: ['entityCodes'] },
+        { required: ['entityIds'] },
+      ],
       properties: {
         code: { type: 'string', description: '域:服务名；可省略，优先实体前缀+serviceSlug' },
         name: { type: 'string' },
@@ -261,13 +268,17 @@ export function registerApiServiceTools() {
         entityCodes: { type: 'array', items: { type: 'string' }, description: '实体 code' },
         entityIds: { type: 'array', items: { type: 'string' } },
         entityId: { type: 'string', description: '主实体 ID（必填）' },
-        definitionScript: { type: 'string', description: 'scriptMode=sql' },
+        definitionScript: {
+          type: 'string',
+          description:
+            'scriptMode=sql；可省略——Tool 按实体表 + targetSchema 生成默认 SQL。自定义前须 bizdata_get_entity，禁止臆造列名',
+        },
         handlerScript: { type: 'string', description: 'scriptMode=typescript' },
         scriptMode: { type: 'string', enum: ['sql', 'typescript'] },
         requestParameterInterface: {
           type: 'string',
           description:
-            '设计期 TS interface（编辑页「请求参数结构」唯一来源）；有实体时建议根据 bizdata_get_entity 字段编写；省略且能解析实体时 Tool 会自动生成',
+            '一般不要手写：有实体时 Tool 自动生成。禁止臆造字段；自定义前须 bizdata_get_entity',
         },
         accessRestriction: {
           type: 'object',
@@ -385,6 +396,30 @@ export function registerApiServiceTools() {
             > | undefined,
           });
 
+        let definitionScript =
+          scriptMode === 'sql' && args.definitionScript
+            ? String(args.definitionScript)
+            : undefined;
+        if (scriptMode === 'sql' && !definitionScript?.trim()) {
+          const entityForSql = await resolveEntityForRequestInterface({
+            entityId: entityIdForIface || entityIdsFromArgs[0],
+            entityCodes: entityCodesForIface,
+          });
+          const tableName =
+            entityForSql?.tableName
+            || entityForSql?.code?.split(':').pop()
+            || entityCode?.split(':').pop();
+          const targetSchema = resolved.targetSchema?.trim();
+          if (tableName && targetSchema) {
+            definitionScript = buildDefaultSql(
+              tableName,
+              targetSchema,
+              primaryOperation,
+              resolved.dbType || 'postgresql',
+            );
+          }
+        }
+
         const createRes = await postApiService({
           scopeCode: derivedScope,
           serviceSlug: derivedSlug,
@@ -396,8 +431,7 @@ export function registerApiServiceTools() {
           entityId: entityIdForIface || entityIdsFromArgs[0],
           targetSchema: resolved.targetSchema,
           scriptMode,
-          definitionScript:
-            scriptMode === 'sql' && args.definitionScript ? String(args.definitionScript) : undefined,
+          definitionScript: scriptMode === 'sql' ? definitionScript : undefined,
           handlerScript:
             scriptMode === 'typescript' && args.handlerScript ? String(args.handlerScript) : undefined,
           requestParameterInterface: interfaceText || undefined,
@@ -846,6 +880,92 @@ export function registerApiServiceTools() {
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : '发布失败';
+          return {
+            success: false,
+            verified: false,
+            error: message,
+            serviceId,
+            code: before.code,
+            previousStatus: before.status,
+          };
+        }
+      },
+    }),
+  });
+
+
+  registerFunctionCall({
+    name: 'apiservice_disable_service',
+    description:
+      '禁用已发布的 API 服务（published→disabled）。成功后信封须 verified=true 且 status=disabled',
+    requiresVerification: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        serviceId: { type: 'string' },
+        code: { type: 'string' },
+        scopeCode: { type: 'string' },
+        serviceSlug: { type: 'string' },
+      },
+    },
+    handler: createMutatingHandler({
+      domain: API_SERVICE_DOMAIN,
+      type: 'apiservice.disabled',
+      scope: LIST_SURFACE,
+      buildResourceId: (_args, data) => (data as API.ApiService)?.id,
+      handler: async (args) => {
+        const serviceId = await resolveApiServiceId(args as Record<string, unknown>);
+        const code = args.code ? String(args.code).trim() : undefined;
+        const before = await verifyApiServiceById(serviceId, { expectedCode: code });
+
+        if (before.status === 'disabled') {
+          return {
+            success: false,
+            verified: false,
+            alreadyDisabled: true,
+            error: `服务「${before.code}」已是 disabled，未产生状态变更`,
+            serviceId,
+            code: before.code,
+            status: before.status,
+          };
+        }
+
+        if (before.status !== 'published') {
+          return {
+            success: false,
+            verified: false,
+            error: `服务「${before.code}」当前为 ${before.status || '未知'}，仅 published 可禁用`,
+            serviceId,
+            code: before.code,
+            status: before.status,
+          };
+        }
+
+        try {
+          const disableRes = await postApiServiceDisable(serviceId);
+          const data = getApiData<API.ApiService>(disableRes);
+          if (!data?.id) throw new Error('禁用失败：接口未返回服务');
+          const verified = await verifyApiServiceById(data.id, {
+            expectedCode: code || data.code,
+            expectedStatus: 'disabled',
+          });
+          const listed = await verifyApiServiceListed(verified.code, { expectedStatus: 'disabled' });
+          return {
+            ...data,
+            previousStatus: before.status || 'published',
+            _verification: {
+              ...verified,
+              listedInApiList: listed.verified,
+              verified: verified.verified && listed.verified && data.status === 'disabled',
+              statusTransition: `${before.status || 'published'}→disabled`,
+              message:
+                verified.verified && listed.verified
+                  ? verified.message
+                  : listed.message || verified.message,
+            },
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '禁用失败';
           return {
             success: false,
             verified: false,

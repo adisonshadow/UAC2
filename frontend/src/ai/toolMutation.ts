@@ -49,19 +49,13 @@ async function routeMutationToSurfaces(mutation: AIMutation): Promise<void> {
   );
   if (!matched.length) return;
 
-  let anyApplied = false;
+  // 各 Surface 独立处理：有 applyMutation 则用之，否则 refresh。
+  // 不可因某一 Surface 执行了 applyMutation 就跳过其它 Surface 的 refresh。
   for (const surface of matched) {
     if (surface.applyMutation) {
       await surface.applyMutation(mutation);
-      anyApplied = true;
-    }
-  }
-
-  if (!anyApplied) {
-    for (const surface of matched) {
-      if (surface.refresh) {
-        await surface.refresh();
-      }
+    } else if (surface.refresh) {
+      await surface.refresh();
     }
   }
 }

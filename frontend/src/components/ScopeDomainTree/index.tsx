@@ -334,8 +334,9 @@ const ScopeDomainTree: React.FC<ScopeDomainTreeProps> = ({
                   ? keys
                   : (keys as { checked: React.Key[] }).checked;
                 const hasAll = checkedList.includes(ALL_NODE_KEY);
-                const withoutAll = checkedList.filter((k) => k !== ALL_NODE_KEY) as string[];
-                onCheck?.(hasAll ? [...allLeafValues] : withoutAll);
+                const leafSet = new Set(allLeafValues);
+                const onlyLeaves = (checkedList as string[]).filter((k) => leafSet.has(k));
+                onCheck?.(hasAll ? [...allLeafValues] : onlyLeaves);
               }
             : undefined
         }

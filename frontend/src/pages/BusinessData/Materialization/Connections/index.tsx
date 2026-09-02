@@ -15,8 +15,18 @@ const DatabaseConnectionsPage: React.FC = () => {
     label: '数据库连接',
     read: () => ({ path: '/business_data/database-connections', count: connections.length }),
     refresh: () => loadConnections(),
+    applyMutation: (mutation) => {
+      if (
+        mutation.type.startsWith('materialization.connection.') ||
+        mutation.scope === 'bizdata.database.connections'
+      ) {
+        void loadConnections();
+      }
+    },
     matchMutation: (mutation) =>
-      mutation.domain === 'bizdata' && mutation.type.startsWith('materialization.'),
+      mutation.domain === 'bizdata' &&
+      (mutation.type.startsWith('materialization.connection.') ||
+        mutation.scope === 'bizdata.database.connections'),
   });
 
   return (

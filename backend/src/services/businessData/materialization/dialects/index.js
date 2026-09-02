@@ -1,9 +1,11 @@
 const postgresql = require('./postgresql');
+const mysql = require('./mysql');
 const mongodb = require('./mongodb');
 const redis = require('./redis');
 
 const DIALECTS = {
   postgresql,
+  mysql,
   mongodb,
   redis
 };

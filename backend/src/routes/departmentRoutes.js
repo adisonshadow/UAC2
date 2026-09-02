@@ -2,10 +2,12 @@ const Router = require('koa-router');
 const DepartmentController = require('../controllers/departmentController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
+const { operationAudit } = require('../middlewares/operationAudit');
 const router = new Router({
   prefix: '/api/v1/departments'
 });
 
+const departmentResourceId = (ctx) => ctx.params.department_id;
 /**
  * @swagger
  * /api/v1/departments:
@@ -13,7 +15,7 @@ const router = new Router({
  *     tags:
  *       - Departments
  *     summary: 创建部门 [需要认证]
- *     description: 创建新的部门
+ *     description: 创建新的部门；成功时写入操作日志（CREATE）。
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -101,7 +103,18 @@ const router = new Router({
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/', authWithBuiltinApiGuard, DepartmentController.create);
+router.post(
+  '/',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'department',
+    operationType: 'CREATE',
+    resourceType: 'department',
+    resourceId: (ctx) => ctx.body?.data?.department_id,
+    summaryKeys: ['name', 'parent_id'],
+  }),
+  DepartmentController.create,
+);
 
 /**
  * @swagger
@@ -422,7 +435,17 @@ router.get('/:department_id', authWithBuiltinApiGuard, DepartmentController.getB
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:department_id', authWithBuiltinApiGuard, DepartmentController.update);
+router.put(
+  '/:department_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'department',
+    operationType: 'UPDATE',
+    resourceType: 'department',
+    resourceId: departmentResourceId,
+  }),
+  DepartmentController.update,
+);
 
 /**
  * @swagger
@@ -483,7 +506,17 @@ router.put('/:department_id', authWithBuiltinApiGuard, DepartmentController.upda
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.delete('/:department_id', authWithBuiltinApiGuard, DepartmentController.delete);
+router.delete(
+  '/:department_id',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'department',
+    operationType: 'DELETE',
+    resourceType: 'department',
+    resourceId: departmentResourceId,
+  }),
+  DepartmentController.delete,
+);
 
 /**
  * @swagger
@@ -601,7 +634,18 @@ router.get('/:department_id/users', authWithBuiltinApiGuard, DepartmentControlle
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeDepartmentRoleAssign'
  */
-router.put('/:department_id/roles', authWithBuiltinApiGuard, DepartmentController.assignRoles);
+router.put(
+  '/:department_id/roles',
+  authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'department',
+    operationType: 'ASSIGN_ROLES',
+    resourceType: 'department',
+    resourceId: departmentResourceId,
+    summaryKeys: ['role_ids'],
+  }),
+  DepartmentController.assignRoles,
+);
 
 /**
  * @swagger

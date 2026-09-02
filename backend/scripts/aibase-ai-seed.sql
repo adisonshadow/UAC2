@@ -2,7 +2,7 @@
 -- 权威 AI 元数据种子：scopes / tools / skills / skill_tools / skill_applications
 -- 由 scripts/export-aibase-ai-seed.js 从现库导出；initdb --with-aibase-seed 只跑本文件（+ aibase-seed providers）。
 -- 生成时间: 2026-08-01T18:32:13.684Z
--- scopes=7 tools=156 skills=18 skill_tools=204 skill_apps=19
+-- scopes=7 tools=156 skills=19 skill_tools=204 skill_apps=20
 
 BEGIN;
 
@@ -325,7 +325,7 @@ INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, 
 
 须 `_verification.verified=true` 才算成功。', '{}'::jsonb, true, '2026-06-22T11:33:21.115Z', '2026-07-14T11:52:27.623Z');
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('b8a93b0a-d56f-4ccf-b8de-de27df190a13', '55555555-5555-4555-8555-555555555501', '删除关系', 'bizdata-delete-relation', 'bizdata_delete_relation', '删除实体关系', 'client', '{"type":"object","required":["relationId"],"properties":{"relationId":{"type":"string"}}}'::jsonb, '## bizdata_delete_relation\n\nrelationId 来自 bizdata_list_relations。', '{}'::jsonb, true, '2026-06-29T08:39:45.928Z', '2026-06-29T08:39:45.928Z');
-INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666610', '55555555-5555-4555-8555-555555555501', '执行物化', 'bizdata-execute-materialization', 'bizdata_execute_materialization', '执行 DDL 物化并记录 entity_version', 'server_builtin', '{"type":"object","properties":{"dryRun":{"type":"boolean"},"entityIds":{"type":"array","items":{"type":"string"}},"targetSchema":{"type":"string"},"expectedVersions":{"type":"object"}}}'::jsonb, '## bizdata_execute_materialization\n\n执行前确认 dryRun=false。', '{"handler":"bizdata_execute_materialization"}'::jsonb, true, '2026-06-22T11:33:21.115Z', '2026-06-22T11:35:04.813Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666610', '55555555-5555-4555-8555-555555555501', '执行物化', 'bizdata-execute-materialization', 'bizdata_execute_materialization', '执行 DDL 物化并记录 entity_version', 'server_builtin', '{"type":"object","properties":{"dryRun":{"type":"boolean","description":"true=仅预览；正式执行须 false"},"entityIds":{"type":"array","items":{"type":"string"}},"targetSchema":{"type":"string","description":"目标 Schema；MySQL 下即库名"},"connectionId":{"type":"string","description":"数据库连接 UUID"},"expectedVersions":{"type":"object"},"createTargetIfMissing":{"type":"boolean","description":"目标不存在时是否自动创建；仅用户确认后为 true"}}}'::jsonb, '## bizdata_execute_materialization\n\n执行前确认 dryRun=false。多连接时传 connectionId。\n\n### 目标 Schema/库不存在（409 TARGET_NOT_FOUND）\n1. 禁止同参重试 / 重载 Skill / http_request 探路\n2. ask_user 确认是否创建目标库（MySQL Schema 即库）\n3. 同意后相同参数 + createTargetIfMissing=true\n4. bizdata_create_database_connection 只登记连接，不建物理库', '{"handler":"bizdata_execute_materialization"}'::jsonb, true, '2026-06-22T11:33:21.115Z', '2026-06-22T11:35:04.813Z');
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666602', '55555555-5555-4555-8555-555555555501', '获取实体详情', 'bizdata-get-entity', 'bizdata_get_entity', '按 ID 或 code 获取实体详情（含字段）；优先 entityCode', 'client', '{"type":"object","properties":{"entityId":{"type":"string","description":"实体 UUID，须来自 list，禁止编造 entity-xxx"},"entityCode":{"type":"string","description":"实体 code，如 equipment:Device"}}}'::jsonb, '## bizdata_get_entity
 
 **优先传 entityCode**（如 `equipment:Device`）。
@@ -333,7 +333,21 @@ INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, 
 - entityId 必须是 `bizdata_list_entities` 返回的 UUID
 - **禁止**编造 `entity-equipment-device`、`md-xxx` 等假 id
 - 完善字段元数据时，更推荐 `bizdata_get_metadata_by_target` + `bizdata_update_metadata_fields`', '{}'::jsonb, true, '2026-06-22T11:33:21.115Z', '2026-06-27T17:37:56.015Z');
-INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666612', '55555555-5555-4555-8555-555555555501', '物化状态', 'bizdata-get-materialization-status', 'bizdata_get_materialization_status', '获取各实体当前版本与物化版本对比', 'server_builtin', '{"type":"object","properties":{}}'::jsonb, '## bizdata_get_materialization_status', '{"handler":"bizdata_get_materialization_status"}'::jsonb, true, '2026-06-22T11:33:21.115Z', '2026-06-22T11:35:04.813Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666612', '55555555-5555-4555-8555-555555555501', '物化状态', 'bizdata-get-materialization-status', 'bizdata_get_materialization_status', '获取各实体当前版本与物化版本对比；可按 entityCodes/entityIds/connectionId 过滤', 'server_builtin', '{"type":"object","properties":{"connectionId":{"type":"string","description":"数据库连接 UUID；多连接时建议传，避免全连接笛卡尔积"},"entityCodes":{"type":"array","items":{"type":"string"},"description":"按实体 code 过滤（如 FPV:Drone）；优先于全量拉取后再 JS walk"},"entityIds":{"type":"array","items":{"type":"string"},"description":"按实体 UUID 过滤"}}}'::jsonb, E'## bizdata_get_materialization_status
+
+查看实体模型版本 vs 已物化版本（stale / latest / not_materialized）。
+
+### 参数
+- `connectionId`：多连接时建议传
+- `entityCodes`：指定实体 code 数组（如 `["FPV:Drone","FPV:Mission"]`），**不要**无过滤拉全量再 JS walk
+- `entityIds`：可选，按 UUID 过滤
+
+### 返回
+每项含 `entityCode`（与 `code` 相同）、`staleStatus`、`currentVersion`、`materializedVersion`、`connectionId` 等。
+
+### 调用方式
+- **优先 native** 直接调用本 Tool
+- 禁止用 `run_code` 对全量结果做 walk 过滤；若确需编排，`await tools.bizdata_get_materialization_status({ entityCodes, connectionId })` 即可', '{"handler":"bizdata_get_materialization_status"}'::jsonb, true, '2026-06-22T11:33:21.115Z', '2026-06-22T11:35:04.813Z');
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666619', '55555555-5555-4555-8555-555555555501', '按 target 获取元数据', 'bizdata-get-metadata-by-target', 'bizdata_get_metadata_by_target', '按 entity/metric/enum 目标获取元数据（可选 fieldKey 取字段级）', 'client', '{"type":"object","required":["targetType","targetId"],"properties":{"fieldKey":{"type":"string"},"targetId":{"type":"string"},"targetType":{"enum":["entity","metric","enum"],"type":"string"}}}'::jsonb, '## bizdata_get_metadata_by_target
 
 targetType + targetId 定位逻辑对象；fieldKey 可选，返回单字段元数据。', '{}'::jsonb, true, '2026-06-27T16:36:07.478Z', '2026-06-27T17:19:42.420Z');
@@ -712,6 +726,21 @@ INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, 
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-666666666685', '55555555-5555-4555-8555-555555555501', '创建或更新提交外部API', 'outbound-webhook-upsert', 'outbound_webhook_upsert', '创建或更新提交外部API配置（有 webhookId 更新，无则创建；向后兼容）', 'client', '{"type":"object","required":["name","targetUrl"],"properties":{"code":{"type":"string"},"name":{"type":"string"},"mockData":{"type":"string"},"targetUrl":{"type":"string"},"webhookId":{"type":"string","description":"更新时传入；创建时省略"},"description":{"type":"string"},"transformScript":{"type":"string"},"requestStructure":{"type":"string"},"triggerApiServiceId":{"type":"string"},"triggerApiServiceCode":{"type":"string"}}}'::jsonb, '## outbound_webhook_upsert
 
 - 有 webhookId 则更新，否则创建（与 create/update 等价，保留向后兼容）', '{}'::jsonb, true, '2026-07-10T15:17:40.526Z', '2026-07-10T15:17:40.526Z');
+-- 钩子管理 client tools（与 migrate-aibase-hook-skill.sql / registerHookTools 一致）
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b0', '55555555-5555-4555-8555-555555555501', '列出钩子事件目录', 'hook-list-event-types', 'hook_list_event_types', '列出钩子可用的事件类型目录（含负载 JSON Schema 与示例）。创建钩子前必须先调用', 'client', '{"type":"object","properties":{},"required":[]}'::jsonb, '## hook_list_event_types', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b1', '55555555-5555-4555-8555-555555555501', '列出钩子', 'hook-list-hooks', 'hook_list_hooks', '列出钩子（可按状态过滤），含最近运行与近7天成功率', 'client', '{"type":"object","properties":{"status":{"type":"string","description":"draft|enabled|disabled|auto_disabled，不传查全部"}},"required":[]}'::jsonb, '## hook_list_hooks', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b2', '55555555-5555-4555-8555-555555555501', '获取钩子详情', 'hook-get-hook', 'hook_get_hook', '获取钩子完整配置（触发条件、动作、失败策略；密钥已脱敏）', 'client', '{"type":"object","required":["hookId"],"properties":{"hookId":{"type":"string"}}}'::jsonb, '## hook_get_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b3', '55555555-5555-4555-8555-555555555501', '创建钩子', 'hook-create-hook', 'hook_create_hook', '创建钩子（草稿）。script 动作须先 hook_check_script；创建后建议 hook_test_hook', 'client', '{"type":"object","required":["name","eventType","actionType","actionConfig"],"properties":{"name":{"type":"string"},"description":{"type":"string"},"eventType":{"type":"string"},"eventFilter":{"type":"object"},"conditionExpr":{"type":"string"},"actionType":{"type":"string"},"actionConfig":{"type":"object"},"failurePolicy":{"type":"object"}}}'::jsonb, '## hook_create_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b4', '55555555-5555-4555-8555-555555555501', '更新钩子', 'hook-update-hook', 'hook_update_hook', '更新钩子配置（version+1；密钥留空保留）', 'client', '{"type":"object","required":["hookId","name","eventType","actionType","actionConfig"],"properties":{"hookId":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"eventType":{"type":"string"},"eventFilter":{"type":"object"},"conditionExpr":{"type":"string"},"actionType":{"type":"string"},"actionConfig":{"type":"object"},"failurePolicy":{"type":"object"}}}'::jsonb, '## hook_update_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b5', '55555555-5555-4555-8555-555555555501', '删除钩子', 'hook-delete-hook', 'hook_delete_hook', '软删钩子（运行历史保留）', 'client', '{"type":"object","required":["hookId"],"properties":{"hookId":{"type":"string"}}}'::jsonb, '## hook_delete_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b6', '55555555-5555-4555-8555-555555555501', '启用钩子', 'hook-enable-hook', 'hook_enable_hook', '启用钩子（清零连续失败计数）', 'client', '{"type":"object","required":["hookId"],"properties":{"hookId":{"type":"string"}}}'::jsonb, '## hook_enable_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b7', '55555555-5555-4555-8555-555555555501', '禁用钩子', 'hook-disable-hook', 'hook_disable_hook', '禁用钩子', 'client', '{"type":"object","required":["hookId"],"properties":{"hookId":{"type":"string"}}}'::jsonb, '## hook_disable_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b8', '55555555-5555-4555-8555-555555555501', '检查钩子脚本', 'hook-check-script', 'hook_check_script', '对钩子 TypeScript 脚本做语法/类型检查。保存 script 类型前必须通过', 'client', '{"type":"object","required":["source"],"properties":{"source":{"type":"string"}}}'::jsonb, '## hook_check_script', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666b9', '55555555-5555-4555-8555-555555555501', '试跑钩子', 'hook-test-hook', 'hook_test_hook', '用 mock 负载试跑钩子（不计入正式成功率）', 'client', '{"type":"object","required":["hookId"],"properties":{"hookId":{"type":"string"},"mockPayload":{"type":"object"}}}'::jsonb, '## hook_test_hook', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666ba', '55555555-5555-4555-8555-555555555501', '列出钩子运行历史', 'hook-list-runs', 'hook_list_runs', '查询钩子运行历史（可按状态过滤）', 'client', '{"type":"object","required":["hookId"],"properties":{"hookId":{"type":"string"},"status":{"type":"string"}}}'::jsonb, '## hook_list_runs', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666bb', '55555555-5555-4555-8555-555555555501', '重放钩子运行', 'hook-retry-run', 'hook_retry_run', '用历史运行的原始负载重放（新 event_id，trigger_source=replay）', 'client', '{"type":"object","required":["runId"],"properties":{"runId":{"type":"string"}}}'::jsonb, '## hook_retry_run', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666bc', '55555555-5555-4555-8555-555555555501', '建议钩子配置草稿', 'hook-suggest-config', 'hook_suggest_config', '将钩子配置草稿同步到当前打开的钩子表单（不保存）', 'client', '{"type":"object","required":["name","eventType","actionType","actionConfig"],"properties":{"name":{"type":"string"},"description":{"type":"string"},"eventType":{"type":"string"},"eventFilter":{"type":"object"},"conditionExpr":{"type":"string"},"actionType":{"type":"string"},"actionConfig":{"type":"object"},"failurePolicy":{"type":"object"}}}'::jsonb, '## hook_suggest_config', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
+INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('66666666-6666-4666-8666-6666666666bd', '55555555-5555-4555-8555-555555555501', '跳转钩子页', 'hook-navigate', 'hook_navigate', '跳转到钩子管理相关页面（列表/新建/编辑/运行历史）', 'client', '{"type":"object","required":["target"],"properties":{"target":{"type":"string","description":"list|create|edit|runs"},"hookId":{"type":"string"}}}'::jsonb, '## hook_navigate', '{}'::jsonb, true, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('44444444-4444-4444-8444-444444444418', '33333333-3333-4333-8333-333333333302', '投诉状态统计', 'sales-complaint-stats-status', 'sales_complaint_stats_by_status', '按投诉处理状态汇总数量', 'server_builtin', '{"type":"object","properties":{}}'::jsonb, '## sales_complaint_stats_by_status\n\n返回 open/processing/resolved/closed 分布。', '{"handler":"sales_complaint_stats_by_status"}'::jsonb, true, '2026-06-21T08:11:50.227Z', '2026-06-21T08:11:50.227Z');
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('44444444-4444-4444-8444-444444444417', '33333333-3333-4333-8333-333333333302', '投诉类型统计', 'sales-complaint-stats-type', 'sales_complaint_stats_by_type', '按投诉类型汇总数量', 'server_builtin', '{"type":"object","properties":{}}'::jsonb, '## sales_complaint_stats_by_type\n\n返回 quality/logistics/service/refund 分布。', '{"handler":"sales_complaint_stats_by_type"}'::jsonb, true, '2026-06-21T08:11:50.227Z', '2026-06-21T08:11:50.227Z');
 INSERT INTO aibase.tools (id, scope_id, name, slug, function_name, description, execution_type, parameters_schema, review_markdown, server_config, is_active, created_at, updated_at) VALUES ('44444444-4444-4444-8444-444444444416', '33333333-3333-4333-8333-333333333302', '投诉详情', 'sales-get-complaint', 'sales_get_complaint', '按投诉 ID 查询详情', 'server_builtin', '{"type":"object","required":["id"],"properties":{"id":{"type":"integer","description":"投诉 ID"}}}'::jsonb, '## sales_get_complaint\n\n参数 id，返回投诉与订单、用户信息。', '{"handler":"sales_get_complaint"}'::jsonb, true, '2026-06-21T08:11:50.227Z', '2026-06-21T08:11:50.227Z');
@@ -1385,7 +1414,13 @@ INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdo
 - 流程：`bizdata_browse_materialized_schema` 取列名 → `bizdata_get_entity` 取枚举 → `bizdata_insert_mock_data`
 - rows 的 key 必须与 schema.columns.name 一致
 - 汇总时只使用 Tool 返回的 inserted 数字
-- 每个实体建议 5–10 条', true, false, true, '{"requiredTools":["bizdata_execute_materialization"],"successCriteria":["物化执行返回成功"],"terminationStrictness":"strict"}'::jsonb, '2026-06-22T11:33:21.122Z', '2026-07-30T13:56:08.290Z');
+- 每个实体建议 5–10 条
+
+## 物化状态查询（必遵）
+- 查指定实体：native 调用 `bizdata_get_materialization_status({ entityCodes: ["Scope:Entity"], connectionId })`
+- 返回字段含 `entityCode`（与 `code` 相同）及 `staleStatus`
+- **禁止**用 `run_code` 拉全量再 JS walk 过滤；需要切片时把 `entityCodes` 传给本 Tool
+', true, false, true, '{"requiredTools":["bizdata_execute_materialization"],"successCriteria":["物化执行返回成功"],"terminationStrictness":"strict"}'::jsonb, '2026-06-22T11:33:21.122Z', '2026-07-30T13:56:08.290Z');
 INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdown, is_active, is_global, is_dedicated, completion_strategy, created_at, updated_at) VALUES ('77777777-7777-4777-8777-777777777706', '55555555-5555-4555-8555-555555555501', '逻辑元数据目录', 'bizdata-metadata-catalog', '维护 entity/metric/enum 逻辑元数据与字段释义', '# 逻辑元数据助手
 
 你是 EADAF 逻辑元数据治理助手。元数据描述**数据模型实体、业务指标、枚举**的逻辑含义，**不包含**物化物理表。
@@ -1625,6 +1660,40 @@ INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdo
 ## 权限模型
 - 功能权限：Permission → Role → User
 - 数据规则：`uac.data_permission_rules`（配置契约，运行时 enforcement 待接入）', true, false, true, '{"terminationStrictness":"plan-only"}'::jsonb, '2026-06-27T06:51:24.406Z', '2026-07-29T16:00:55.884Z');
+INSERT INTO aibase.skills (id, scope_id, name, slug, description, content_markdown, is_active, is_global, is_dedicated, completion_strategy, created_at, updated_at) VALUES ('77777777-7777-4777-8777-7777777777a0', '55555555-5555-4555-8555-555555555501', '钩子管理', 'hook-center-manage', '事件钩子的创建、试跑、修复与运行排查', '# 钩子管理 Skill
+
+你是 EADAF 钩子管理助手。钩子 = 「当某事件发生且条件满足 → 执行某动作」。入口：API 服务 → 钩子管理（/api_services/hooks）。
+
+## 事件体系（单一事实源）
+
+- `auth.user.login` / `auth.user.logout`：用户登录/登出
+- `bizdata.record.created|updated|deleted`：已发布 Data API HTTP 网关实体写（负载含 before/after/changed_fields；自定义 SQL / TS Handler 不触发）
+- `apiservice.invoked`：Data API HTTP 调用完成（成功/失败均发；可按 status 过滤）
+- `schedule.cron`：定时（eventFilter.cron 五段式，服务器时区）
+- `manual.test`：测试面板/AI 试跑
+
+**禁止凭记忆编造事件类型或负载字段**：创建前必须 `hook_list_event_types`。
+
+## 动作类型
+
+- `http_request`：外呼（`{{payload.*}}` 插值、可选鉴权、响应判定规则；内网地址被 SSRF 拦截）
+- `internal_api`：调用内部已发布 API 服务（系统身份；会引起 depth+1 的后续事件）
+- `script`：TypeScript 沙箱脚本 `handler(event, ctx)`，可用 `event.payload` / `ctx.log(...)`（落运行记录）/ `db(''实体code'')`；无网络与文件；默认 5s 超时
+
+## 强制 SOP
+
+1. **查目录**：`hook_list_event_types` 确认事件与 payload 结构；需要内部 API 时先查已发布服务清单。
+2. **收窄触发**：按实体/服务/字段/状态填 eventFilter；复杂条件才用 conditionExpr（绑定 payload）。
+3. **脚本检查**：script 类型必须 `hook_check_script` 通过，否则禁止保存。
+4. **落库**：表单页用 `hook_suggest_config` 同步草稿待用户确认；用户明确要求直接保存时才 `hook_create_hook` / `hook_update_hook`。
+5. **试跑验证**：`hook_test_hook` 用事件目录 example 构造 mock；失败必须自动修复重测至 success（禁止只给文字建议）。
+6. **提醒状态**：新建钩子为草稿，需启用后触发；启用走 `hook_enable_hook` 或列表页。
+
+## 排查口径
+
+- 未触发 → 查 `hook_list_runs` 是否 skipped（条件不匹配）或 suppressed（循环深度≥3 / 队列满）
+- 失败 → 看 run 的 error 与 logs；修复后用 `hook_retry_run` 以原始负载重放验证
+- 连续失败 10 次 → 自动停用（auto_disabled），修复后须重新启用', true, false, true, '{"structuredTermination": true}'::jsonb, '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z');
 
 
 -- aibase.skill_tools: 204 rows
@@ -1832,6 +1901,21 @@ INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('992c
 INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('5a43b103-c1ef-4c7d-8e8e-2e716aee9941', '99999999-9999-4999-8999-999999999932', '99999999-9999-4999-8999-999999999923', 4);
 INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('483e4047-edee-481a-8c68-5d87da6082cb', '99999999-9999-4999-8999-999999999932', '99999999-9999-4999-8999-999999999924', 5);
 INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('079e05f5-b014-449c-ad4f-11e591c978b5', '99999999-9999-4999-8999-999999999932', '99999999-9999-4999-8999-999999999925', 6);
+-- 钩子管理 skill_tools
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b0', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b0', 0);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b1', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b1', 1);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b2', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b2', 2);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b3', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b3', 3);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b4', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b4', 4);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b5', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b5', 5);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b6', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b6', 6);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b7', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b7', 7);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b8', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b8', 8);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000b9', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666b9', 9);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000ba', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666ba', 10);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000bb', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666bb', 11);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000bc', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666bc', 12);
+INSERT INTO aibase.skill_tools (id, skill_id, tool_id, sort_order) VALUES ('c1000000-0000-4000-8000-0000000000bd', '77777777-7777-4777-8777-7777777777a0', '66666666-6666-4666-8666-6666666666bd', 13);
 
 
 -- aibase.skill_applications: 19 rows
@@ -1854,6 +1938,7 @@ INSERT INTO aibase.skill_applications (id, skill_id, application_id, created_at)
 INSERT INTO aibase.skill_applications (id, skill_id, application_id, created_at) VALUES ('dcf94439-1e2b-4d2a-ad37-4af9f5e27f3b', '99999999-9999-4999-8999-999999999903', '10000000-0000-4000-8000-000000000002', '2026-07-06T10:39:20.931Z');
 INSERT INTO aibase.skill_applications (id, skill_id, application_id, created_at) VALUES ('fdc4675f-6850-4b8f-97c7-c372d83ebfdf', '99999999-9999-4999-8999-999999999931', '10000000-0000-4000-8000-000000000002', '2026-06-26T18:37:50.920Z');
 INSERT INTO aibase.skill_applications (id, skill_id, application_id, created_at) VALUES ('70516a38-3e61-4c50-b90f-06e9cc6e2a66', '99999999-9999-4999-8999-999999999932', '10000000-0000-4000-8000-000000000002', '2026-06-26T18:37:34.390Z');
+INSERT INTO aibase.skill_applications (skill_id, application_id, created_at) VALUES ('77777777-7777-4777-8777-7777777777a0', '10000000-0000-4000-8000-000000000002', '2026-08-31T12:00:00.000Z');
 
 
 -- 应用顶层 Skill Markdown

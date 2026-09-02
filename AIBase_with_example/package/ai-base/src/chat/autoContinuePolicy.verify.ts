@@ -907,6 +907,7 @@ await (async () => {
   clearFunctionCalls();
   registerBuiltinTools();
   const end = beginTurn({
+    conversationKey: 'verify-auto-continue-t3',
     plan: [],
     toolOutcomes: [
       {

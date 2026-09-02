@@ -17,6 +17,10 @@ import {
   unregisterOutboundWebhookTools,
 } from '@/pages/ApiServices/ai/registerOutboundWebhookTools';
 import {
+  registerHookTools,
+  unregisterHookTools,
+} from '@/pages/ApiServices/Hooks/ai/registerHookTools';
+import {
   registerBizDataTools,
   unregisterBizDataTools,
 } from '@/pages/BusinessData/ai/registerBizDataTools';
@@ -58,6 +62,7 @@ export const eadafHostToolsPlugin: AgentPlugin = {
     registerMetricsTools();
     registerApiServiceTools();
     registerOutboundWebhookTools();
+    registerHookTools();
     registerUacTools();
     registerEadafSkillCompletionPolicies();
 
@@ -71,6 +76,7 @@ export const eadafHostToolsPlugin: AgentPlugin = {
       unregisterMetricsTools();
       unregisterApiServiceTools();
       unregisterOutboundWebhookTools();
+      unregisterHookTools();
       unregisterUacTools();
     });
   },

@@ -58,6 +58,8 @@ function formatApiError(error, options = {}) {
         targetSchema: error.targetSchema,
         dbType: error.dbType,
         connectionId: error.connectionId,
+        hint:
+          '目标 Schema/库不存在。用户确认后请带 createTargetIfMissing=true 重试；bizdata_create_database_connection 只登记连接、不会 CREATE DATABASE。禁止同参空转或 http_request 探路。',
       },
     };
   }

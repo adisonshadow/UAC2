@@ -24,6 +24,7 @@ import ApiServiceForm, {
 } from '../components/ApiServiceForm';
 import { scopeCodeFromEntityCode, suggestServiceSlugFromEntity } from '@/pages/ApiServices/ai/apiServiceCodeUtils';
 import { buildApiServiceCreatePrompts } from '@/pages/ApiServices/ai/buildApiServiceCreatePrompts';
+import { getBusinessDataEntity } from '@/services/UAC/api/businessData';
 import { buildOperationResponsePreview } from '../utils/buildOperationResponsePreview';
 import { buildResponseOverridesPayload, resolveResponseExample } from '../utils/responseOverrides';
 import { buildRequestOverridesPayload } from '../utils/requestOverrides';
@@ -70,6 +71,48 @@ const ApiServiceCreatePage: React.FC = () => {
   }, [references]);
 
   const formEntityCode = Form.useWatch('entityCode', form);
+  const formEntityId = Form.useWatch('entityId', form);
+  const [entityFieldOutline, setEntityFieldOutline] = useState<
+    Array<{ key: string; required?: boolean; type?: string }>
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entityId = formEntityId ? String(formEntityId).trim() : '';
+    if (!entityId) {
+      setEntityFieldOutline([]);
+      return undefined;
+    }
+    void getBusinessDataEntity(entityId)
+      .then((res) => {
+        if (cancelled) return;
+        const entity = getApiData<API.BusinessDataEntity>(res);
+        const fields = Array.isArray(entity?.fields) ? entity.fields : [];
+        setEntityFieldOutline(
+          fields
+            .map((field) => {
+              const key = String(field.fieldKey || '').trim();
+              if (!key) return null;
+              const columnInfo = (field.columnInfo || {}) as Record<string, unknown>;
+              const typeorm = (field.typeormConfig || {}) as Record<string, unknown>;
+              const required = columnInfo.nullable === false || typeorm.nullable === false;
+              const rawType = String(columnInfo.type || typeorm.type || '').trim();
+              return {
+                key,
+                ...(required ? { required: true } : {}),
+                ...(rawType ? { type: rawType } : {}),
+              };
+            })
+            .filter(Boolean) as Array<{ key: string; required?: boolean; type?: string }>,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setEntityFieldOutline([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [formEntityId]);
   const entityCodeForPreview = formEntityCode || entityCodeFromRefs;
 
   // Chat 引用实体时预填主实体 + Scope + 默认短名
@@ -152,6 +195,7 @@ const ApiServiceCreatePage: React.FC = () => {
         entityId: values.entityId,
         entityCode: values.entityCode,
         entityLabel: values.entityLabel,
+        fields: entityFieldOutline.slice(0, 40),
         resolvedConnection: values.resolvedConnectionId
           ? {
               connectionId: values.resolvedConnectionId,

@@ -1,6 +1,6 @@
 import type { ConversationItemType } from '@ant-design/x';
 import type { MessageInfo } from '@ant-design/x-sdk';
-import type { ChatToolStep } from '../chat/chatToolSteps';
+import type { AssistantSegment, ChatToolStep } from '../chat/chatToolSteps';
 import type { EADAFChatMessage } from '../chat/EADAFChatProvider';
 
 const DB_NAME = 'eadaf-aibase-chat';
@@ -144,6 +144,49 @@ export async function loadConversationMessages(
 
 const PERSISTABLE_STATUSES = new Set(['success', 'error', 'abort', 'local']);
 
+/** 多模态 apiContent：去掉 base64/data URL，保留结构引用，避免 IDB 爆仓且刷新后不完全失明 */
+export function sanitizeApiContentForPersist(
+  apiContent: EADAFChatMessage['apiContent'],
+): EADAFChatMessage['apiContent'] | undefined {
+  if (apiContent == null) return undefined;
+  if (typeof apiContent === 'string') {
+    if (apiContent.startsWith('data:') || apiContent.length > 8_000) {
+      return '[附件内容已省略：刷新后请重新上传以供模型查看]';
+    }
+    return apiContent;
+  }
+  if (!Array.isArray(apiContent)) return undefined;
+  return apiContent.map((part) => {
+    if (!part || typeof part !== 'object') return part;
+    const row = { ...part } as Record<string, unknown>;
+    const imageUrl = row.image_url;
+    if (imageUrl && typeof imageUrl === 'object') {
+      const img = { ...(imageUrl as Record<string, unknown>) };
+      const url = typeof img.url === 'string' ? img.url : '';
+      if (url.startsWith('data:') || url.length > 500) {
+        img.url = '[omitted:image]';
+        row.image_url = img;
+      }
+    }
+    const inputAudio = row.input_audio;
+    if (inputAudio && typeof inputAudio === 'object') {
+      row.input_audio = { ...(inputAudio as object), data: '[omitted:audio]' };
+    }
+    if (typeof row.data === 'string' && (row.data.startsWith('data:') || row.data.length > 500)) {
+      row.data = '[omitted:binary]';
+    }
+    return row;
+  });
+}
+
+function toolStepsFromSegments(segments?: AssistantSegment[]): ChatToolStep[] | undefined {
+  if (!segments?.length) return undefined;
+  const steps = segments
+    .filter((s): s is Extract<AssistantSegment, { kind: 'tool' }> => s.kind === 'tool')
+    .map((s) => s.step);
+  return steps.length ? steps : undefined;
+}
+
 export function sanitizeMessagesForPersist(
   messages: MessageInfo<EADAFChatMessage>[],
 ): PersistedChatMessage[] {
@@ -155,6 +198,7 @@ export function sanitizeMessagesForPersist(
         reasoningContent?: string;
         toolSteps?: ChatToolStep[];
         attachments?: EADAFChatMessage['attachments'];
+        segments?: AssistantSegment[];
       };
       const content =
         typeof msg.content === 'string'
@@ -162,6 +206,10 @@ export function sanitizeMessagesForPersist(
           : Array.isArray(msg.attachments) && msg.attachments.length
             ? `[附件: ${msg.attachments.map((a) => a.name).join('、')}]`
             : '[含多模态附件]';
+      const toolSteps = msg.toolSteps?.length
+        ? msg.toolSteps
+        : toolStepsFromSegments(msg.segments);
+      const apiContent = sanitizeApiContentForPersist(msg.apiContent);
       return {
         id: String(item.id),
         status: item.status,
@@ -169,8 +217,10 @@ export function sanitizeMessagesForPersist(
           role: msg.role,
           content,
           ...(msg.reasoningContent ? { reasoningContent: msg.reasoningContent } : {}),
-          ...(msg.toolSteps ? { toolSteps: msg.toolSteps } : {}),
+          ...(toolSteps?.length ? { toolSteps } : {}),
           ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
+          ...(apiContent != null ? { apiContent } : {}),
+          ...(msg.segments?.length ? { segments: msg.segments } : {}),
         },
       };
     });

@@ -1,8 +1,17 @@
-const { quotePgIdentifier, withPgClient } = require('../businessData/materialization/connectionRunner');
 const { resolveEntityTableName } = require('../businessData/entityTableName');
 const { BizdataEntity, BizdataEntityField } = require('../../models');
 const { buildPaginationMeta } = require('./paginationMeta');
 const { serializeWriteRow } = require('./pgWriteSerialize');
+const {
+  quoteIdent,
+  qualifiedTable: dialectQualifiedTable,
+  countExpr: dialectCountExpr,
+  ilikePred,
+  withSqlClient,
+  insertManyThenSelect,
+  updateThenSelect,
+  selectThenDelete,
+} = require('./sqlDialect');
 
 const COLUMN_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -45,10 +54,10 @@ function parseColumnRef(ref, defaultAlias) {
   };
 }
 
-function quoteColumnRef(ref, defaultAlias) {
+function quoteColumnRef(ref, defaultAlias, dbType = 'postgresql') {
   const { alias, column } = parseColumnRef(ref, defaultAlias);
-  const col = quotePgIdentifier(column);
-  return alias ? `${quotePgIdentifier(alias)}.${col}` : col;
+  const col = quoteIdent(column, dbType);
+  return alias ? `${quoteIdent(alias, dbType)}.${col}` : col;
 }
 
 function isPlainObject(value) {
@@ -167,7 +176,11 @@ function normalizeWhereArgs(args) {
  * SDK 专用参数化 WHERE（支持操作符与 alias.col）。
  * @returns {{ clause: string, bindings: unknown[], nextIndex: number }}
  */
-function buildSdkWhere(conditions, { startIndex = 1, defaultAlias = null } = {}) {
+function buildSdkWhere(conditions, {
+  startIndex = 1,
+  defaultAlias = null,
+  dbType = 'postgresql',
+} = {}) {
   if (!conditions.length) {
     return { clause: '', bindings: [], nextIndex: startIndex };
   }
@@ -177,7 +190,7 @@ function buildSdkWhere(conditions, { startIndex = 1, defaultAlias = null } = {})
   let idx = startIndex;
 
   conditions.forEach(({ columnRef, op, value }) => {
-    const col = quoteColumnRef(columnRef, defaultAlias);
+    const col = quoteColumnRef(columnRef, defaultAlias, dbType);
     switch (op) {
       case '$eq':
         if (value === null) {
@@ -208,13 +221,15 @@ function buildSdkWhere(conditions, { startIndex = 1, defaultAlias = null } = {})
         break;
       }
       case '$like':
-      case '$ilike': {
-        const sqlOp = op === '$like' ? 'LIKE' : 'ILIKE';
-        parts.push(`${col} ${sqlOp} $${idx}`);
+        parts.push(`${col} LIKE $${idx}`);
         bindings.push(value);
         idx += 1;
         break;
-      }
+      case '$ilike':
+        parts.push(ilikePred(col, `$${idx}`, dbType));
+        bindings.push(value);
+        idx += 1;
+        break;
       case '$in':
       case '$nin': {
         if (!Array.isArray(value) || !value.length) {
@@ -261,6 +276,7 @@ function clampSkip(raw) {
  */
 function createHandlerSdk({ service, client = null, runtime = null }) {
   const schema = service?.targetSchema || 'bizdata_mat';
+  const dbType = client?.dbType || runtime?.dbType || 'postgresql';
   const tableCache = new Map();
   const entityMetaCache = new Map(); // code -> { fields }
 
@@ -291,7 +307,7 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
     const code = String(entityCode || service?.entityCode || '').trim();
     if (!code) {
       if (service?.tableName) {
-        return `${quotePgIdentifier(schema)}.${quotePgIdentifier(service.tableName)}`;
+        return dialectQualifiedTable(schema, service.tableName, dbType);
       }
       throw Object.assign(
         new Error('db() 须传入实体 code，或服务须绑定实体'),
@@ -311,7 +327,7 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
       tableName = resolveEntityTableName(entity.code, entity.table_name);
     }
 
-    const qualified = `${quotePgIdentifier(schema)}.${quotePgIdentifier(tableName)}`;
+    const qualified = dialectQualifiedTable(schema, tableName, dbType);
     tableCache.set(code, qualified);
     return qualified;
   }
@@ -324,7 +340,16 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
     if (!runtime) {
       throw Object.assign(new Error('Handler SDK 缺少数据库连接'), { status: 500 });
     }
-    return withPgClient(runtime, async (pgClient) => pgClient.query(sql, bindings));
+    return withSqlClient(runtime, async (sqlClient) => sqlClient.query(sql, bindings));
+  }
+
+  /** 写操作需要 wrapped client（含 dbType）；无注入 client 时临时开连接 */
+  async function withWriteClient(fn) {
+    if (client) return fn(client);
+    if (!runtime) {
+      throw Object.assign(new Error('Handler SDK 缺少数据库连接'), { status: 500 });
+    }
+    return withSqlClient(runtime, fn);
   }
 
   function createBuilder(entityCode, tableAlias = 't0') {
@@ -341,24 +366,21 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
 
     async function buildFromClause() {
       const table = await resolveQualifiedTable(entityCode);
-      let from = `${table} AS ${quotePgIdentifier(primaryAlias)}`;
+      let from = `${table} AS ${quoteIdent(primaryAlias, dbType)}`;
       for (const join of state.joins) {
         const joinTable = await resolveQualifiedTable(join.entityCode);
-        const left = quoteColumnRef(join.leftCol, primaryAlias);
-        const right = quoteColumnRef(join.rightCol, primaryAlias);
-        from += ` ${join.type} JOIN ${joinTable} AS ${quotePgIdentifier(join.alias)} ON ${left} = ${right}`;
+        const left = quoteColumnRef(join.leftCol, primaryAlias, dbType);
+        const right = quoteColumnRef(join.rightCol, primaryAlias, dbType);
+        from += ` ${join.type} JOIN ${joinTable} AS ${quoteIdent(join.alias, dbType)} ON ${left} = ${right}`;
       }
       return from;
     }
 
     function buildSelectList() {
       if (state.columns?.length) {
-        return state.columns.map((c) => quoteColumnRef(c, primaryAlias)).join(', ');
+        return state.columns.map((c) => quoteColumnRef(c, primaryAlias, dbType)).join(', ');
       }
-      if (state.joins.length) {
-        return `${quotePgIdentifier(primaryAlias)}.*`;
-      }
-      return `${quotePgIdentifier(primaryAlias)}.*`;
+      return `${quoteIdent(primaryAlias, dbType)}.*`;
     }
 
     function addJoin(type, joinEntityCode, alias, leftCol, rightCol) {
@@ -448,13 +470,14 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         const from = await buildFromClause();
         const { clause, bindings, nextIndex } = buildSdkWhere(state.conditions, {
           defaultAlias: primaryAlias,
+          dbType,
         });
         let sql = `SELECT ${buildSelectList()} FROM ${from}${clause}`;
         const values = [...bindings];
         let idx = nextIndex;
         if (state.orderBy.length) {
           const orderSql = state.orderBy
-            .map((o) => `${quoteColumnRef(o.column, primaryAlias)} ${o.direction}`)
+            .map((o) => `${quoteColumnRef(o.column, primaryAlias, dbType)} ${o.direction}`)
             .join(', ');
           sql += ` ORDER BY ${orderSql}`;
         }
@@ -484,13 +507,14 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         const from = await buildFromClause();
         const { clause, bindings } = buildSdkWhere(state.conditions, {
           defaultAlias: primaryAlias,
+          dbType,
         });
-        const countExpr = state.joins.length
-          ? `COUNT(DISTINCT ${quotePgIdentifier(primaryAlias)}.${quotePgIdentifier(state.primaryKey)})`
-          : 'COUNT(*)';
-        const sql = `SELECT ${countExpr}::int AS count FROM ${from}${clause}`;
+        const distinctCol = state.joins.length
+          ? `${quoteIdent(primaryAlias, dbType)}.${quoteIdent(state.primaryKey, dbType)}`
+          : null;
+        const sql = `SELECT ${dialectCountExpr(dbType, distinctCol)} AS count FROM ${from}${clause}`;
         const res = await runQuery(sql, bindings);
-        return res.rows[0]?.count ?? 0;
+        return Number(res.rows[0]?.count ?? 0);
       },
       async getManyAndCount() {
         const total = await builder.getCount();
@@ -541,20 +565,12 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
           throw Object.assign(new Error('insert 行对象不能为空'), { status: 400 });
         }
         keys.forEach((k) => assertColumnName(k, '字段名'));
-        const cols = keys.map((k) => quotePgIdentifier(k)).join(', ');
         const meta = await loadEntityMeta(entityCode);
-        const allBindings = [];
-        const valueGroups = rows.map((row) => {
-          const serialized = serializeWriteRow(row, meta);
-          const placeholders = keys.map((k) => {
-            allBindings.push(serialized[k]);
-            return `$${allBindings.length}`;
-          });
-          return `(${placeholders.join(', ')})`;
+        const serializedRows = rows.map((row) => serializeWriteRow(row, meta));
+        return withWriteClient(async (writeClient) => {
+          const { rows: inserted } = await insertManyThenSelect(writeClient, table, serializedRows);
+          return inserted;
         });
-        const sql = `INSERT INTO ${table} (${cols}) VALUES ${valueGroups.join(', ')} RETURNING *`;
-        const res = await runQuery(sql, allBindings);
-        return res.rows;
       },
       async update(where, set) {
         if (state.joins.length) {
@@ -571,7 +587,7 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         const setBindings = [];
         const setSql = setKeys.map((k, i) => {
           setBindings.push(serializedSet[k]);
-          return `${quotePgIdentifier(k)} = $${i + 1}`;
+          return `${quoteIdent(k, dbType)} = $${i + 1}`;
         }).join(', ');
         const conditions = toSdkFilterConditions(where);
         if (!conditions.length) {
@@ -579,10 +595,17 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         }
         const { clause, bindings } = buildSdkWhere(conditions, {
           startIndex: setBindings.length + 1,
+          dbType,
         });
-        const sql = `UPDATE ${table} SET ${setSql}${clause} RETURNING *`;
-        const res = await runQuery(sql, [...setBindings, ...bindings]);
-        return { matched: res.rowCount, items: res.rows };
+        return withWriteClient(async (writeClient) => {
+          const result = await updateThenSelect(writeClient, table, {
+            setSql,
+            setBindings,
+            whereClause: clause,
+            whereBindings: bindings,
+          });
+          return { matched: result.matched, items: result.items };
+        });
       },
       async delete(where) {
         if (state.joins.length) {
@@ -593,10 +616,14 @@ function createHandlerSdk({ service, client = null, runtime = null }) {
         if (!conditions.length) {
           throw Object.assign(new Error('delete 须提供 where 条件，禁止全表删除'), { status: 400 });
         }
-        const { clause, bindings } = buildSdkWhere(conditions);
-        const sql = `DELETE FROM ${table}${clause} RETURNING *`;
-        const res = await runQuery(sql, bindings);
-        return { deleted: res.rowCount, items: res.rows };
+        const { clause, bindings } = buildSdkWhere(conditions, { dbType });
+        return withWriteClient(async (writeClient) => {
+          const result = await selectThenDelete(writeClient, table, {
+            whereClause: clause,
+            whereBindings: bindings,
+          });
+          return { deleted: result.deleted, items: result.items };
+        });
       },
     };
 

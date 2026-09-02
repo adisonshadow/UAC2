@@ -314,7 +314,9 @@ class BusinessDataController {
   static async getMaterializationStatus(ctx) {
     try {
       const data = await materializationService.getMaterializationStatus({
-        connectionId: ctx.query.connectionId
+        connectionId: ctx.query.connectionId,
+        entityCodes: ctx.query.entityCodes || ctx.query.entityCode,
+        entityIds: ctx.query.entityIds || ctx.query.entityId
       });
       ctx.body = { code: 200, message: '获取物化状态成功', data };
     } catch (error) {
@@ -394,6 +396,22 @@ class BusinessDataController {
     try {
       const data = await databaseConnectionService.listConnections();
       ctx.body = { code: 200, message: '获取数据库连接列表成功', data };
+    } catch (error) {
+      sendBizDataError(ctx, error, { fallbackStatus: 500 });
+    }
+  }
+
+  static async getDatabaseConnection(ctx) {
+    try {
+      const data = await databaseConnectionService.getConnectionById(ctx.params.id, {
+        includePassword: true,
+      });
+      if (!data) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '数据库连接不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '获取数据库连接成功', data };
     } catch (error) {
       sendBizDataError(ctx, error, { fallbackStatus: 500 });
     }

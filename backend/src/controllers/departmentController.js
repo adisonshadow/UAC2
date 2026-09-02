@@ -19,6 +19,18 @@ class DepartmentController {
         status
       });
 
+      ctx.state.auditContext = {
+        resource_id: department.department_id,
+        resource_name: department.name,
+        new_data: {
+          department_id: department.department_id,
+          name: department.name,
+          description: department.description,
+          parent_id: department.parent_id,
+          status: department.status,
+        },
+      };
+
       ctx.status = 201;
       ctx.body = {
         code: 201,
@@ -219,7 +231,26 @@ class DepartmentController {
         return;
       }
 
+      const oldData = {
+        name: department.name,
+        description: department.description,
+        parent_id: department.parent_id,
+        status: department.status,
+      };
+
       await department.update(updateData);
+
+      ctx.state.auditContext = {
+        resource_id: department_id,
+        resource_name: department.name,
+        old_data: oldData,
+        new_data: {
+          name: department.name,
+          description: department.description,
+          parent_id: department.parent_id,
+          status: department.status,
+        },
+      };
       
       ctx.body = {
         code: 200,
@@ -277,6 +308,17 @@ class DepartmentController {
       }
 
       await department.destroy();
+
+      ctx.state.auditContext = {
+        resource_id: department_id,
+        resource_name: department.name,
+        old_data: {
+          name: department.name,
+          description: department.description,
+          parent_id: department.parent_id,
+          status: department.status,
+        },
+      };
       
       ctx.body = {
         code: 200,
@@ -361,6 +403,12 @@ class DepartmentController {
       const roles = await sequelize.transaction((t) =>
         assignRolesToEntity(department, role_ids, { transaction: t })
       );
+
+      ctx.state.auditContext = {
+        resource_id: department_id,
+        resource_name: department.name,
+        new_data: { role_ids },
+      };
 
       ctx.body = {
         code: 200,

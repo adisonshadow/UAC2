@@ -5,6 +5,7 @@ const DataStandardController = require('../controllers/dataStandardController');
 const MetadataCatalogController = require('../controllers/metadataCatalogController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
+const { operationAudit } = require('../middlewares/operationAudit');
 
 const router = new Router({ prefix: '/api/v1/business-data' });
 
@@ -83,7 +84,13 @@ router.get('/schema', authWithBuiltinApiGuard, BusinessDataController.getSchema)
  *               $ref: '#/components/schemas/EnvelopeBizdataEntity'
  */
 router.get('/entities', authWithBuiltinApiGuard, BusinessDataController.listEntities);
-router.post('/entities', authWithBuiltinApiGuard, BusinessDataController.createEntity);
+router.post('/entities', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'entity',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), BusinessDataController.createEntity);
 
 /**
  * @swagger
@@ -181,8 +188,19 @@ router.get('/entities/exists', authWithBuiltinApiGuard, BusinessDataController.e
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.getEntity);
-router.patch('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.updateEntity);
-router.delete('/entities/:id', authWithBuiltinApiGuard, BusinessDataController.deleteEntity);
+router.patch('/entities/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'entity',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), BusinessDataController.updateEntity);
+router.delete('/entities/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'entity',
+  resourceId: (ctx) => ctx.params.id,
+}), BusinessDataController.deleteEntity);
 
 /**
  * @swagger
@@ -247,6 +265,13 @@ router.post(
 router.post(
   '/entities/deletion-execute',
   authWithBuiltinApiGuard,
+  operationAudit({
+    domain: 'bizdata',
+    operationType: 'DELETE',
+    resourceType: 'entity',
+    resourceId: (ctx) => (ctx.request.body?.deleteEntityIds || []).join(',') || '',
+    summaryKeys: ['deleteEntityIds', 'dropPhysicalTables'],
+  }),
   BusinessDataController.executeEntityDeletion,
 );
 
@@ -303,7 +328,13 @@ router.post(
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeBizdataEntity'
  */
-router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataController.upsertFields);
+router.put('/entities/:id/fields', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'entity_field',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['fields'],
+}), BusinessDataController.upsertFields);
 
 /**
  * @swagger
@@ -354,7 +385,13 @@ router.put('/entities/:id/fields', authWithBuiltinApiGuard, BusinessDataControll
  *               $ref: '#/components/schemas/EnvelopeBizdataEnum'
  */
 router.get('/enums', authWithBuiltinApiGuard, BusinessDataController.listEnums);
-router.post('/enums', authWithBuiltinApiGuard, BusinessDataController.createEnum);
+router.post('/enums', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'enum',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), BusinessDataController.createEnum);
 
 /**
  * @swagger
@@ -432,8 +469,19 @@ router.get('/enums/exists', authWithBuiltinApiGuard, BusinessDataController.exis
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
-router.patch('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.updateEnum);
-router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.deleteEnum);
+router.patch('/enums/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'enum',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), BusinessDataController.updateEnum);
+router.delete('/enums/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'enum',
+  resourceId: (ctx) => ctx.params.id,
+}), BusinessDataController.deleteEnum);
 
 /**
  * @swagger
@@ -488,7 +536,13 @@ router.delete('/enums/:id', authWithBuiltinApiGuard, BusinessDataController.dele
  *         description: 重名或同边已存在（错误信息含 from/to entityCode）
  */
 router.get('/relations', authWithBuiltinApiGuard, BusinessDataController.listRelations);
-router.post('/relations', authWithBuiltinApiGuard, BusinessDataController.createRelation);
+router.post('/relations', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'relation',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), BusinessDataController.createRelation);
 
 /**
  * @swagger
@@ -537,8 +591,19 @@ router.post('/relations', authWithBuiltinApiGuard, BusinessDataController.create
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
-router.patch('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.updateRelation);
-router.delete('/relations/:id', authWithBuiltinApiGuard, BusinessDataController.deleteRelation);
+router.patch('/relations/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'relation',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), BusinessDataController.updateRelation);
+router.delete('/relations/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'relation',
+  resourceId: (ctx) => ctx.params.id,
+}), BusinessDataController.deleteRelation);
 
 /**
  * @swagger
@@ -589,7 +654,7 @@ router.post('/materialization/preview', authWithBuiltinApiGuard, BusinessDataCon
  *               dryRun: { type: boolean }
  *               createTargetIfMissing:
  *                 type: boolean
- *                 description: 目标 Schema/数据库不存在时是否自动创建唯一ID（通常由前端确认后传入）
+ *                 description: 目标 Schema/数据库不存在时是否自动创建（默认 false；须用户确认后传 true）。MySQL 下 Schema 即库
  *               expectedVersions:
  *                 type: object
  *                 additionalProperties: { type: integer }
@@ -601,9 +666,15 @@ router.post('/materialization/preview', authWithBuiltinApiGuard, BusinessDataCon
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeBizdataMaterializationExecute'
  *       409:
- *         description: 目标 Schema/数据库不存在，需用户确认后带 createTargetIfMissing 重试
+ *         description: 目标 Schema/数据库不存在（errorCode=TARGET_NOT_FOUND，data.hint 含下一步）。须 ask_user 确认后带 createTargetIfMissing=true 重试；禁止同参空转或探 HTTP
  */
-router.post('/materialization/execute', authWithBuiltinApiGuard, BusinessDataController.executeMaterialization);
+router.post('/materialization/execute', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'EXECUTE',
+  resourceType: 'materialization',
+  resourceId: (ctx) => ctx.body?.data?.id || ctx.request.body?.connectionId || '',
+  summaryKeys: ['entityIds', 'connectionId', 'targetSchema', 'dryRun'],
+}), BusinessDataController.executeMaterialization);
 
 /**
  * @swagger
@@ -616,9 +687,18 @@ router.post('/materialization/execute', authWithBuiltinApiGuard, BusinessDataCon
  *       - in: query
  *         name: connectionId
  *         schema: { type: string, format: uuid }
+ *         description: 限定连接；不传则返回全部连接上的笛卡尔积
+ *       - in: query
+ *         name: entityCodes
+ *         schema: { type: string }
+ *         description: 按实体 code 过滤，逗号分隔或重复键；也可用 entityCode
+ *       - in: query
+ *         name: entityIds
+ *         schema: { type: string }
+ *         description: 按实体 UUID 过滤，逗号分隔或重复键；也可用 entityId
  *     responses:
  *       200:
- *         description: 获取成功
+ *         description: 获取成功（每项含 code 与 entityCode，值相同）
  *         content:
  *           application/json:
  *             schema:
@@ -779,6 +859,13 @@ router.get(
 router.post(
   '/materialization/tables/:entityId/mock-data',
   auth,
+  operationAudit({
+    domain: 'bizdata',
+    operationType: 'CREATE',
+    resourceType: 'materialized_mock',
+    resourceId: (ctx) => ctx.params.entityId,
+    summaryKeys: ['connectionId', 'rowCount', 'rows'],
+  }),
   BusinessDataController.insertMaterializedMockData,
 );
 
@@ -805,16 +892,22 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, dbType, host, username, databaseName]
+ *             required: [name, dbType, host, databaseName]
  *             properties:
  *               name: { type: string }
- *               dbType: { type: string, enum: [postgresql, mongodb, redis] }
+ *               dbType: { type: string, enum: [postgresql, mysql, mongodb, redis] }
  *               host: { type: string }
  *               port: { type: integer }
- *               username: { type: string }
+ *               username:
+ *                 type: string
+ *                 description: PostgreSQL/MySQL/MongoDB 必填；Redis ACL 可选
  *               password: { type: string }
- *               databaseName: { type: string }
- *               targetSchema: { type: string }
+ *               databaseName:
+ *                 type: string
+ *                 description: PostgreSQL/MySQL/MongoDB 库名；Redis 为 0-15 的 DB 索引
+ *               targetSchema:
+ *                 type: string
+ *                 description: PostgreSQL schema；MySQL Schema（即库，须 ≥8.0.13）；MongoDB 与 databaseName 相同；Redis Key 前缀。Mongo 未传时后端用 databaseName
  *               isDefault: { type: boolean }
  *     responses:
  *       201:
@@ -825,11 +918,35 @@ router.post(
  *               $ref: '#/components/schemas/EnvelopeBizdataDatabaseConnection'
  */
 router.get('/database-connections', authWithBuiltinApiGuard, BusinessDataController.listDatabaseConnections);
-router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataController.createDatabaseConnection);
+router.post('/database-connections', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'database_connection',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['name', 'dbType', 'host', 'port', 'database'],
+}), BusinessDataController.createDatabaseConnection);
 
 /**
  * @swagger
  * /api/v1/business-data/database-connections/{id}:
+ *   get:
+ *     tags: [BusinessData]
+ *     summary: 获取数据库连接详情（含密码，供编辑回填） [需要认证]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: 获取成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeBizdataDatabaseConnection'
+ *       404:
+ *         description: 连接不存在
  *   put:
  *     tags: [BusinessData]
  *     summary: 更新数据库连接 [需要认证]
@@ -846,13 +963,19 @@ router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataContro
  *             type: object
  *             properties:
  *               name: { type: string }
- *               dbType: { type: string, enum: [postgresql, mongodb, redis] }
+ *               dbType: { type: string, enum: [postgresql, mysql, mongodb, redis] }
  *               host: { type: string }
  *               port: { type: integer }
- *               username: { type: string }
+ *               username:
+ *                 type: string
+ *                 description: PostgreSQL/MySQL/MongoDB 必填；Redis ACL 可选
  *               password: { type: string }
- *               databaseName: { type: string }
- *               targetSchema: { type: string }
+ *               databaseName:
+ *                 type: string
+ *                 description: PostgreSQL/MySQL/MongoDB 登录库；Redis 为 0-15 的 DB 索引；MySQL 默认可用 mysql
+ *               targetSchema:
+ *                 type: string
+ *                 description: PostgreSQL schema；MySQL 物化目标库；MongoDB 与 databaseName 相同；Redis Key 前缀
  *               isDefault: { type: boolean }
  *     responses:
  *       200:
@@ -878,8 +1001,20 @@ router.post('/database-connections', authWithBuiltinApiGuard, BusinessDataContro
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
-router.put('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.updateDatabaseConnection);
-router.delete('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.deleteDatabaseConnection);
+router.get('/database-connections/:id', authWithBuiltinApiGuard, BusinessDataController.getDatabaseConnection);
+router.put('/database-connections/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'database_connection',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['name', 'dbType', 'host', 'port', 'database'],
+}), BusinessDataController.updateDatabaseConnection);
+router.delete('/database-connections/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'database_connection',
+  resourceId: (ctx) => ctx.params.id,
+}), BusinessDataController.deleteDatabaseConnection);
 
 /**
  * @swagger
@@ -995,7 +1130,13 @@ router.get('/scopes/exists', authWithBuiltinApiGuard, BusinessDataController.exi
  *               $ref: '#/components/schemas/EnvelopeBizdataScopeDoc'
  */
 router.get('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.listScopeDocs);
-router.put('/scope-docs', authWithBuiltinApiGuard, BusinessDataController.upsertScopeDoc);
+router.put('/scope-docs', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'scope_doc',
+  resourceId: (ctx) => ctx.request.body?.scopeCode || ctx.body?.data?.scopeCode || '',
+  summaryKeys: ['scopeCode', 'title'],
+}), BusinessDataController.upsertScopeDoc);
 
 /**
  * @swagger
@@ -1111,7 +1252,13 @@ router.get('/metrics/dashboard', authWithBuiltinApiGuard, MetricController.getDa
  *               $ref: '#/components/schemas/EnvelopeBizdataMetricCard'
  */
 router.get('/metrics/cards', authWithBuiltinApiGuard, MetricController.listCards);
-router.post('/metrics/cards', authWithBuiltinApiGuard, MetricController.createCard);
+router.post('/metrics/cards', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'metric_card',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name', 'title'],
+}), MetricController.createCard);
 
 /**
  * @swagger
@@ -1206,8 +1353,19 @@ router.get('/metrics/cards/suggest', authWithBuiltinApiGuard, MetricController.s
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.getCard);
-router.patch('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.updateCard);
-router.delete('/metrics/cards/:id', authWithBuiltinApiGuard, MetricController.deleteCard);
+router.patch('/metrics/cards/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'metric_card',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name', 'title'],
+}), MetricController.updateCard);
+router.delete('/metrics/cards/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'metric_card',
+  resourceId: (ctx) => ctx.params.id,
+}), MetricController.deleteCard);
 
 /**
  * @swagger
@@ -1298,7 +1456,13 @@ router.post('/metrics/execute-batch', authWithBuiltinApiGuard, MetricController.
  *               $ref: '#/components/schemas/EnvelopeBizdataMetric'
  */
 router.get('/metrics', authWithBuiltinApiGuard, MetricController.listMetrics);
-router.post('/metrics', authWithBuiltinApiGuard, MetricController.createMetric);
+router.post('/metrics', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'metric',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), MetricController.createMetric);
 
 /**
  * @swagger
@@ -1463,8 +1627,19 @@ router.get('/metrics/:id/value', authWithBuiltinApiGuard, MetricController.getVa
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/metrics/:id', authWithBuiltinApiGuard, MetricController.getMetric);
-router.patch('/metrics/:id', authWithBuiltinApiGuard, MetricController.updateMetric);
-router.delete('/metrics/:id', authWithBuiltinApiGuard, MetricController.deleteMetric);
+router.patch('/metrics/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'metric',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), MetricController.updateMetric);
+router.delete('/metrics/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'metric',
+  resourceId: (ctx) => ctx.params.id,
+}), MetricController.deleteMetric);
 
 /**
  * @swagger
@@ -1519,7 +1694,13 @@ router.delete('/metrics/:id', authWithBuiltinApiGuard, MetricController.deleteMe
  *               $ref: '#/components/schemas/EnvelopeBizdataDataStandard'
  */
 router.get('/data-standards', authWithBuiltinApiGuard, DataStandardController.list);
-router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.create);
+router.post('/data-standards', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'data_standard',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name'],
+}), DataStandardController.create);
 
 /**
  * @swagger
@@ -1574,8 +1755,19 @@ router.post('/data-standards', authWithBuiltinApiGuard, DataStandardController.c
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.get);
-router.put('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.update);
-router.delete('/data-standards/:id', authWithBuiltinApiGuard, DataStandardController.delete);
+router.put('/data-standards/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'data_standard',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name'],
+}), DataStandardController.update);
+router.delete('/data-standards/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'data_standard',
+  resourceId: (ctx) => ctx.params.id,
+}), DataStandardController.delete);
 
 /**
  * @swagger
@@ -1619,7 +1811,13 @@ router.delete('/data-standards/:id', authWithBuiltinApiGuard, DataStandardContro
  *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
 router.get('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogController.listTables);
-router.post('/metadata/tables', authWithBuiltinApiGuard, MetadataCatalogController.upsertTable);
+router.post('/metadata/tables', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'metadata_table',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['code', 'name', 'tableName'],
+}), MetadataCatalogController.upsertTable);
 
 /**
  * @swagger
@@ -1663,7 +1861,13 @@ router.get('/metadata/by-target', authWithBuiltinApiGuard, MetadataCatalogContro
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTableList'
  */
-router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatalogController.syncFromSchema);
+router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'EXECUTE',
+  resourceType: 'metadata_sync',
+  resourceId: (ctx) => ctx.request.body?.connectionId || '',
+  summaryKeys: ['connectionId', 'targetSchema'],
+}), MetadataCatalogController.syncFromSchema);
 
 /**
  * @swagger
@@ -1708,8 +1912,19 @@ router.post('/metadata/sync-from-schema', authWithBuiltinApiGuard, MetadataCatal
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.getTable);
-router.put('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.updateTable);
-router.delete('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogController.deleteTable);
+router.put('/metadata/tables/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'metadata_table',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['code', 'name', 'tableName'],
+}), MetadataCatalogController.updateTable);
+router.delete('/metadata/tables/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'DELETE',
+  resourceType: 'metadata_table',
+  resourceId: (ctx) => ctx.params.id,
+}), MetadataCatalogController.deleteTable);
 
 /**
  * @swagger
@@ -1726,7 +1941,13 @@ router.delete('/metadata/tables/:id', authWithBuiltinApiGuard, MetadataCatalogCo
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
-router.put('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatalogController.updateFields);
+router.put('/metadata/tables/:id/fields', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'UPDATE',
+  resourceType: 'metadata_field',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['fields'],
+}), MetadataCatalogController.updateFields);
 
 /**
  * @swagger
@@ -1743,6 +1964,12 @@ router.put('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatal
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeBizdataMetadataTable'
  */
-router.post('/metadata/tables/:id/fields', authWithBuiltinApiGuard, MetadataCatalogController.upsertField);
+router.post('/metadata/tables/:id/fields', authWithBuiltinApiGuard, operationAudit({
+  domain: 'bizdata',
+  operationType: 'CREATE',
+  resourceType: 'metadata_field',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['fieldKey', 'name'],
+}), MetadataCatalogController.upsertField);
 
 module.exports = router;

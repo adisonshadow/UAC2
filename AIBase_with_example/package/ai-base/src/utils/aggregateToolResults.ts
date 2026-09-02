@@ -81,9 +81,14 @@ function isOk(envelope: ToolResponse | null): boolean {
  * 泛型保留输入元素类型（如 EADAFChatMessage），仅替换 content 字段，
  * 这样调用方回灌 loopMessages 时类型不变。
  */
+/**
+ * @param envelopesByCallId 可选：序列化前的结构化信封（按 tool_call_id）。
+ *   优先于解析 content——避免预算裁剪后的残缺 JSON 把成功计成 failed。
+ */
 export function aggregateToolResults<T extends ToolResultMessage>(
   toolMessages: T[],
   strategy: SkillCompletionStrategy | undefined,
+  envelopesByCallId?: Map<string, ToolResponse>,
 ): T[] {
   const config = resolveConfig(strategy);
   if (!config) return toolMessages;
@@ -104,11 +109,16 @@ export function aggregateToolResults<T extends ToolResultMessage>(
   for (const [name, indices] of groups) {
     if (indices.length < config.minBatchSize) continue;
 
-    // 解析每条结果
+    // 优先用结构化信封；否则再尝试解析 content
     const parsed = indices.map((idx) => {
       const msg = toolMessages[idx];
+      const callId = (msg as { tool_call_id?: string }).tool_call_id;
+      const fromMap =
+        callId && envelopesByCallId?.has(callId)
+          ? envelopesByCallId.get(callId) ?? null
+          : null;
       const content = typeof msg.content === 'string' ? msg.content : '';
-      return { idx, envelope: parseEnvelope(content), raw: msg };
+      return { idx, envelope: fromMap ?? parseEnvelope(content), raw: msg };
     });
 
     const total = parsed.length;

@@ -5,7 +5,8 @@ const koaBody = require('koa-body').default;
 const StorageController = require('../controllers/storageController');
 const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
-const { authRequired, authOptional } = require('../middlewares/storageAuth');
+
+const { operationAudit } = require('../middlewares/operationAudit');const { authRequired, authOptional } = require('../middlewares/storageAuth');
 const config = require('../config');
 
 const router = new Router({ prefix: '/api/v1/storage' });
@@ -75,7 +76,13 @@ const uploadMiddleware = koaBody({
  *               $ref: '#/components/schemas/EnvelopeStorageBucket'
  */
 router.get('/buckets', authWithBuiltinApiGuard, StorageController.listBuckets);
-router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket);
+router.post('/buckets', authWithBuiltinApiGuard, operationAudit({
+  domain: 'storage',
+  operationType: 'CREATE',
+  resourceType: 'bucket',
+  resourceId: (ctx) => ctx.body?.data?.id,
+  summaryKeys: ['name', 'code'],
+}), StorageController.createBucket);
 
 /**
  * @swagger
@@ -143,8 +150,19 @@ router.post('/buckets', authWithBuiltinApiGuard, StorageController.createBucket)
  *               $ref: '#/components/schemas/EnvelopeNull'
  */
 router.get('/buckets/:id', authWithBuiltinApiGuard, StorageController.getBucket);
-router.put('/buckets/:id', authWithBuiltinApiGuard, StorageController.updateBucket);
-router.delete('/buckets/:id', authWithBuiltinApiGuard, StorageController.deleteBucket);
+router.put('/buckets/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'storage',
+  operationType: 'UPDATE',
+  resourceType: 'bucket',
+  resourceId: (ctx) => ctx.params.id,
+  summaryKeys: ['name', 'code'],
+}), StorageController.updateBucket);
+router.delete('/buckets/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'storage',
+  operationType: 'DELETE',
+  resourceType: 'bucket',
+  resourceId: (ctx) => ctx.params.id,
+}), StorageController.deleteBucket);
 
 /**
  * @swagger

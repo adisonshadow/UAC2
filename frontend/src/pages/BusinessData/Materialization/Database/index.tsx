@@ -96,6 +96,7 @@ const MaterializedDatabasePage: React.FC = () => {
     }),
     refresh: loadStatus,
     applyMutation: (mutation) => {
+      if (mutation.type.startsWith('materialization.connection.')) return;
       if (
         mutation.type.startsWith('materialization.') ||
         mutation.scope?.includes('materialization') ||
@@ -108,7 +109,8 @@ const MaterializedDatabasePage: React.FC = () => {
       mutation.domain === 'bizdata'
       && (mutation.type.startsWith('materialization.')
         || mutation.scope === 'bizdata.database.status'
-        || mutation.scope === 'bizdata.materialization.execute'),
+        || mutation.scope === 'bizdata.materialization.execute')
+      && !mutation.type.startsWith('materialization.connection.'),
   });
 
   const handleMockData = () => {
@@ -120,14 +122,36 @@ const MaterializedDatabasePage: React.FC = () => {
     <div style={{ height: 'calc(100vh - 56px)' }}>
       <Splitter style={{ height: '100%' }}>
         <Splitter.Panel defaultSize={300} min={220} max="40%">
-          <div style={{ height: '100%', overflow: 'auto', paddingRight: 8 }}>
-            <ScopeDomainTree
-              items={materializedItems}
-              selectedScope={selectedScope}
-              onSelect={setSelectedScope}
-              loading={loading}
-              emptyDescription="暂无域"
-            />
+          <div
+            style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              paddingRight: 8,
+              minHeight: 0,
+            }}
+          >
+            <div style={{ flexShrink: 0, padding: '12px 16px 8px' }}>
+              <Select
+                style={{ width: '100%' }}
+                placeholder="选择数据库连接"
+                value={connectionId}
+                options={connections.map((c) => ({
+                  label: `${c.name} (${c.dbType})`,
+                  value: c.id,
+                }))}
+                onChange={setConnectionId}
+              />
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+              <ScopeDomainTree
+                items={materializedItems}
+                selectedScope={selectedScope}
+                onSelect={setSelectedScope}
+                loading={loading}
+                emptyDescription="暂无域"
+              />
+            </div>
           </div>
         </Splitter.Panel>
         <Splitter.Panel>
@@ -140,16 +164,6 @@ const MaterializedDatabasePage: React.FC = () => {
               onSelectionChange={(keys) => setSelectedRowKeys(keys)}
               headerExtra={
                 <Space wrap>
-                  <Select
-                    style={{ width: 240 }}
-                    placeholder="选择数据库连接"
-                    value={connectionId}
-                    options={connections.map((c) => ({
-                      label: `${c.name} (${c.dbType})`,
-                      value: c.id,
-                    }))}
-                    onChange={setConnectionId}
-                  />
                   <Button icon={<ReloadOutlined />} onClick={() => void loadStatus()}>
                     刷新
                   </Button>

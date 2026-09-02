@@ -4,7 +4,9 @@ const {
 const databaseConnectionService = require('./databaseConnectionService');
 const {
   withPgClient,
+  withMysqlClient,
   quotePgIdentifier,
+  quoteMysqlIdentifier,
 } = require('./materialization/connectionRunner');
 const { resolveEntityTableName } = require('./entityTableName');
 
@@ -91,6 +93,24 @@ async function dropPgTable(runtime, targetSchema, tableName) {
   });
 }
 
+async function mysqlTableExists(conn, schemaName, tableName) {
+  const [rows] = await conn.query(
+    'SELECT 1 AS ok FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1',
+    [schemaName, tableName],
+  );
+  return rows.length > 0;
+}
+
+async function dropMysqlTable(runtime, targetSchema, tableName) {
+  return withMysqlClient(runtime, async (conn) => {
+    const exists = await mysqlTableExists(conn, targetSchema, tableName);
+    if (!exists) return { status: 'missing' };
+    const qualified = `${quoteMysqlIdentifier(targetSchema)}.${quoteMysqlIdentifier(tableName)}`;
+    await conn.query(`DROP TABLE IF EXISTS ${qualified}`);
+    return { status: 'dropped' };
+  });
+}
+
 async function dropMongoCollection(runtime, targetSchema, tableName) {
   return withMongoClient(runtime, async (client) => {
     const db = client.db(targetSchema);
@@ -129,6 +149,8 @@ async function dropOnTarget(target, tableName) {
   let result;
   if (runtime.dbType === 'postgresql') {
     result = await dropPgTable(runtime, schema, tableName);
+  } else if (runtime.dbType === 'mysql') {
+    result = await dropMysqlTable(runtime, schema, tableName);
   } else if (runtime.dbType === 'mongodb') {
     result = await dropMongoCollection(runtime, schema, tableName);
   } else if (runtime.dbType === 'redis') {

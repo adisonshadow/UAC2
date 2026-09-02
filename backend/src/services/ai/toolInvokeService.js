@@ -5,6 +5,36 @@ const { executeToolWithEnvelope } = require('./executeToolWithEnvelope');
 const { executeHttpRequest } = require('./httpRequestToolService');
 const { validateToolArgs } = require('../../utils/validateToolArgs');
 const { normalizeToolResult } = require('../../utils/normalizeToolResult');
+const { writeOperationLog } = require('../operationAudit/writeOperationLog');
+
+/** server_builtin 绕过 HTTP 中间件时补记操作日志；永不抛错。 */
+function logBuiltinAudit(record) {
+  try {
+    writeOperationLog(record);
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+function builtinAuditBase(context = {}, overrides = {}) {
+  return {
+    operator_id: context.userId || null,
+    operator_name: null,
+    operator_type: 'USER',
+    application_id: null,
+    domain: 'bizdata',
+    user_id: null,
+    resource_name: null,
+    old_data: null,
+    new_data: null,
+    ip: null,
+    user_agent: null,
+    trace_id: context.traceId || null,
+    duration_ms: null,
+    request_summary: { source: 'server_builtin' },
+    ...overrides,
+  };
+}
 
 const BUILTIN_HANDLERS = {
   /** 公共 HTTP 请求（类 curl）；context.userToken 用于受信主机鉴权 */
@@ -49,21 +79,83 @@ const BUILTIN_HANDLERS = {
     targetSchema: args.targetSchema || args.target_schema,
     connectionId: args.connectionId || args.connection_id
   }),
-  bizdata_execute_materialization: async (args) => materializationService.executeMaterialization({
-    entityIds: args.entityIds || args.entity_ids,
-    targetSchema: args.targetSchema || args.target_schema,
-    connectionId: args.connectionId || args.connection_id,
-    dryRun: args.dryRun ?? args.dry_run ?? false,
-    expectedVersions: args.expectedVersions || args.expected_versions || {},
-    createTargetIfMissing: args.createTargetIfMissing ?? args.create_target_if_missing ?? false
-  }),
+  bizdata_execute_materialization: async (args, context = {}) => {
+    const connectionId = args.connectionId || args.connection_id || '';
+    const started = Date.now();
+    try {
+      const result = await materializationService.executeMaterialization({
+        entityIds: args.entityIds || args.entity_ids,
+        targetSchema: args.targetSchema || args.target_schema,
+        connectionId: args.connectionId || args.connection_id,
+        dryRun: args.dryRun ?? args.dry_run ?? false,
+        expectedVersions: args.expectedVersions || args.expected_versions || {},
+        createTargetIfMissing: args.createTargetIfMissing ?? args.create_target_if_missing ?? false
+      });
+      const failed = result && result.ok === false;
+      logBuiltinAudit(builtinAuditBase(context, {
+        operation_type: 'EXECUTE',
+        resource_type: 'materialization',
+        resource_id: String(result?.id || connectionId || ''),
+        status: failed ? 'FAILED' : 'SUCCESS',
+        error_message: failed ? String(result?.error?.message || result?.message || '').slice(0, 2000) || null : null,
+        duration_ms: Date.now() - started,
+        request_summary: {
+          source: 'server_builtin',
+          tool: 'bizdata_execute_materialization',
+        },
+      }));
+      return result;
+    } catch (err) {
+      if (err?.name === 'MaterializationTargetNotFoundError') {
+        const payload = {
+          ok: false,
+          kind: 'business_error',
+          error: {
+            code: 'TARGET_NOT_FOUND',
+            message: err.message,
+            hint:
+              '目标 Schema/库不存在。请 ask_user 确认后，用相同参数 + createTargetIfMissing=true 重试。禁止 http_request/重载 Skill/同参重试。bizdata_create_database_connection 只登记连接、不建物理库。',
+          },
+          data: {
+            targetSchema: err.targetSchema,
+            dbType: err.dbType,
+            connectionId: err.connectionId,
+            createTargetIfMissing: false,
+          },
+          meta: { tool: 'bizdata_execute_materialization' },
+        };
+        logBuiltinAudit(builtinAuditBase(context, {
+          operation_type: 'EXECUTE',
+          resource_type: 'materialization',
+          resource_id: String(err.connectionId || connectionId || ''),
+          status: 'FAILED',
+          error_message: String(err.message || '').slice(0, 2000) || null,
+          duration_ms: Date.now() - started,
+          request_summary: { source: 'server_builtin', tool: 'bizdata_execute_materialization' },
+        }));
+        return payload;
+      }
+      logBuiltinAudit(builtinAuditBase(context, {
+        operation_type: 'EXECUTE',
+        resource_type: 'materialization',
+        resource_id: String(connectionId || ''),
+        status: 'FAILED',
+        error_message: String(err?.message || '').slice(0, 2000) || null,
+        duration_ms: Date.now() - started,
+        request_summary: { source: 'server_builtin', tool: 'bizdata_execute_materialization' },
+      }));
+      throw err;
+    }
+  },
   bizdata_list_materialization_runs: async (args) => materializationService.listRuns({
     page: args.page || 1,
     size: args.pageSize || args.page_size || 10,
     connectionId: args.connectionId || args.connection_id
   }),
   bizdata_get_materialization_status: async (args) => materializationService.getMaterializationStatus({
-    connectionId: args.connectionId || args.connection_id
+    connectionId: args.connectionId || args.connection_id,
+    entityCodes: args.entityCodes || args.entity_codes || args.entityCode || args.entity_code,
+    entityIds: args.entityIds || args.entity_ids || args.entityId || args.entity_id
   }),
   bizdata_browse_materialized_schema: async (args) => materializedTableBrowseService.getTableSchema({
     entityId: args.entityId || args.entity_id,
@@ -77,13 +169,41 @@ const BUILTIN_HANDLERS = {
     page: args.page || 1,
     size: args.pageSize || args.page_size || args.size || 20
   }),
-  bizdata_insert_mock_data: async (args) => materializedTableBrowseService.insertMockData({
-    entityId: args.entityId || args.entity_id,
-    entityCode: args.entityCode || args.entity_code,
-    connectionId: args.connectionId || args.connection_id,
-    rows: args.rows || [],
-    rowCount: args.rowCount || args.row_count
-  }),
+  bizdata_insert_mock_data: async (args, context = {}) => {
+    const entityId = args.entityId || args.entity_id || '';
+    const started = Date.now();
+    try {
+      const result = await materializedTableBrowseService.insertMockData({
+        entityId: args.entityId || args.entity_id,
+        entityCode: args.entityCode || args.entity_code,
+        connectionId: args.connectionId || args.connection_id,
+        rows: args.rows || [],
+        rowCount: args.rowCount || args.row_count
+      });
+      const failed = result && result.ok === false;
+      logBuiltinAudit(builtinAuditBase(context, {
+        operation_type: 'CREATE',
+        resource_type: 'materialized_mock',
+        resource_id: String(entityId || args.entityCode || args.entity_code || ''),
+        status: failed ? 'FAILED' : 'SUCCESS',
+        error_message: failed ? String(result?.error?.message || result?.message || '').slice(0, 2000) || null : null,
+        duration_ms: Date.now() - started,
+        request_summary: { source: 'server_builtin', tool: 'bizdata_insert_mock_data' },
+      }));
+      return result;
+    } catch (err) {
+      logBuiltinAudit(builtinAuditBase(context, {
+        operation_type: 'CREATE',
+        resource_type: 'materialized_mock',
+        resource_id: String(entityId || args.entityCode || args.entity_code || ''),
+        status: 'FAILED',
+        error_message: String(err?.message || '').slice(0, 2000) || null,
+        duration_ms: Date.now() - started,
+        request_summary: { source: 'server_builtin', tool: 'bizdata_insert_mock_data' },
+      }));
+      throw err;
+    }
+  },
   /**
    * MS3：服务端 JS 编排占位。完整 tools 桥接后续接 toolInvoke；
    * 当前仅做受限表达式计算（无 tools），Python 返回明确不支持说明。

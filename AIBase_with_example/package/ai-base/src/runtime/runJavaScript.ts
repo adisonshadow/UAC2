@@ -28,7 +28,7 @@ function sanitizeRunCodeSource(source: string): string {
 function formatAvailableToolsHint(toolNames: string[]): string {
   const sample = toolNames.slice(0, 12).join(', ');
   const more = toolNames.length > 12 ? ` …共 ${toolNames.length} 个` : '';
-  return sample ? `可用：${sample}${more}` : '当前无已注册 client Tool';
+  return sample ? `可用：${sample}${more}` : '当前无本回合可编排业务 Tool';
 }
 
 function toBrief(contract: ToolContract | RunCodeToolContractBrief): RunCodeToolContractBrief {
@@ -113,7 +113,7 @@ export async function runJavaScriptCode(
       const hint = formatAvailableToolsHint(toolNames);
       return () => {
         throw new Error(
-          `未注册的 client Tool: ${prop}（run_code 仅能编排已注册 Tool；tools 不是数组，勿用 .filter/.map）。${hint}`,
+          `未授权或不在本回合可编排名: ${prop}（run_code 仅能编排已授权业务 Tool；tools 不是数组，勿用 .filter/.map）。${hint}`,
         );
       };
     },
