@@ -3,6 +3,9 @@
   "version": "1.0.7",
   "description": "UAC REST API Service",
   "main": "src/app.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "NODE_ENV=development nodemon src/app.js",
     "dev:watch": "NODE_ENV=development nodemon src/app.js",
@@ -29,7 +32,6 @@
     "@tus/server": "^2.4.4",
     "ajv": "^8.20.0",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.10.0",
     "dotenv": "^16.3.1",
     "eslint": "^9.27.0",
     "helmet": "^8.2.0",

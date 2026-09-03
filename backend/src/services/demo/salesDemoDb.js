@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const config = require('../../config');
 
 let dbInstance = null;
@@ -20,10 +20,10 @@ function getDb() {
   }
   const dbPath = resolveDbPath();
   if (!fs.existsSync(dbPath)) {
-    throw new Error(`销售 Demo SQLite 不存在: ${dbPath}，请先运行 yarn init-sales-demo-db`);
+    throw new Error(`销售 Demo SQLite 不存在: ${dbPath}，请先运行 npm run init-sales-demo-db`);
   }
-  dbInstance = new Database(dbPath, { readonly: true, fileMustExist: true });
-  dbInstance.pragma('foreign_keys = ON');
+  dbInstance = new DatabaseSync(dbPath, { readOnly: true });
+  dbInstance.exec('PRAGMA foreign_keys = ON');
   return dbInstance;
 }
 

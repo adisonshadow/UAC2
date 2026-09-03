@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 
 const projectRoot = path.resolve(__dirname, '..');
 const defaultSqlPath = path.resolve(projectRoot, '../AIBase_with_example/scripts/sales-demo-db.sql');
@@ -36,7 +36,7 @@ function initSalesDemoDb() {
   }
 
   const sql = fs.readFileSync(sqlPath, 'utf8');
-  const db = new Database(dbPath);
+  const db = new DatabaseSync(dbPath);
   db.exec(sql);
   db.close();
 
