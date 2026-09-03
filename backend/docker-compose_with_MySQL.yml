@@ -32,6 +32,24 @@ services:
       timeout: 5s
       retries: 10
 
+  mysql:
+    image: mysql:8.0
+    container_name: EADAF-mysql
+    restart: always
+    ports:
+      - "${MYSQL_PORT:-13306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Root@123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bizdata}
+    volumes:
+      - EADAF_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   EADAF_postgres_data:
   EADAF_redis_data:
+  EADAF_mysql_data:

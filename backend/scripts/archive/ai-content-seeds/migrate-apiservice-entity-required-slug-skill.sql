@@ -1,5 +1,5 @@
 -- 增量：主实体必选；服务短名=实体末段+操作后缀；隐藏 Scope 选择
--- 用法：psql -h localhost -p 35432 -U yoyo -d fyMOM -f scripts/migrate-apiservice-entity-required-slug-skill.sql
+-- 用法：psql -h localhost -p 35432 -U my_name -d eadaf_db -f scripts/migrate-apiservice-entity-required-slug-skill.sql
 
 UPDATE aibase.tools
 SET

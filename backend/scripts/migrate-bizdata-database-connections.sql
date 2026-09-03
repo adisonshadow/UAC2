@@ -35,9 +35,9 @@ SELECT
     'postgresql',
     'localhost',
     35432,
-    'yoyo',
+    'my_name',
     NULL,
-    'fyMOM',
+    'eadaf_db',
     'bizdata_mat',
     true
 WHERE NOT EXISTS (

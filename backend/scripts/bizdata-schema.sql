@@ -109,8 +109,8 @@ INSERT INTO bizdata.database_connections (
     'postgresql',
     'localhost',
     35432,
-    'yoyo',
-    'fyMOM',
+    'my_name',
+    'eadaf_db',
     'bizdata_mat',
     true
 );

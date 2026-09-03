@@ -5,8 +5,8 @@
 {
   "host": "localhost",        // 数据库主机地址
   "port": 15432,             // 数据库端口
-  "database": "fyMOM",       // 数据库名称
-  "user": "yoyo",            // 数据库用户名
+  "database": "eadaf_db",       // 数据库名称
+  "user": "my_name",            // 数据库用户名
   "password": "123456",      // 数据库密码
   "schema": "uac",           // 数据库模式
   "max_connections": 20,     // 最大连接数
@@ -143,8 +143,8 @@
 ### 数据库配置
 - `host`: 数据库服务器地址，默认为 localhost
 - `port`: 数据库端口号，默认为 15432
-- `database`: 数据库名称，默认为 fyMOM
-- `user`: 数据库用户名，默认为 yoyo
+- `database`: 数据库名称，默认为 eadaf_db
+- `user`: 数据库用户名，默认为 my_name
 - `password`: 数据库密码，默认为 123456
 - `schema`: 数据库模式，默认为 uac
 - `max_connections`: 连接池最大连接数，默认为 20

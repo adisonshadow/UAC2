@@ -58,8 +58,8 @@ const defaultUploadTypes = {
 const postgresql = {
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT, 35432),
-  database: process.env.POSTGRES_DATABASE || 'fyMOM',
-  user: process.env.POSTGRES_USER || 'yoyo',
+  database: process.env.POSTGRES_DATABASE || 'eadaf_db',
+  user: process.env.POSTGRES_USER || 'my_name',
   password: process.env.POSTGRES_PASSWORD || '123456',
   schema: process.env.POSTGRES_SCHEMA || 'uac',
   max_connections: parseInt(process.env.POSTGRES_MAX_CONNECTIONS, 20),
