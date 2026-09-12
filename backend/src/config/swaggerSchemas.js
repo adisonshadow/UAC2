@@ -979,9 +979,9 @@ Object.assign(schemas, {
     obj('应用导入结果', {
       strategy: str('冲突策略', 'overwrite'),
       aborted: bool('abort 策略下是否因冲突中止', false),
-      sections: obj('各节执行结果 { status, counts, errors }'),
-      chainStoppedAt: str('依赖链终止节(null 表示未终止)', 'apiServices'),
-      chainError: str('依赖链终止原因'),
+      sections: obj('各节执行结果 { status, counts, errors, notes }。notes 为预期跳过说明,不算失败'),
+      chainStoppedAt: str('硬依赖链终止节(uac/application/entities);物化与行数据失败不写入此项', 'entities'),
+      chainError: str('硬依赖链终止原因'),
       conflicts: { type: 'array', items: { type: 'object' }, description: 'abort 中止时的冲突清单' },
       warnings: { type: 'array', items: { type: 'string' } },
       durationMs: int('总耗时(毫秒)', 1234),

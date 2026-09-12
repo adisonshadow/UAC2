@@ -100,7 +100,7 @@ router.post('/preview', authWithBuiltinApiGuard, operationAudit({
  * /api/v1/system/app-transfer/import:
  *   post:
  *     tags: [System]
- *     summary: 按策略导入应用导出文件(写操作,不可自动撤销) [需要认证]
+ *     summary: 按策略导入应用导出文件(写操作,不可自动撤销;物化 run.created_by 记操作者 UUID) [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       content:
@@ -112,7 +112,7 @@ router.post('/preview', authWithBuiltinApiGuard, operationAudit({
  *               strategy: { type: string, enum: [overwrite, skip, abort], default: overwrite, description: '冲突策略:覆盖更新 / 跳过已存在 / 有冲突即中止(不写任何数据)' }
  *     responses:
  *       200:
- *         description: 导入结果(分节计数与错误)
+ *         description: 导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac/includeAi 写入 notes 而非 errors
  *         content:
  *           application/json:
  *             schema:

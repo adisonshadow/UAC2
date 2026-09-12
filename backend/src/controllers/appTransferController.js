@@ -84,7 +84,9 @@ class AppTransferController {
       return;
     }
     try {
-      const data = await AppTransferImportService.importAppFile(file.filepath, strategy);
+      const data = await AppTransferImportService.importAppFile(file.filepath, strategy, {
+        createdBy: ctx.state.user?.user_id,
+      });
       ctx.body = {
         code: 200,
         message: data.chainStoppedAt

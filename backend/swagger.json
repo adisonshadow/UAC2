@@ -4762,17 +4762,17 @@
               },
               "sections": {
                 "type": "object",
-                "description": "各节执行结果 { status, counts, errors }",
+                "description": "各节执行结果 { status, counts, errors, notes }。notes 为预期跳过说明,不算失败",
                 "properties": {}
               },
               "chainStoppedAt": {
                 "type": "string",
-                "description": "依赖链终止节(null 表示未终止)",
-                "example": "apiServices"
+                "description": "硬依赖链终止节(uac/application/entities);物化与行数据失败不写入此项",
+                "example": "entities"
               },
               "chainError": {
                 "type": "string",
-                "description": "依赖链终止原因",
+                "description": "硬依赖链终止原因",
                 "example": "string"
               },
               "conflicts": {
@@ -19717,12 +19717,13 @@
         },
         "responses": {
           "200": {
-            "description": "返回 eadaf-app-export JSON 文件附件(Content-Disposition)",
+            "description": "返回 eadaf-app-export JSON 文件附件(Content-Disposition;body 为 octet-stream)",
             "content": {
-              "application/json": {
+              "application/octet-stream": {
                 "schema": {
-                  "type": "object",
-                  "description": "eadaf-app-export 格式的完整导出文件"
+                  "type": "string",
+                  "format": "binary",
+                  "description": "eadaf-app-export 格式的完整导出文件(JSON 内容)"
                 }
               }
             }
@@ -19782,7 +19783,7 @@
         "tags": [
           "System"
         ],
-        "summary": "按策略导入应用导出文件(写操作,不可自动撤销) [需要认证]",
+        "summary": "按策略导入应用导出文件(写操作,不可自动撤销;物化 run.created_by 记操作者 UUID) [需要认证]",
         "security": [
           {
             "bearerAuth": []
@@ -19816,7 +19817,7 @@
         },
         "responses": {
           "200": {
-            "description": "导入结果(分节计数与错误)",
+            "description": "导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac/includeAi 写入 notes 而非 errors",
             "content": {
               "application/json": {
                 "schema": {

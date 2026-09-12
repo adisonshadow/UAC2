@@ -1261,6 +1261,7 @@ declare namespace API {
     status?: 'ok' | 'failed' | 'skipped';
     counts?: Record<string, number>;
     errors?: string[];
+    notes?: string[];
   };
 
   /** 导入执行结果 */

@@ -759,6 +759,41 @@ const AppTransferTab: React.FC = () => {
                       );
                     },
                   },
+                  {
+                    title: '说明',
+                    render: (_, record) => {
+                      const notes =
+                        importResult.sections?.[record.key]?.notes || [];
+                      if (!notes.length) return '-';
+                      return (
+                        <Typography.Text
+                          type="secondary"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() =>
+                            modal.info({
+                              title: `${record.label} 说明`,
+                              width: 640,
+                              content: (
+                                <ul
+                                  style={{
+                                    maxHeight: 360,
+                                    overflow: 'auto',
+                                    paddingLeft: 18,
+                                  }}
+                                >
+                                  {notes.map((e, i) => (
+                                    <li key={i}>{e}</li>
+                                  ))}
+                                </ul>
+                              ),
+                            })
+                          }
+                        >
+                          {notes.length} 条
+                        </Typography.Text>
+                      );
+                    },
+                  },
                 ]}
               />
               {(importResult.warnings?.length || 0) > 0 && (

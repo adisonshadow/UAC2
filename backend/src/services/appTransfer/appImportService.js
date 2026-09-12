@@ -3,8 +3,9 @@
  *
  * 依赖链:uac 最小结构 → uac 用户数据(可选)→ application → entities(结构) → 物化
  * → entityData → apiServices → collectionPipelines → outboundWebhooks → metrics
- * → hooks → skills → storageBuckets;链上节失败即终止(已提交的不回滚)。
- * 可选节(uacUsers / ai)失败不阻断主链,单独标红。
+ * → hooks → skills → storageBuckets。
+ * 硬终止节:uac / application / entities(后续外键依赖结构)。
+ * 软失败节:uacUsers / materialization / entityData / ai — 只标红本节约,继续后续元数据。
  *
  * 关键规则:
  * - idMap 只覆盖元数据表;物化表行数据保留源主键;
@@ -28,6 +29,14 @@ const {
 const { pickModelFields, readTableColumns } = require('./appExportService');
 
 const STRATEGIES = ['overwrite', 'skip', 'abort'];
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** materialization_runs.created_by 是 UUID,非 UUID 占位串会整节失败 */
+function normalizeCreatedBy(value) {
+  const s = String(value || '').trim();
+  return UUID_RE.test(s) ? s : null;
+}
 
 function quotePgIdentifier(name) {
   return `"${String(name).replace(/"/g, '""')}"`;
@@ -66,9 +75,10 @@ function importHookSecret(hook) {
 }
 
 class ImportContext {
-  constructor(file, strategy) {
+  constructor(file, strategy, options = {}) {
     this.file = file;
     this.strategy = strategy;
+    this.createdBy = normalizeCreatedBy(options.createdBy);
     this.dataMode = file.options?.dataMode === 'data_only' ? 'data_only' : 'structure_and_data';
     this.includeUac = file.options?.includeUac === true;
     this.includeAi = file.options?.includeAi === true;
@@ -104,8 +114,20 @@ class ImportContext {
 
   beginSection(name) {
     this.currentSection = name;
-    const section = { status: 'ok', counts: { created: 0, updated: 0, skipped: 0, failed: 0 }, errors: [] };
+    const section = {
+      status: 'ok',
+      counts: { created: 0, updated: 0, skipped: 0, failed: 0 },
+      errors: [],
+      notes: [],
+    };
     this.result.sections[name] = section;
+    return section;
+  }
+
+  /** 预期跳过:写入 notes,不进 errors,避免前端当成失败 */
+  skipSection(section, message) {
+    section.status = 'skipped';
+    section.notes.push(message);
     return section;
   }
 
@@ -281,9 +303,7 @@ class ImportContext {
   async importUacUsers() {
     const section = this.beginSection('uacUsers');
     if (!this.includeUac) {
-      section.status = 'skipped';
-      section.errors.push('未勾选 includeUac,跳过用户/部门数据');
-      return section;
+      return this.skipSection(section, '未勾选 includeUac,跳过用户/部门数据');
     }
     const uac = this.file.uac || {};
     const departments = Array.isArray(uac.departments) ? uac.departments : [];
@@ -475,9 +495,7 @@ class ImportContext {
   async importEntities() {
     const section = this.beginSection('entities');
     if (this.dataMode === 'data_only') {
-      section.status = 'skipped';
-      section.errors.push('data_only 模式不落结构,实体仅作版本指纹校验');
-      return section;
+      return this.skipSection(section, 'data_only 模式不落结构,实体仅作版本指纹校验');
     }
     const entities = this.file.entities || {};
     const items = Array.isArray(entities.items) ? entities.items : [];
@@ -590,9 +608,7 @@ class ImportContext {
   async materializeEntities() {
     const section = this.beginSection('materialization');
     if (this.dataMode === 'data_only') {
-      section.status = 'skipped';
-      section.errors.push('data_only 模式在写数阶段按目标现结构物化');
-      return section;
+      return this.skipSection(section, 'data_only 模式在写数阶段按目标现结构物化');
     }
     const entityData = Array.isArray(this.file.entityData) ? this.file.entityData : [];
     // 所有带连接信息的实体(无论是否带行数据)都参与物化,保证目标端物理表就绪
@@ -629,7 +645,7 @@ class ImportContext {
           connectionId: connId,
           expectedVersions,
           createTargetIfMissing: true,
-          createdBy: 'app-transfer-import',
+          createdBy: this.createdBy,
         });
         section.counts.created += entries.length;
       }
@@ -647,9 +663,7 @@ class ImportContext {
     const section = this.beginSection('entityData');
     const entityData = Array.isArray(this.file.entityData) ? this.file.entityData : [];
     if (!entityData.length) {
-      section.status = 'skipped';
-      section.errors.push('文件不含行数据');
-      return section;
+      return this.skipSection(section, '文件不含行数据');
     }
     for (const item of entityData) {
       const label = `实体「${item.entityCode}」`;
@@ -715,7 +729,7 @@ class ImportContext {
               entityIds: [targetEntity.id],
               connectionId: conn.id,
               createTargetIfMissing: true,
-              createdBy: 'app-transfer-import',
+              createdBy: this.createdBy,
             });
           } catch (e) {
             section.counts.failed += 1;
@@ -1135,9 +1149,7 @@ class ImportContext {
   async importAi() {
     const section = this.beginSection('ai');
     if (!this.includeAi) {
-      section.status = 'skipped';
-      section.errors.push('未勾选 includeAi,跳过实例级 AI 目录');
-      return section;
+      return this.skipSection(section, '未勾选 includeAi,跳过实例级 AI 目录');
     }
     const ai = this.file.ai || {};
     const providers = Array.isArray(ai.providers) ? ai.providers : [];
@@ -1301,11 +1313,12 @@ async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strat
  * 导入主入口。
  * @param {string} filePath 上传临时文件
  * @param {string} strategy overwrite | skip | abort
+ * @param {{ createdBy?: string }} [options] createdBy 须为操作者 UUID,否则物化 run 记空
  */
-async function importAppFile(filePath, strategy = 'overwrite') {
+async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
   const effectiveStrategy = STRATEGIES.includes(strategy) ? strategy : 'overwrite';
   const file = await loadAndValidateFile(filePath);
-  const ctx = new ImportContext(file, effectiveStrategy);
+  const ctx = new ImportContext(file, effectiveStrategy, options);
   const result = { strategy: effectiveStrategy, sections: {}, warnings: [], durationMs: 0 };
   ctx.result = result;
   const startedAt = Date.now();
@@ -1316,7 +1329,7 @@ async function importAppFile(filePath, strategy = 'overwrite') {
     const preview = await previewImportFile(filePath);
     if (preview.conflicts.length || preview.hookMultiMatch.length) {
       result.aborted = true;
-      result.sections = { aborted: { status: 'skipped', counts: {}, errors: ['abort 策略:存在冲突,未写入任何数据'] } };
+      result.sections = { aborted: { status: 'skipped', counts: {}, errors: ['abort 策略:存在冲突,未写入任何数据'], notes: [] } };
       result.conflicts = preview.conflicts;
       result.hookMultiMatch = preview.hookMultiMatch;
       result.durationMs = Date.now() - startedAt;
@@ -1339,18 +1352,21 @@ async function importAppFile(filePath, strategy = 'overwrite') {
     ['skills', () => ctx.importSkills()],
     ['storageBuckets', () => ctx.importStorageBuckets()],
   ];
+  // 物化/行数据失败不挡住 API 等元数据;uacUsers 本就可选
+  const softFailSections = new Set(['uacUsers', 'materialization', 'entityData']);
 
   for (const [name, step] of chainSteps) {
-    // uacUsers 为可选节:失败记录后继续主链(api_service_permissions 中部门授权将 skip 并报告)
-    const optional = name === 'uacUsers';
      
     const section = await step();
-    if (section.status === 'failed' && !optional) {
-      result.chainStoppedAt = name;
-      result.chainError = section.errors[section.errors.length - 1] || `${name} 失败`;
-      result.warnings.push('依赖链已终止;此前已提交的主库节与外部库行数据不会自动回滚');
-      break;
+    if (section.status !== 'failed') continue;
+    if (softFailSections.has(name)) {
+      result.warnings.push(`「${name}」节失败,已继续导入后续元数据`);
+      continue;
     }
+    result.chainStoppedAt = name;
+    result.chainError = section.errors[section.errors.length - 1] || `${name} 失败`;
+    result.warnings.push('依赖链已终止;此前已提交的主库节与外部库行数据不会自动回滚');
+    break;
   }
 
   // 可选节:AI 目录(失败只标红)
