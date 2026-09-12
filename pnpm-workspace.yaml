@@ -6,6 +6,11 @@ packages:
   - "backend"
   # AI Base demo 项目
   - "AIBase_with_example"
+allowBuilds:
+  '@parcel/watcher': true
+  es5-ext: true
+  esbuild: true
+  sharp: true
 overrides:
   "@types/react": "^19.2.17"
   "@types/react-dom": "^19.2.3"
