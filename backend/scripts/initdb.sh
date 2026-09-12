@@ -35,6 +35,10 @@ echo "开始创建数据库结构..."
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/schemas.sql" || { echo "创建数据库结构失败"; exit 1; }
 echo "数据库结构创建完成"
 
+echo "开始写入系统内置应用 EADAF（不含密钥）..."
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/seed-eadaf-application.sql" || { echo "写入系统内置应用失败"; exit 1; }
+echo "系统内置应用 EADAF 写入完成"
+
 echo "开始创建 AIBase 数据库结构..."
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-schema.sql" || { echo "创建 AIBase 数据库结构失败"; exit 1; }
 echo "AIBase 数据库结构创建完成"
@@ -82,8 +86,11 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-scope-docs.sql" 
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-transport-protocols.sql" || { echo "API 服务传输协议迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-skill-completion-strategy.sql" || { echo "Skill 完成策略迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-hook-center.sql" || { echo "钩子管理迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-application-outbound-webhook-scope.sql" || { echo "应用 outbound_webhook_scope 迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-system-storage-bucket.sql" || { echo "系统存储桶种子失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-hook-skill.sql" || { echo "钩子管理 Skill 种子失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/20260710_add_model_rate_limit.sql" || { echo "模型 rate_limit 迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-app-transfer-permissions.sql" || { echo "应用导出导入权限种子失败"; exit 1; }
 
 echo "结构对齐增量迁移完成"
 
@@ -94,6 +101,10 @@ echo "业务数据示例种子导入完成"
 echo "开始导入 UAC 权限目录..."
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/uac-permissions-catalog-seed.sql" || { echo "导入 UAC 权限目录失败"; exit 1; }
 echo "UAC 权限目录导入完成"
+
+echo "创建超级管理员..."
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/superadmin.sql" || { echo "创建超级管理员失败"; exit 1; }
+echo "超级管理员创建完成"
 
 if [[ "$*" == *"--with-aibase-seed"* ]]; then
     # AI 元数据权威源：aibase-ai-seed.sql（由 export-aibase-ai-seed.js 从现库导出）。
@@ -109,10 +120,6 @@ if [[ "$*" == *"--with-aibase-seed"* ]]; then
     (cd "$PROJECT_ROOT" && node scripts/init-sales-demo-db.js) || { echo "初始化销售 Demo SQLite 失败"; exit 1; }
     echo "销售 Demo SQLite 初始化完成"
 fi
-
-echo "创建超级管理员..."
-PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/superadmin.sql" || { echo "创建超级管理员失败"; exit 1; }
-echo "超级管理员创建完成"
 
 if [[ "$*" == *"--with-mock"* ]]; then
     echo "开始导入测试数据..."

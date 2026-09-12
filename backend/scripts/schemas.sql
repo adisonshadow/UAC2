@@ -383,6 +383,7 @@ CREATE TABLE uac.applications (
     api_data_scope JSONB,
     bizdata_scope_codes JSONB NOT NULL DEFAULT '[]',
     builtin_api_scope JSONB NOT NULL DEFAULT '{"permissionCodes":[]}'::jsonb,
+    outbound_webhook_scope JSONB NOT NULL DEFAULT '{"domainCodes":[],"webhookCodes":[]}'::jsonb,
     description TEXT,
     top_level_skill_markdown TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -408,6 +409,7 @@ COMMENT ON COLUMN uac.applications.api_connect_config IS 'API连接配置（JSON
 COMMENT ON COLUMN uac.applications.api_data_scope IS 'API数据权限范围（JSON格式，包含API编码和对应的权限值）';
 COMMENT ON COLUMN uac.applications.bizdata_scope_codes IS '业务数据 Scope 编码列表';
 COMMENT ON COLUMN uac.applications.builtin_api_scope IS '可访问内置API：{permissionCodes:[...]}';
+COMMENT ON COLUMN uac.applications.outbound_webhook_scope IS '可关联的提交外部API：{domainCodes:[], webhookCodes:[]}';
 COMMENT ON COLUMN uac.applications.description IS '应用端描述';
 COMMENT ON COLUMN uac.applications.top_level_skill_markdown IS '应用顶层 Skill 说明（可选，描述本应用 Skill/Tool 用法）';
 COMMENT ON COLUMN uac.applications.created_at IS '创建时间';

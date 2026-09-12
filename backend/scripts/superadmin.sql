@@ -45,9 +45,11 @@ VALUES (
     'ACTIVE'
 );
 
--- 6. 创建系统内置应用 EADAF（本系统，不可删除）
+-- 6. 确保系统内置应用 EADAF 存在（不含密钥；完整字段见 seed-eadaf-application.sql）
 INSERT INTO uac.applications (
-    application_id, name, code, logo_url, status, description
+    application_id, name, code, logo_url, status, description,
+    sso_enabled, api_enabled, api_connect_config, sso_config,
+    bizdata_scope_codes, builtin_api_scope, outbound_webhook_scope
 )
 VALUES (
     '10000000-0000-4000-8000-000000000002',
@@ -55,10 +57,17 @@ VALUES (
     'EADAF',
     '/images/logo.svg',
     'ACTIVE',
-    'EADAF 本系统（系统内置应用，不可删除）'
+    'EADAF 本系统（系统内置应用，不可删除）',
+    false,
+    true,
+    NULL,
+    NULL,
+    '[]'::jsonb,
+    '{"permissionCodes":[]}'::jsonb,
+    '{"domainCodes":[],"webhookCodes":[]}'::jsonb
 )
 ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
-    logo_url = EXCLUDED.logo_url,
     description = EXCLUDED.description,
+    api_enabled = EXCLUDED.api_enabled,
     updated_at = CURRENT_TIMESTAMP;

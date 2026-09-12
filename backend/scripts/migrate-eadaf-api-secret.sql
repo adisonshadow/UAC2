@@ -1,8 +1,6 @@
--- EADAF 系统应用 API 密钥（dev 联调）
+-- 仅打开系统应用 API 开关。
+-- 禁止在仓库或种子中写入 app_secret / client_secret；密钥在管理端「生成密钥」后自行保管。
 UPDATE uac.applications
-SET api_connect_config = jsonb_build_object(
-  'app_secret', '0776b8f3ca4d8232630ca04b984ba8d2ec03a73c79e6161c32e3bf35904d7f93'
-),
-api_enabled = true,
-updated_at = CURRENT_TIMESTAMP
+SET api_enabled = true,
+    updated_at = CURRENT_TIMESTAMP
 WHERE code = 'EADAF';
