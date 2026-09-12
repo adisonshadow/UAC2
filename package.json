@@ -6,12 +6,6 @@
     "dev": "bash scripts/dev.sh",
     "start": "bash scripts/preview.sh"
   },
-  "pnpm": {
-    "overrides": {
-      "@types/react": "^19.2.17",
-      "@types/react-dom": "^19.2.3"
-    }
-  },
   "devDependencies": {
     "tsx": "^4.23.12"
   }
