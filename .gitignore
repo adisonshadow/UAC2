@@ -74,4 +74,3 @@ backend/img_crop_cache
 # --- AIBase_with_example ---
 AIBase_with_example/ref-demo/
 
-tmp/
