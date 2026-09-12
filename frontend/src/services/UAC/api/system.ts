@@ -3,6 +3,9 @@ import { request } from '@/utils/request';
 
 const BASE = '/api/v1/system';
 
+/** 应用导出/导入、备份恢复等长任务统一超时（默认 10s 不够） */
+export const APP_TRANSFER_TIMEOUT = 30 * 60 * 1000;
+
 export async function getSystemFeatures() {
   return request<{
     code: number;
@@ -47,7 +50,62 @@ export async function postSystemBackupRestore(file: File) {
     method: 'POST',
     data: formData,
     requestType: 'form',
-    // 恢复同步执行（后端等待 pg_restore 完成），覆盖默认 10s 超时
-    timeout: 30 * 60 * 1000,
+    // 恢复同步执行（后端等待 pg_restore 完成），覆盖默认超时
+    timeout: APP_TRANSFER_TIMEOUT,
   });
+}
+
+/** 按应用导出 JSON 迁移文件：返回附件 blob（失败时可能是 JSON 错误信封） */
+export async function postAppTransferExport(
+  body: API.AppTransferExportParams,
+): Promise<Blob> {
+  return request<Blob>(`${BASE}/app-transfer/export`, {
+    method: 'POST',
+    data: body,
+    responseType: 'blob',
+    skipErrorHandler: true,
+    timeout: APP_TRANSFER_TIMEOUT,
+  });
+}
+
+/** 上传导出文件做导入预览：返回节条数/冲突/连接匹配等摘要，不写数据 */
+export async function postAppTransferPreview(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<{
+    code: number;
+    message: string;
+    data: API.AppTransferPreviewResult;
+  }>(`${BASE}/app-transfer/preview`, {
+    method: 'POST',
+    data: formData,
+    requestType: 'form',
+    timeout: APP_TRANSFER_TIMEOUT,
+  });
+}
+
+/** 按策略执行导入（overwrite/skip/abort），返回分节结果 */
+export async function postAppTransferImport(file: File, strategy: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('strategy', strategy);
+  return request<{
+    code: number;
+    message: string;
+    data: API.AppTransferImportResult;
+  }>(`${BASE}/app-transfer/import`, {
+    method: 'POST',
+    data: formData,
+    requestType: 'form',
+    timeout: APP_TRANSFER_TIMEOUT,
+  });
+}
+
+/** 从 Content-Disposition 解析附件文件名（形如 attachment; filename="xxx.json"） */
+export function getAttachmentFileName(
+  disposition: string | null | undefined,
+): string | null {
+  if (!disposition) return null;
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  return match ? decodeURIComponent(match[1]) : null;
 }

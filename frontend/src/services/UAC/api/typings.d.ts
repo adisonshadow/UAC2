@@ -856,7 +856,12 @@ declare namespace API {
     connectionName?: string;
     dbType?: string;
     targetSchema?: string;
-    entities?: Array<{ id: string; code: string; version: number; tableName?: string }>;
+    entities?: Array<{
+      id: string;
+      code: string;
+      version: number;
+      tableName?: string;
+    }>;
     sql?: string;
     generatedCode?: Record<string, string>;
   };
@@ -980,8 +985,13 @@ declare namespace API {
     queryScript?: string;
     formulaConfig?: Record<string, any>;
     computeMode?: 'scheduled' | 'on_demand' | 'both';
-  scheduleType?: 'manual' | 'hourly' | 'daily' | 'cron';
-  scheduleConfig?: { hour?: number; minute?: number; expression?: string; cron?: string };
+    scheduleType?: 'manual' | 'hourly' | 'daily' | 'cron';
+    scheduleConfig?: {
+      hour?: number;
+      minute?: number;
+      expression?: string;
+      cron?: string;
+    };
     unit?: string;
     category?: string;
     scopeCode?: string;
@@ -1184,6 +1194,89 @@ declare namespace API {
   type SystemBackupList = {
     backupDir?: string;
     items?: SystemBackupItem[];
+  };
+
+  /** 应用导出请求参数 */
+  type AppTransferExportParams = {
+    applicationId?: string;
+    dataMode?: 'structure_and_data' | 'data_only';
+    includeUac?: boolean;
+    includeAi?: boolean;
+  };
+
+  /** 导入预览:业务键/第二唯一键冲突项 */
+  type AppTransferPreviewConflict = {
+    section?: string;
+    code?: string;
+    key?: string;
+    value?: string;
+    existingCode?: string;
+    type?: 'business_key' | 'second_key';
+  };
+
+  /** 导入预览:连接匹配结果(只匹配不创建) */
+  type AppTransferConnectionMatch = {
+    sourceId?: string;
+    name?: string;
+    dbType?: string;
+    targetSchema?: string;
+    isDefault?: boolean;
+    matched?: boolean;
+    confidence?: 'default' | 'schema' | 'name' | 'none';
+    targetId?: string;
+    targetName?: string;
+  };
+
+  /** 导入预览:行数据可写性 */
+  type AppTransferEntityDataPreview = {
+    entityCode?: string;
+    dbType?: string;
+    rowCount?: number;
+    writable?: boolean;
+    reason?: string;
+  };
+
+  /** 导入预览摘要(不写数据) */
+  type AppTransferPreviewResult = {
+    format?: string;
+    formatVersion?: number;
+    options?: AppTransferExportParams & {
+      secretsInPlaintext?: boolean;
+      exportedAt?: string;
+    };
+    application?: { code?: string; name?: string };
+    targetApplicationExists?: boolean;
+    sections?: Record<string, unknown>;
+    conflicts?: AppTransferPreviewConflict[];
+    hookMultiMatch?: { name?: string; eventType?: string; matched?: number }[];
+    connectionMatches?: AppTransferConnectionMatch[];
+    entityData?: AppTransferEntityDataPreview[];
+    missingReferences?: string[];
+    largeEntities?: { entityCode?: string; rowCount?: number }[];
+    warnings?: string[];
+  };
+
+  /** 导入分节结果 */
+  type AppTransferSectionResult = {
+    status?: 'ok' | 'failed' | 'skipped';
+    counts?: Record<string, number>;
+    errors?: string[];
+  };
+
+  /** 导入执行结果 */
+  type AppTransferImportResult = {
+    strategy?: 'overwrite' | 'skip' | 'abort';
+    aborted?: boolean;
+    sections?: Record<string, AppTransferSectionResult>;
+    chainStoppedAt?: string;
+    chainError?: string;
+    conflicts?: AppTransferPreviewConflict[];
+    hookMultiMatch?: { name?: string; eventType?: string; matched?: number }[];
+    warnings?: string[];
+    dataMode?: string;
+    includeUac?: boolean;
+    includeAi?: boolean;
+    durationMs?: number;
   };
 
   type BizdataDataStandard = {
@@ -1392,13 +1485,19 @@ declare namespace API {
     enabledOperations?: string[];
     transportProtocols?: Array<'http' | 'sse' | 'websocket'>;
     securityConfig?: Record<string, unknown>;
-    responseOverrides?: Record<string, {
-      responsesSchema?: Record<string, unknown>;
-      responseExample?: unknown;
-    }>;
-    requestOverrides?: Record<string, {
-      requestExample?: unknown;
-    }>;
+    responseOverrides?: Record<
+      string,
+      {
+        responsesSchema?: Record<string, unknown>;
+        responseExample?: unknown;
+      }
+    >;
+    requestOverrides?: Record<
+      string,
+      {
+        requestExample?: unknown;
+      }
+    >;
   };
 
   type ApiServiceDomainTreeItem = {
@@ -1616,7 +1715,12 @@ declare namespace API {
   };
 
   type HookListItem = API.Hook & {
-    latestRun?: { status: string; triggerSource: string; startedAt: string; error?: string | null } | null;
+    latestRun?: {
+      status: string;
+      triggerSource: string;
+      startedAt: string;
+      error?: string | null;
+    } | null;
     stats7d?: { total: number; success: number; successRate: number | null };
   };
 
@@ -1715,7 +1819,13 @@ declare namespace API {
     eventType: string;
     eventDepth: number;
     triggerSource: 'event' | 'test' | 'replay' | 'schedule';
-    payload: { id: string; type: string; occurredAt: string; depth: number; payload: Record<string, unknown> };
+    payload: {
+      id: string;
+      type: string;
+      occurredAt: string;
+      depth: number;
+      payload: Record<string, unknown>;
+    };
     actionConfigSnapshot?: Record<string, unknown> | null;
     status: 'success' | 'failed' | 'timeout' | 'skipped' | 'suppressed';
     attempt: number;

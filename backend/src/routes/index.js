@@ -27,6 +27,7 @@ const builtinApiRoutes = require('./builtinApiRoutes');
 const outboundWebhookRoutes = require('./outboundWebhookRoutes');
 const exceptionResponseRoutes = require('./exceptionResponseRoutes');
 const systemRoutes = require('./systemRoutes');
+const appTransferRoutes = require('./appTransferRoutes');
 const automationHookRoutes = require('./automationHookRoutes');
 
 const router = new Router();
@@ -424,6 +425,7 @@ router.use(builtinApiRoutes.routes());
 router.use(outboundWebhookRoutes.routes());
 router.use(exceptionResponseRoutes.routes());
 router.use(systemRoutes.routes());
+router.use(appTransferRoutes.routes());
 router.use(automationHookRoutes.routes());
 
 module.exports = router; 

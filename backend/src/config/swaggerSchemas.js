@@ -957,6 +957,38 @@ Object.assign(schemas, {
   EnvelopeSystemBackupRun: envelope({ $ref: '#/components/schemas/SystemBackupRun' }, { message: '备份任务已执行' }),
   EnvelopeSystemBackupRestore: envelope({ $ref: '#/components/schemas/SystemBackupRestore' }, { message: '数据恢复完成' }),
 
+  EnvelopeAppTransferPreview: envelope(
+    obj('应用导出文件预览摘要', {
+      format: str('文件格式标识', 'eadaf-app-export'),
+      formatVersion: int('文件版本', 1),
+      options: obj('导出选项'),
+      application: obj('应用信息', { code: str('应用编码', 'CRM'), name: str('应用名称') }),
+      targetApplicationExists: bool('目标实例是否已存在同 code 应用'),
+      sections: obj('各节条数统计'),
+      conflicts: { type: 'array', items: { type: 'object' }, description: '冲突清单(业务键/第二唯一键)' },
+      hookMultiMatch: { type: 'array', items: { type: 'object' }, description: '多条同名同事件钩子' },
+      connectionMatches: { type: 'array', items: { type: 'object' }, description: '连接匹配结果(只匹配不创建)' },
+      entityData: { type: 'array', items: { type: 'object' }, description: '行数据可写性' },
+      missingReferences: { type: 'array', items: { type: 'string' }, description: '缺失引用' },
+      largeEntities: { type: 'array', items: { type: 'object' }, description: '超 10 万行实体' },
+      warnings: { type: 'array', items: { type: 'string' } },
+    }),
+    { message: '预览解析完成' },
+  ),
+  EnvelopeAppTransferImport: envelope(
+    obj('应用导入结果', {
+      strategy: str('冲突策略', 'overwrite'),
+      aborted: bool('abort 策略下是否因冲突中止', false),
+      sections: obj('各节执行结果 { status, counts, errors }'),
+      chainStoppedAt: str('依赖链终止节(null 表示未终止)', 'apiServices'),
+      chainError: str('依赖链终止原因'),
+      conflicts: { type: 'array', items: { type: 'object' }, description: 'abort 中止时的冲突清单' },
+      warnings: { type: 'array', items: { type: 'string' } },
+      durationMs: int('总耗时(毫秒)', 1234),
+    }),
+    { message: '导入执行完成' },
+  ),
+
   EnvelopeUser: envelope({ $ref: '#/components/schemas/User' }, { message: 'success' }),
   EnvelopeDepartmentRoleAssign: envelope({ $ref: '#/components/schemas/DepartmentRoleAssign' }, { message: '分配成功' }),
 

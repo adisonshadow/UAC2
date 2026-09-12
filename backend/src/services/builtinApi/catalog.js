@@ -1093,6 +1093,33 @@ const BUILTIN_API_CATALOG = [
     actions: ['read'],
     description: '查看操作日志详情',
   },
+  {
+    code: 'system:app_transfer:export',
+    domain: 'system',
+    label: '应用导出',
+    routePath: '/api/v1/system/app-transfer/export',
+    httpMethods: ['POST'],
+    actions: ['read'],
+    description: '按应用导出 JSON 迁移文件(含明文密钥,建议仅超管使用)',
+  },
+  {
+    code: 'system:app_transfer:preview',
+    domain: 'system',
+    label: '应用导入预览',
+    routePath: '/api/v1/system/app-transfer/preview',
+    httpMethods: ['POST'],
+    actions: ['read'],
+    description: '预览应用导出文件的节条数/冲突/连接匹配,不写数据',
+  },
+  {
+    code: 'system:app_transfer:import',
+    domain: 'system',
+    label: '应用导入',
+    routePath: '/api/v1/system/app-transfer/import',
+    httpMethods: ['POST'],
+    actions: ['create'],
+    description: '按策略导入应用导出文件(覆盖更新/跳过/中止,不可自动撤销)',
+  },
 
   // ===== automation 域：钩子管理（Hook Center） =====
   {
