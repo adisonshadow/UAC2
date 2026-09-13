@@ -989,6 +989,30 @@ Object.assign(schemas, {
     { message: '导入执行完成' },
   ),
 
+  EnvelopePlatformTransferPreview: envelope(
+    obj('EADAF 平台导出文件预览摘要', {
+      format: str('文件格式标识', 'eadaf-platform-export'),
+      formatVersion: int('文件版本', 1),
+      options: obj('导出选项'),
+      platform: obj('平台信息', { applicationCode: str('应用编码', 'EADAF'), name: str('应用名称') }),
+      sections: obj('各节条数统计'),
+      conflicts: { type: 'array', items: { type: 'object' }, description: '冲突清单(业务键/第二唯一键)' },
+      warnings: { type: 'array', items: { type: 'string' } },
+    }),
+    { message: '预览解析完成' },
+  ),
+  EnvelopePlatformTransferImport: envelope(
+    obj('EADAF 平台导入结果', {
+      strategy: str('冲突策略', 'overwrite'),
+      aborted: bool('abort 策略下是否因冲突中止', false),
+      sections: obj('各节执行结果 { status, counts, errors, notes }。notes 为预期跳过说明,不算失败'),
+      conflicts: { type: 'array', items: { type: 'object' }, description: 'abort 中止时的冲突清单' },
+      warnings: { type: 'array', items: { type: 'string' } },
+      durationMs: int('总耗时(毫秒)', 1234),
+    }),
+    { message: '导入执行完成' },
+  ),
+
   EnvelopeUser: envelope({ $ref: '#/components/schemas/User' }, { message: 'success' }),
   EnvelopeDepartmentRoleAssign: envelope({ $ref: '#/components/schemas/DepartmentRoleAssign' }, { message: '分配成功' }),
 

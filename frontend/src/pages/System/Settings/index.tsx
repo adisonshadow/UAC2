@@ -2,6 +2,7 @@ import { PageContainer } from '@ant-design/pro-components';
 import { Tabs } from 'antd';
 import React from 'react';
 import AppTransferTab from './AppTransferTab';
+import PlatformTransferTab from './PlatformTransferTab';
 import {
   ApiServiceSettingsTab,
   BackupSettingsTab,
@@ -28,6 +29,11 @@ const SystemSettingsPage: React.FC = () => {
             key: 'app-transfer',
             label: '应用导出/导入',
             children: <AppTransferTab />,
+          },
+          {
+            key: 'platform-transfer',
+            label: 'EADAF 平台导出/导入',
+            children: <PlatformTransferTab />,
           },
         ]}
       />

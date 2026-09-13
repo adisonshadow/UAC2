@@ -42,16 +42,16 @@ const SYSTEM_APPLICATION_CODE = 'EADAF';
 const EXPORT_CONTENT_ITEMS = [
   '应用配置(SSO / API 接入、数据域 Scope、顶层 Skill 说明)',
   '数据实体结构(实体 / 字段 / 枚举 / 关系 / Scope 文档)',
+  '实体绑定的逻辑元数据(数据标准目录不随应用包,仅带 code+version 供重映射)',
   '实体行数据(仅 PostgreSQL / MySQL 物化表,保留原主键)',
   'API 服务(定义 / 操作 / 授权)',
   '采集管道(含本应用的白名单绑定)',
   'Outbound Webhook(鉴权密钥以明文段携带)',
   '指标与指标卡片',
   '钩子(event_filter 命中本应用实体 / API)',
-  '专用 Skill 及其 Tools / AI Scope',
+  '该应用专用 Skill 及其 Tools / AI Scope(不含全局 / EADAF 平台 Skill)',
   '存储桶元数据(不含对象文件内容)',
   'UAC:勾选「携带 UAC」时含用户 / 部门 / 授权,否则仅含被引用的角色与权限',
-  '实例级 AI 目录(仅勾选「携带 AI 目录」时)',
 ];
 
 const SECTION_LABELS: Record<string, string> = {
@@ -63,7 +63,7 @@ const SECTION_LABELS: Record<string, string> = {
   metrics: '指标',
   hooks: '钩子',
   skills: 'Skill',
-  ai: 'AI 目录',
+  metadata: '逻辑元数据',
   uac: 'UAC 数据',
   uacUsers: 'UAC 用户数据',
   storageBuckets: '存储桶',
@@ -100,6 +100,7 @@ const SUB_LABELS: Record<string, string> = {
   models: '模型',
   capabilities: '能力',
   ioTags: 'IO 标签',
+  tables: '表',
   totalRows: '总行数',
 };
 
@@ -210,7 +211,6 @@ const AppTransferTab: React.FC = () => {
     'structure_and_data',
   );
   const [includeUac, setIncludeUac] = useState(false);
-  const [includeAi, setIncludeAi] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const loadApplications = useCallback(async () => {
@@ -247,7 +247,6 @@ const AppTransferTab: React.FC = () => {
         applicationId: values.applicationId,
         dataMode,
         includeUac,
-        includeAi,
       });
       // 导出文件本身是 JSON;正常情况下后端以 octet-stream 附件返回。
       // 若响应是 application/json:优先按错误信封处理,但内容带
@@ -441,17 +440,6 @@ const AppTransferTab: React.FC = () => {
                     授权;不勾选仅携带被引用的角色与权限)
                   </span>
                 </Space>
-                <Space>
-                  <Switch
-                    size="small"
-                    checked={includeAi}
-                    onChange={setIncludeAi}
-                  />
-                  <span>
-                    携带实例级 AI 目录(全局 Skill / Provider / 模型,会 upsert
-                    到目标 aibase)
-                  </span>
-                </Space>
               </Space>
             </Form.Item>
             <Form.Item label="导出内容清单">
@@ -517,7 +505,8 @@ const AppTransferTab: React.FC = () => {
               点击或拖拽应用导出的 .json 文件到此处
             </p>
             <p className="ant-upload-hint">
-              选择文件后自动上传做预览(不会写入任何数据)
+              仅支持 format 为 eadaf-app-export 的文件;平台包请到「EADAF
+              平台导出/导入」页。选择后自动预览,不会写入数据
             </p>
           </Upload.Dragger>
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getBizdataDataStandards } from '@/services/UAC/api/businessData';
+import { useInitialState } from '@/providers/InitialStateProvider';
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 
 export function formatStandardLabel(standard?: API.BizdataDataStandard | null) {
@@ -8,10 +9,16 @@ export function formatStandardLabel(standard?: API.BizdataDataStandard | null) {
 }
 
 export function useDataStandardOptions() {
+  const { initialState } = useInitialState();
+  const metadataEnabled = Boolean(initialState?.systemFeatures?.metadataEnabled);
   const [options, setOptions] = useState<{ label: string; value: string }[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
+    if (!metadataEnabled) {
+      setOptions([]);
+      return;
+    }
     setLoading(true);
     try {
       const res = await getBizdataDataStandards({ status: 'enabled', size: 500 });
@@ -27,7 +34,7 @@ export function useDataStandardOptions() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [metadataEnabled]);
 
   useEffect(() => {
     void load();

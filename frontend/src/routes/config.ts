@@ -132,7 +132,10 @@ export function buildMenuData(
   };
 
   const roots = visibleRoutes.filter(
-    (item) => item.path.split('/').filter(Boolean).length === 1 && item.name,
+    (item) =>
+      item.path.split('/').filter(Boolean).length === 1 &&
+      item.name &&
+      !item.hideInMenu,
   );
 
   return roots

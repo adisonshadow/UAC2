@@ -1201,7 +1201,6 @@ declare namespace API {
     applicationId?: string;
     dataMode?: 'structure_and_data' | 'data_only';
     includeUac?: boolean;
-    includeAi?: boolean;
   };
 
   /** 导入预览:业务键/第二唯一键冲突项 */
@@ -1276,7 +1275,25 @@ declare namespace API {
     warnings?: string[];
     dataMode?: string;
     includeUac?: boolean;
-    includeAi?: boolean;
+    durationMs?: number;
+  };
+
+  type PlatformTransferPreviewResult = {
+    format?: string;
+    formatVersion?: number;
+    options?: { secretsInPlaintext?: boolean; exportedAt?: string };
+    platform?: { applicationCode?: string; name?: string };
+    sections?: Record<string, unknown>;
+    conflicts?: AppTransferPreviewConflict[];
+    warnings?: string[];
+  };
+
+  type PlatformTransferImportResult = {
+    strategy?: 'overwrite' | 'skip' | 'abort';
+    aborted?: boolean;
+    sections?: Record<string, AppTransferSectionResult>;
+    conflicts?: AppTransferPreviewConflict[];
+    warnings?: string[];
     durationMs?: number;
   };
 

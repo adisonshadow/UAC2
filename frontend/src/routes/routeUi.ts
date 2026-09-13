@@ -32,7 +32,7 @@ export const ROUTE_UI_BY_PATH: Record<string, Partial<AppRouteMeta>> = {
   '/business_data': { name: '业务数据', icon: 'DatabaseOutlined' },
   '/api_services': { name: 'API', icon: 'ApiOutlined' },
   '/ai_management': { name: 'AI管理', icon: 'RobotOutlined' },
-  '/system': { name: '系统', icon: 'SettingOutlined' },
+  '/system': { name: '系统', icon: 'SettingOutlined', hideInMenu: true },
 
   /* 页面补充（对照原 config.ts appRouteMeta 全量迁移） */
   '/business_data/model-design': { name: '数据模型', noContentPadding: true },
@@ -77,7 +77,7 @@ export const ROUTE_UI_BY_PATH: Record<string, Partial<AppRouteMeta>> = {
   '/ai_management/scopes/create': { hideInMenu: true },
   '/ai_management/scopes/:id/edit': { hideInMenu: true },
   '/ai_management/scopes/:id': { hideInMenu: true },
-  '/system/operation-logs': { name: '操作日志', icon: 'AuditOutlined' },
+  '/system/operation-logs': { name: '操作日志', icon: 'AuditOutlined', hideInMenu: true },
   '/system/settings': { hideInMenu: true },
 };
 

@@ -1120,6 +1120,33 @@ const BUILTIN_API_CATALOG = [
     actions: ['create'],
     description: '按策略导入应用导出文件(覆盖更新/跳过/中止,不可自动撤销)',
   },
+  {
+    code: 'system:platform_transfer:export',
+    domain: 'system',
+    label: 'EADAF 平台导出',
+    routePath: '/api/v1/system/platform-transfer/export',
+    httpMethods: ['POST'],
+    actions: ['read'],
+    description: '导出 EADAF 平台包(Skill/Tool、AI 目录、数据标准、系统开关、UAC 权限目录;含明文密钥,建议仅超管使用)',
+  },
+  {
+    code: 'system:platform_transfer:preview',
+    domain: 'system',
+    label: 'EADAF 平台导入预览',
+    routePath: '/api/v1/system/platform-transfer/preview',
+    httpMethods: ['POST'],
+    actions: ['read'],
+    description: '预览 EADAF 平台导出文件的节条数/冲突,不写数据',
+  },
+  {
+    code: 'system:platform_transfer:import',
+    domain: 'system',
+    label: 'EADAF 平台导入',
+    routePath: '/api/v1/system/platform-transfer/import',
+    httpMethods: ['POST'],
+    actions: ['create'],
+    description: '按策略导入 EADAF 平台导出文件(覆盖更新/跳过/中止,不可自动撤销)',
+  },
 
   // ===== automation 域：钩子管理（Hook Center） =====
   {

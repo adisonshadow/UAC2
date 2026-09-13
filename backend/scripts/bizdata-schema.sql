@@ -151,3 +151,69 @@ CREATE TABLE bizdata.scope_docs (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 数据标准目录
+CREATE TABLE bizdata.data_standards (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(200) NOT NULL,
+    code VARCHAR(100) NOT NULL,
+    version VARCHAR(50) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'enabled'
+        CHECK (status IN ('enabled', 'disabled')),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (code, version)
+);
+
+CREATE INDEX idx_data_standards_code ON bizdata.data_standards (code);
+CREATE INDEX idx_data_standards_status ON bizdata.data_standards (status);
+
+-- 逻辑元数据目录（依赖 data_standards）
+CREATE TABLE bizdata.metadata_tables (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(255) NOT NULL,
+    target_type VARCHAR(32) NOT NULL
+        CHECK (target_type IN ('entity', 'metric', 'enum')),
+    target_id UUID NOT NULL,
+    metadata_code VARCHAR(255),
+    standard_id UUID REFERENCES bizdata.data_standards(id) ON DELETE SET NULL,
+    business_meaning TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'enabled'
+        CHECK (status IN ('enabled', 'disabled')),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (target_type, target_id)
+);
+
+CREATE INDEX idx_metadata_tables_code ON bizdata.metadata_tables (code);
+CREATE UNIQUE INDEX idx_metadata_tables_metadata_code
+    ON bizdata.metadata_tables (metadata_code)
+    WHERE metadata_code IS NOT NULL;
+
+CREATE TABLE bizdata.metadata_fields (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    metadata_table_id UUID NOT NULL REFERENCES bizdata.metadata_tables(id) ON DELETE CASCADE,
+    field_key VARCHAR(128) NOT NULL,
+    metadata_code VARCHAR(255),
+    standard_id UUID REFERENCES bizdata.data_standards(id) ON DELETE SET NULL,
+    business_meaning TEXT,
+    sensitivity_level VARCHAR(32),
+    alias VARCHAR(255),
+    data_type VARCHAR(64),
+    validation_rule JSONB NOT NULL DEFAULT '{}'::jsonb,
+    enum_code VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (metadata_table_id, field_key)
+);
+
+CREATE UNIQUE INDEX idx_metadata_fields_metadata_code
+    ON bizdata.metadata_fields (metadata_code)
+    WHERE metadata_code IS NOT NULL;
+
+CREATE INDEX idx_metadata_fields_table ON bizdata.metadata_fields (metadata_table_id);
+
+INSERT INTO bizdata.settings (key, value)
+VALUES ('system_features', '{"metadataEnabled": false}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

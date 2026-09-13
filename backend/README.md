@@ -30,9 +30,9 @@ cp .env.development .env.development.local   # 按需修改
 npm install
 
 # 3. 初始化数据库（会重建 uac schema）
-npm run init-db                              # 仅结构 + 超管
-npm run init-db-with-mock                    # 附加 Mock 用户/部门数据
-npm run init-db-with-aibase-seed             # 含 AIBase、业务数据、销售 Demo 等种子（推荐开发）
+pnpm init-db                                 # 结构 + 超管 + EADAF 全局/专用 Skill/Tool
+pnpm init-db-with-mock                       # 另含 Mock 用户/部门与销售示例实体
+pnpm init-db-with-aibase-seed                # 另含 Demo 全量 AI 种子（会 TRUNCATE Skill/Tool）
 
 # 4. 启动（nodemon 热重载，默认端口 9526）
 npm run dev
@@ -43,9 +43,30 @@ npm run dev
 ```bash
 npm test                    # 单元 / 接口测试
 npm run swagger             # 生成 swagger.json
+pnpm export-eadaf-ai-skills # 从当前库导出 EADAF Skill/Tool upsert SQL 并写入仓库
+pnpm migrate-eadaf-ai-skills # 在目标库幂等 upsert（不重置、不删业务应用 Skill）
 npm run init-sales-demo-db  # 单独初始化销售 Demo SQLite
 npm run db:maintenance:all  # VACUUM / ANALYZE / REINDEX
 ```
+
+### 同步 EADAF Skill / Tool
+
+`init-db` 会执行 `scripts/migrate-eadaf-ai-skills.sql`：写入**全局 Skill** 以及绑定应用 `EADAF` 的专用 Skill/Tool（如 `bizdata-model-design`）。不含 SFDEP、sales-demo 等业务应用 Skill，也不含销售域测试实体。
+
+本地改完 Skill 正文、Tool 或绑定后，导出 SQL 提交，再到服务器执行（不 DROP 库）：
+
+```bash
+# 在已改好 Skill 的本地库导出 upsert SQL，然后提交
+cd backend
+pnpm export-eadaf-ai-skills
+
+# 服务器上（不重置库）
+pnpm migrate-eadaf-ai-skills
+```
+
+按 `slug` / `function_name` upsert。本批 Skill 上已删除的 Tool 绑定会收敛；其他应用的 Skill 不会被删。
+
+`init-db-with-aibase-seed` 仍使用 `aibase-ai-seed.sql` 全量 TRUNCATE，仅适合 Demo / 可清空的开发库。
 
 ### 验证
 

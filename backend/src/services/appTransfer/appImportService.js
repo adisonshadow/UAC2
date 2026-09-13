@@ -22,6 +22,7 @@ const { Client: PgClient } = require('pg');
 const mysql = require('mysql2/promise');
 const { buildRuntimeConfig } = require('../businessData/databaseConnectionService');
 const { executeMaterialization } = require('../businessData/materializationService');
+const connectionRunner = require('../businessData/materialization/connectionRunner');
 const {
   loadAndValidateFile,
   matchTargetConnection,
@@ -81,7 +82,6 @@ class ImportContext {
     this.createdBy = normalizeCreatedBy(options.createdBy);
     this.dataMode = file.options?.dataMode === 'data_only' ? 'data_only' : 'structure_and_data';
     this.includeUac = file.options?.includeUac === true;
-    this.includeAi = file.options?.includeAi === true;
     this.sourceAppId = file.options?.sourceApplicationId || file.application?.application_id || null;
     this.targetAppId = null;
     this.currentSection = null;
@@ -105,6 +105,7 @@ class ImportContext {
       users: new Map(),
       departments: new Map(),
       buckets: new Map(),
+      metadataTables: new Map(),
     };
     this.targetConnections = null;
     this.connectionMatchCache = new Map();
@@ -738,15 +739,17 @@ class ImportContext {
           }
         }
 
-        // 列集校验(DDL 差异)
+        // 列集校验:文件物理列可能比 entity_fields 多,先按导出列补 DDL 再校验
          
-        const actualColumns = await readTableColumns(runtime, item.targetSchema, item.tableName);
+        let actualColumns = await readTableColumns(runtime, item.targetSchema, item.tableName);
         const fileCols = (item.columns || []).map((c) => c.name);
+        await ensureFileColumnsOnTarget(runtime, item.targetSchema, item.tableName, item.columns || [], actualColumns);
+        actualColumns = await readTableColumns(runtime, item.targetSchema, item.tableName);
         const actualNames = new Set(actualColumns.map((c) => c.name));
         const missingInTarget = fileCols.filter((c) => !actualNames.has(c));
         if (missingInTarget.length) {
           section.counts.failed += 1;
-          section.errors.push(`${label}: 目标表缺少列 [${missingInTarget.join(', ')}](DDL 差异),请先物化/同步结构`);
+          section.errors.push(`${label}: 目标表缺少列 [${missingInTarget.join(', ')}](补列后仍缺失)`);
           continue;
         }
         const requiredMissing = actualColumns
@@ -1124,6 +1127,124 @@ class ImportContext {
     return section;
   }
 
+  remapMetadataTargetId(table) {
+    if (table.target_type === 'entity') return this.idMap.entities.get(table.target_id) || null;
+    if (table.target_type === 'metric') return this.idMap.metrics.get(table.target_id) || null;
+    if (table.target_type === 'enum') return this.idMap.enums.get(table.target_id) || null;
+    return null;
+  }
+
+  async resolveStandardId(row, section, transaction) {
+    if (row.standard_code && row.standard_version) {
+      const std = await models.BizdataDataStandard.findOne({
+        where: { code: row.standard_code, version: row.standard_version },
+        transaction,
+      });
+      if (std) return std.id;
+      section.notes.push(`数据标准 ${row.standard_code} v${row.standard_version} 在目标不存在,已置空(请先导入 EADAF 平台包)`);
+      return null;
+    }
+    return null;
+  }
+
+  /** 实体绑定的逻辑元数据;standard_id 按目标库 code+version 重映射 */
+  async importMetadata() {
+    const section = this.beginSection('metadata');
+    const meta = this.file.metadata || {};
+    const tables = Array.isArray(meta.tables) ? meta.tables : [];
+    const fields = Array.isArray(meta.fields) ? meta.fields : [];
+    if (!tables.length && !fields.length) {
+      return this.skipSection(section, '文件无逻辑元数据节');
+    }
+    try {
+      await this.withSectionTransaction(async (transaction) => {
+        for (const table of tables) {
+          const targetId = this.remapMetadataTargetId(table);
+          if (!targetId) {
+            section.notes.push(`元数据表「${table.code || table.id}」的目标 ${table.target_type} 未在本次导入中落库,已跳过`);
+            section.counts.skipped += 1;
+            continue;
+          }
+          const payload = pickModelFields(models.BizdataMetadataTable, table);
+          delete payload.id;
+          payload.target_id = targetId;
+          payload.standard_id = await this.resolveStandardId(table, section, transaction);
+
+          if (table.metadata_code) {
+            const conflict = await models.BizdataMetadataTable.findOne({
+              where: { metadata_code: table.metadata_code },
+              transaction,
+            });
+            if (conflict && (conflict.target_type !== table.target_type || conflict.target_id !== targetId)) {
+              this.itemFailed(section, `元数据表「${table.code}」`, new Error(`metadata_code「${table.metadata_code}」已被占用`));
+              continue;
+            }
+          }
+
+          const existing = await models.BizdataMetadataTable.findOne({
+            where: { target_type: table.target_type, target_id: targetId },
+            transaction,
+          });
+          if (existing) {
+            if (this.strategy === 'overwrite') {
+              await existing.update(payload, { transaction });
+              section.counts.updated += 1;
+            } else {
+              section.counts.skipped += 1;
+            }
+            this.idMap.metadataTables.set(table.id, existing.id);
+          } else {
+            const created = await models.BizdataMetadataTable.create(payload, { transaction });
+            section.counts.created += 1;
+            this.idMap.metadataTables.set(table.id, created.id);
+          }
+        }
+
+        for (const field of fields) {
+          const tableId = this.idMap.metadataTables.get(field.metadata_table_id);
+          if (!tableId) {
+            section.counts.skipped += 1;
+            continue;
+          }
+          const payload = pickModelFields(models.BizdataMetadataField, field);
+          delete payload.id;
+          payload.metadata_table_id = tableId;
+          payload.standard_id = await this.resolveStandardId(field, section, transaction);
+
+          if (field.metadata_code) {
+            const conflict = await models.BizdataMetadataField.findOne({
+              where: { metadata_code: field.metadata_code },
+              transaction,
+            });
+            if (conflict && (conflict.metadata_table_id !== tableId || conflict.field_key !== field.field_key)) {
+              this.itemFailed(section, `元数据字段「${field.field_key}」`, new Error(`metadata_code「${field.metadata_code}」已被占用`));
+              continue;
+            }
+          }
+
+          const existing = await models.BizdataMetadataField.findOne({
+            where: { metadata_table_id: tableId, field_key: field.field_key },
+            transaction,
+          });
+          if (existing) {
+            if (this.strategy === 'overwrite') {
+              await existing.update(payload, { transaction });
+              section.counts.updated += 1;
+            } else {
+              section.counts.skipped += 1;
+            }
+          } else {
+            await models.BizdataMetadataField.create(payload, { transaction });
+            section.counts.created += 1;
+          }
+        }
+      });
+    } catch (e) {
+      this.markFailed(section, e.message);
+    }
+    return section;
+  }
+
   /** 存储桶(仅元数据,不含对象文件) */
   async importStorageBuckets() {
     const section = this.beginSection('storageBuckets');
@@ -1144,90 +1265,89 @@ class ImportContext {
     }
     return section;
   }
+}
 
-  /** AI 目录(可选节,失败不阻断):providers / models / capabilities / ioTags */
-  async importAi() {
-    const section = this.beginSection('ai');
-    if (!this.includeAi) {
-      return this.skipSection(section, '未勾选 includeAi,跳过实例级 AI 目录');
-    }
-    const ai = this.file.ai || {};
-    const providers = Array.isArray(ai.providers) ? ai.providers : [];
-    const aiModels = Array.isArray(ai.models) ? ai.models : [];
-    const capabilities = Array.isArray(ai.capabilities) ? ai.capabilities : [];
-    const ioTags = Array.isArray(ai.ioTags) ? ai.ioTags : [];
-    try {
-      await this.withSectionTransaction(async (transaction) => {
-        for (const provider of providers) {
-          const payload = pickModelFields(models.Provider, provider);
-          delete payload.id;
-          delete payload.api_key_encrypted;
-          payload.api_key_encrypted = provider.api_key ? encryptApiKey(provider.api_key) : null;
-          delete payload.api_key;
-           
-          await this.upsertMetaRaw(models.Provider, provider, 'slug', this.idMap.providers, payload, section, { transaction });
-        }
-        for (const model of aiModels) {
-          const providerId = this.idMap.providers.get(model.provider_id);
-          if (!providerId) {
-            section.counts.skipped += 1;
-            continue;
-          }
-          const payload = pickModelFields(models.AiModel, model);
-          delete payload.id;
-          payload.provider_id = providerId;
-          // 复合唯一 (provider_id, model_id):slug 不同但组合已被占 → failed
-           
-          const combo = await models.AiModel.findOne({
-            where: { provider_id: providerId, model_id: model.model_id },
-            transaction,
-          });
-          if (combo && combo.slug !== model.slug) {
-            this.itemFailed(section, `模型「${model.slug}」`, new Error(`(provider, model_id) 组合已被 ${combo.slug} 占用`));
-            continue;
-          }
-           
-          await this.upsertMetaRaw(models.AiModel, model, 'slug', this.idMap.aiModels, payload, section, { transaction });
-        }
-        for (const cap of capabilities) {
-          const modelId = this.idMap.aiModels.get(cap.model_id);
-          if (!modelId) {
-            section.counts.skipped += 1;
-            continue;
-          }
-           
-          const existing = await models.ModelCapability.findOne({ where: { model_id: modelId, capability: cap.capability }, transaction });
-          if (!existing) {
-            await models.ModelCapability.create({ model_id: modelId, capability: cap.capability }, { transaction });
-            section.counts.created += 1;
-          } else {
-            section.counts.skipped += 1;
-          }
-        }
-        for (const tag of ioTags) {
-          const modelId = this.idMap.aiModels.get(tag.model_id);
-          if (!modelId) {
-            section.counts.skipped += 1;
-            continue;
-          }
-           
-          const existing = await models.ModelIoTag.findOne({
-            where: { model_id: modelId, direction: tag.direction, modality: tag.modality },
-            transaction,
-          });
-          if (!existing) {
-            await models.ModelIoTag.create({ model_id: modelId, direction: tag.direction, modality: tag.modality }, { transaction });
-            section.counts.created += 1;
-          } else {
-            section.counts.skipped += 1;
-          }
-        }
-      });
-    } catch (e) {
-      this.markFailed(section, e.message);
-    }
-    return section;
+function mapPgImportColumnType(dataType) {
+  const t = String(dataType || '').toLowerCase();
+  if (t === 'uuid') return 'UUID';
+  if (t === 'text') return 'TEXT';
+  if (t.includes('character') || t === 'varchar') return 'TEXT';
+  if (t === 'integer' || t === 'int' || t === 'int4') return 'INTEGER';
+  if (t === 'bigint' || t === 'int8') return 'BIGINT';
+  if (t === 'smallint') return 'SMALLINT';
+  if (t === 'boolean') return 'BOOLEAN';
+  if (t === 'jsonb') return 'JSONB';
+  if (t === 'json') return 'JSON';
+  if (t === 'date') return 'DATE';
+  if (t.includes('timestamp with time zone') || t === 'timestamptz') return 'TIMESTAMPTZ';
+  if (t.includes('timestamp')) return 'TIMESTAMP';
+  if (t === 'numeric' || t === 'decimal') return 'NUMERIC';
+  if (t === 'double precision' || t === 'float8') return 'DOUBLE PRECISION';
+  if (t === 'real' || t === 'float4') return 'REAL';
+  if (t.includes('time')) return 'TIMESTAMPTZ';
+  return 'TEXT';
+}
+
+function mapMysqlImportColumnType(dataType) {
+  const t = String(dataType || '').toLowerCase();
+  if (t === 'varchar' || t === 'char' || t === 'text' || t.includes('text')) return 'TEXT';
+  if (t === 'int' || t === 'integer') return 'INT';
+  if (t === 'bigint') return 'BIGINT';
+  if (t === 'tinyint') return 'TINYINT';
+  if (t === 'datetime' || t === 'timestamp') return 'DATETIME';
+  if (t === 'date') return 'DATE';
+  if (t === 'json') return 'JSON';
+  if (t === 'decimal' || t === 'numeric') return 'DECIMAL(20,6)';
+  if (t === 'double' || t === 'float') return 'DOUBLE';
+  if (t === 'boolean' || t === 'bool') return 'TINYINT(1)';
+  return 'TEXT';
+}
+
+/** 物化只按 entity_fields 建表;导出列来自源物理表,缺列时按文件类型补上以便写数 */
+async function ensureFileColumnsOnTarget(runtime, schemaName, tableName, fileColumns, actualColumns) {
+  const actualNames = new Set((actualColumns || []).map((c) => c.name));
+  const missing = (fileColumns || []).filter((c) => c && c.name && !actualNames.has(c.name));
+  if (!missing.length) return;
+  if (runtime.dbType === 'postgresql') {
+    await connectionRunner.withPgClient(runtime, async (client) => {
+      for (const col of missing) {
+        const typeSql = mapPgImportColumnType(col.dataType);
+        await client.query(
+          `ALTER TABLE ${quotePgIdentifier(schemaName)}.${quotePgIdentifier(tableName)} ADD COLUMN IF NOT EXISTS ${quotePgIdentifier(col.name)} ${typeSql}`,
+        );
+      }
+    });
+    return;
   }
+  if (runtime.dbType === 'mysql') {
+    await connectionRunner.withMysqlClient(runtime, async (conn) => {
+      for (const col of missing) {
+        const typeSql = mapMysqlImportColumnType(col.dataType);
+        try {
+          await conn.query(
+            `ALTER TABLE ${quoteMysqlIdentifier(schemaName || runtime.databaseName)}.${quoteMysqlIdentifier(tableName)} ADD COLUMN ${quoteMysqlIdentifier(col.name)} ${typeSql} NULL`,
+          );
+        } catch (e) {
+          const msg = String(e.message || e);
+          if (!/duplicate column/i.test(msg)) throw e;
+        }
+      }
+    }, { database: schemaName || runtime.databaseName });
+  }
+}
+
+function buildPgValuesPlaceholders(rowCount, colCount) {
+  const parts = [];
+  let n = 1;
+  for (let r = 0; r < rowCount; r += 1) {
+    const cells = [];
+    for (let c = 0; c < colCount; c += 1) {
+      cells.push(`$${n}`);
+      n += 1;
+    }
+    parts.push(`(${cells.join(', ')})`);
+  }
+  return parts.join(', ');
 }
 
 /** 行数据写入:overwrite = DELETE + 批量 INSERT(连接内同事务);skip = 非空即跳过 */
@@ -1255,7 +1375,7 @@ async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strat
         const chunkSize = Math.max(1, Math.floor(60000 / cols.length));
         for (let i = 0; i < rows.length; i += chunkSize) {
           const chunk = rows.slice(i, i + chunkSize);
-          const valuesSql = chunk.map(() => `(${cols.map((_, j) => `$${j + 1}`).join(', ')})`).join(', ');
+          const valuesSql = buildPgValuesPlaceholders(chunk.length, cols.length);
           const params = chunk.flatMap((row) => cols.map((c) => normalizeValue(row[c])));
            
           await client.query(`INSERT INTO ${quotePgIdentifier(schemaName)}.${quotePgIdentifier(tableName)} (${colList}) VALUES ${valuesSql}`, params);
@@ -1348,12 +1468,13 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
     ['collectionPipelines', () => ctx.importCollectionPipelines()],
     ['outboundWebhooks', () => ctx.importOutboundWebhooks()],
     ['metrics', () => ctx.importMetrics()],
+    ['metadata', () => ctx.importMetadata()],
     ['hooks', () => ctx.importHooks()],
     ['skills', () => ctx.importSkills()],
     ['storageBuckets', () => ctx.importStorageBuckets()],
   ];
-  // 物化/行数据失败不挡住 API 等元数据;uacUsers 本就可选
-  const softFailSections = new Set(['uacUsers', 'materialization', 'entityData']);
+  // 物化/行数据失败不挡住 API 等元数据;uacUsers / metadata 本就可选
+  const softFailSections = new Set(['uacUsers', 'materialization', 'entityData', 'metadata']);
 
   for (const [name, step] of chainSteps) {
      
@@ -1369,15 +1490,15 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
     break;
   }
 
-  // 可选节:AI 目录(失败只标红)
-  await ctx.importAi();
+  if (file.options?.includeAi || (file.ai && Array.isArray(file.ai.providers) && file.ai.providers.length)) {
+    result.warnings.push('文件含实例级 AI 目录,应用导入已忽略;请到「EADAF 平台导出/导入」页迁移平台能力');
+  }
 
   result.includeUac = ctx.includeUac;
-  result.includeAi = ctx.includeAi;
   result.dataMode = ctx.dataMode;
   if (!result.chainStoppedAt) {
     const failedSections = Object.entries(result.sections)
-      .filter(([name, s]) => s.status === 'failed' && name !== 'uacUsers' && name !== 'ai')
+      .filter(([name, s]) => s.status === 'failed' && name !== 'uacUsers' && name !== 'metadata')
       .map(([name]) => name);
     if (failedSections.length) {
       result.warnings.push(`以下节存在失败条目,请查看各节 errors: ${failedSections.join(', ')}`);

@@ -84,6 +84,49 @@ export async function postAppTransferPreview(file: File) {
   });
 }
 
+/** 导出 EADAF 平台包 JSON：返回附件 blob */
+export async function postPlatformTransferExport(): Promise<Blob> {
+  return request<Blob>(`${BASE}/platform-transfer/export`, {
+    method: 'POST',
+    responseType: 'blob',
+    skipErrorHandler: true,
+    timeout: APP_TRANSFER_TIMEOUT,
+  });
+}
+
+/** 预览 EADAF 平台导出文件，不写数据 */
+export async function postPlatformTransferPreview(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<{
+    code: number;
+    message: string;
+    data: API.PlatformTransferPreviewResult;
+  }>(`${BASE}/platform-transfer/preview`, {
+    method: 'POST',
+    data: formData,
+    requestType: 'form',
+    timeout: APP_TRANSFER_TIMEOUT,
+  });
+}
+
+/** 按策略导入 EADAF 平台包 */
+export async function postPlatformTransferImport(file: File, strategy: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('strategy', strategy);
+  return request<{
+    code: number;
+    message: string;
+    data: API.PlatformTransferImportResult;
+  }>(`${BASE}/platform-transfer/import`, {
+    method: 'POST',
+    data: formData,
+    requestType: 'form',
+    timeout: APP_TRANSFER_TIMEOUT,
+  });
+}
+
 /** 按策略执行导入（overwrite/skip/abort），返回分节结果 */
 export async function postAppTransferImport(file: File, strategy: string) {
   const formData = new FormData();

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev.sh",
+    "killdev": "bash scripts/killdev.sh",
     "start": "bash scripts/preview.sh"
   },
   "devDependencies": {

@@ -83,20 +83,19 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metrics.sql" || 
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metrics-cron.sql" || { echo "业务指标 cron 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metric-cards.sql" || { echo "指标看板卡片迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-scope-docs.sql" || { echo "Scope 业务说明表迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-data-standards.sql" || { echo "数据标准表迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metadata-catalog.sql" || { echo "逻辑元数据目录迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-transport-protocols.sql" || { echo "API 服务传输协议迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-skill-completion-strategy.sql" || { echo "Skill 完成策略迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-hook-center.sql" || { echo "钩子管理迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-application-outbound-webhook-scope.sql" || { echo "应用 outbound_webhook_scope 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-system-storage-bucket.sql" || { echo "系统存储桶种子失败"; exit 1; }
-PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-aibase-hook-skill.sql" || { echo "钩子管理 Skill 种子失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-eadaf-ai-skills.sql" || { echo "EADAF 全局/专用 Skill/Tool upsert 失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/20260710_add_model_rate_limit.sql" || { echo "模型 rate_limit 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-app-transfer-permissions.sql" || { echo "应用导出导入权限种子失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-platform-transfer-permissions.sql" || { echo "EADAF 平台导出导入权限种子失败"; exit 1; }
 
 echo "结构对齐增量迁移完成"
-
-echo "开始导入业务数据示例种子..."
-PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-seed.sql" || { echo "导入业务数据示例种子失败"; exit 1; }
-echo "业务数据示例种子导入完成"
 
 echo "开始导入 UAC 权限目录..."
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/uac-permissions-catalog-seed.sql" || { echo "导入 UAC 权限目录失败"; exit 1; }
@@ -107,8 +106,8 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/superadmin.sql" || { echo "创�
 echo "超级管理员创建完成"
 
 if [[ "$*" == *"--with-aibase-seed"* ]]; then
-    # AI 元数据权威源：aibase-ai-seed.sql（由 export-aibase-ai-seed.js 从现库导出）。
-    # 历史分散 *-ai-seed / migrate-*-skill 已归档至 archive/ai-content-seeds/，勿再加回本段。
+    # Demo 用 AI 全量（含 sales-demo 等）。EADAF 全局/专用 Skill 已在上面 migrate-eadaf-ai-skills.sql。
+    # 全量 TRUNCATE 种子仍由 export-aibase-ai-seed.js 维护。
     echo "开始导入 AIBase providers/models 示例种子..."
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/aibase-seed.sql" || { echo "导入 AIBase 种子数据失败"; exit 1; }
 
@@ -125,6 +124,9 @@ if [[ "$*" == *"--with-mock"* ]]; then
     echo "开始导入测试数据..."
     PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/mock_data.sql" || { echo "导入测试数据失败"; exit 1; }
     echo "测试数据导入完成"
+    echo "开始导入销售域示例实体（仅 --with-mock）..."
+    PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/bizdata-seed.sql" || { echo "导入销售域示例实体失败"; exit 1; }
+    echo "销售域示例实体导入完成"
 fi
 
 echo "数据库操作完成"

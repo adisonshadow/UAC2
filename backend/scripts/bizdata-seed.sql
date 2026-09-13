@@ -1,4 +1,4 @@
--- 业务数据示例种子（单应用 catalog 演示数据）
+-- 销售域临时示例实体（仅 init-db --with-mock；默认 init-db 不导入）
 
 INSERT INTO bizdata.entities (id, code, label, entity_kind, table_name, status, version, entity_info)
 VALUES

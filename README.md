@@ -66,7 +66,22 @@ pnpm install
 cd backend
 cp .env.development .env.development.local   # 按需修改连接信息
 npm install
-npm run init-db-with-aibase-seed            # 含 UAC + AIBase + 业务数据种子
+pnpm init-db                                # 结构 + 超管 + EADAF 全局/专用 Skill/Tool
+# pnpm init-db-with-mock                    # 另含 Mock 用户/部门与销售示例实体
+# pnpm init-db-with-aibase-seed             # 另含 Demo 全量 AI 种子（会 TRUNCATE Skill/Tool）
+```
+
+默认 `init-db` **不会**写入销售域测试实体。EADAF 系统 Skill（如 `bizdata-model-design`）由 `scripts/migrate-eadaf-ai-skills.sql` 幂等 upsert。
+
+本地改完 Skill/Tool 后同步到服务器（**不重置库**）：
+
+```bash
+# 在已改好 Skill 的本地库导出 upsert SQL，然后提交
+cd backend
+pnpm export-eadaf-ai-skills
+
+# 服务器上执行
+pnpm migrate-eadaf-ai-skills
 ```
 
 ### 3. 启动服务

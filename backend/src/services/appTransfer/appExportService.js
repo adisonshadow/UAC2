@@ -61,7 +61,42 @@ function normalizeOptions(raw = {}) {
   return {
     dataMode,
     includeUac: raw.includeUac === true,
-    includeAi: raw.includeAi === true,
+  };
+}
+
+async function decorateWithStandardRef(rows, model) {
+  const ids = [...new Set(rows.map((r) => r.standard_id).filter(Boolean))];
+  const standards = ids.length
+    ? await models.BizdataDataStandard.findAll({ where: { id: { [Op.in]: ids } }, raw: true })
+    : [];
+  const byId = new Map(standards.map((s) => [s.id, s]));
+  return rows.map((r) => {
+    const out = pickModelFields(model, r);
+    const std = r.standard_id ? byId.get(r.standard_id) : null;
+    out.standard_code = std ? std.code : null;
+    out.standard_version = std ? std.version : null;
+    return out;
+  });
+}
+
+/** 仅导出本次应用包内 entity/metric/enum 绑定的逻辑元数据,不含数据标准目录 */
+async function collectBoundMetadata({ entityIds, metricIds, enumIds }) {
+  const or = [];
+  if (entityIds.length) or.push({ target_type: 'entity', target_id: { [Op.in]: entityIds } });
+  if (metricIds.length) or.push({ target_type: 'metric', target_id: { [Op.in]: metricIds } });
+  if (enumIds.length) or.push({ target_type: 'enum', target_id: { [Op.in]: enumIds } });
+  if (!or.length) return { tables: [], fields: [] };
+  const tables = await models.BizdataMetadataTable.findAll({ where: { [Op.or]: or }, raw: true });
+  const tableIds = tables.map((t) => t.id);
+  const fields = tableIds.length
+    ? await models.BizdataMetadataField.findAll({
+      where: { metadata_table_id: { [Op.in]: tableIds } },
+      raw: true,
+    })
+    : [];
+  return {
+    tables: await decorateWithStandardRef(tables, models.BizdataMetadataTable),
+    fields: await decorateWithStandardRef(fields, models.BizdataMetadataField),
   };
 }
 
@@ -100,23 +135,6 @@ function exportWebhookSecret(webhookRow) {
     }
   } else {
     out.auth_secret = null;
-  }
-  return out;
-}
-
-/** provider 的 api_key_encrypted → 明文 api_key 段 */
-function exportProviderSecret(providerRow) {
-  const out = pickModelFields(models.Provider, providerRow);
-  delete out.api_key_encrypted;
-  if (providerRow.api_key_encrypted) {
-    try {
-      out.api_key = decryptApiKey(providerRow.api_key_encrypted);
-    } catch (e) {
-      logger.warn(`导出 Provider「${providerRow.slug}」API Key 解密失败,已置空: ${e.message}`);
-      out.api_key = null;
-    }
-  } else {
-    out.api_key = null;
   }
   return out;
 }
@@ -280,8 +298,8 @@ async function* iterateTableRows(runtime, schemaName, tableName, orderColumn, pa
  * @returns {{
  *   application: object, entitiesSection: object, apiServicesSection: object,
  *   collectionPipelinesSection: object, outboundWebhooks: object[], metricsSection: object,
- *   hooks: object[], hooksExcluded: object[], skillsSection: object, aiSection: object|null,
- *   uacSection: object, storageBuckets: object[], entityDataItems: object[],
+ *   hooks: object[], hooksExcluded: object[], skillsSection: object,
+ *   metadataSection: object, uacSection: object, storageBuckets: object[], entityDataItems: object[],
  *   sourceApplicationId: string, warnings: string[],
  * }}
  */
@@ -403,23 +421,21 @@ async function buildExportContext(app, options) {
     }
   }
 
-  // ---- Skills(默认仅 dedicated;includeAi 追加 global) ----
+  // ---- Skills(仅该应用专用,不含全局/EADAF 平台 Skill) ----
   const appLinks = await models.SkillApplication.findAll({
     where: { application_id: app.application_id },
     raw: true,
   });
   const dedicatedSkillIds = [...new Set(appLinks.map((l) => l.skill_id))];
-  const dedicatedSkills = dedicatedSkillIds.length
+  const skills = dedicatedSkillIds.length
     ? await models.Skill.findAll({
       where: { id: { [Op.in]: dedicatedSkillIds }, is_dedicated: true },
       raw: true,
     })
     : [];
-  const globalSkills = options.includeAi
-    ? await models.Skill.findAll({ where: { is_global: true }, raw: true })
-    : [];
-  const skills = [...dedicatedSkills, ...globalSkills];
   const skillIds = skills.map((s) => s.id);
+  const skillIdSet = new Set(skillIds);
+  const dedicatedLinks = appLinks.filter((l) => skillIdSet.has(l.skill_id));
   const skillToolRows = skillIds.length
     ? await models.SkillTool.findAll({ where: { skill_id: { [Op.in]: skillIds } }, raw: true })
     : [];
@@ -437,27 +453,16 @@ async function buildExportContext(app, options) {
     ? await models.Scope.findAll({ where: { id: { [Op.in]: aiScopeIds } }, raw: true })
     : [];
 
-  // ---- AI 目录(仅 includeAi) ----
-  let aiSection = null;
-  if (options.includeAi) {
-    const providers = (await models.Provider.findAll({ raw: true })).map(exportProviderSecret);
-    const providerIds = providers.map((p) => p.id);
-    const aiModels = providerIds.length
-      ? await models.AiModel.findAll({ where: { provider_id: { [Op.in]: providerIds } }, raw: true })
-      : [];
-    const modelIds = aiModels.map((m) => m.id);
-    const capabilities = modelIds.length
-      ? await models.ModelCapability.findAll({ where: { model_id: { [Op.in]: modelIds } }, raw: true })
-      : [];
-    const ioTags = modelIds.length
-      ? await models.ModelIoTag.findAll({ where: { model_id: { [Op.in]: modelIds } }, raw: true })
-      : [];
-    aiSection = {
-      providers,
-      models: aiModels,
-      capabilities,
-      ioTags,
-    };
+  // ---- 实体绑定的逻辑元数据(数据标准目录走平台包,此处只带 code+version 供重映射) ----
+  let metadataSection = { tables: [], fields: [] };
+  try {
+    metadataSection = await collectBoundMetadata({
+      entityIds,
+      metricIds: metrics.map((m) => m.id),
+      enumIds: enums.map((en) => en.id),
+    });
+  } catch (e) {
+    warnings.push(`逻辑元数据节导出失败(已跳过): ${e.message}`);
   }
 
   // ---- UAC(不勾选仅导出被引用 roles/permissions) ----
@@ -621,9 +626,9 @@ async function buildExportContext(app, options) {
       tools: tools.map((r) => pickModelFields(models.Tool, r)),
       scopes: aiScopes.map((r) => pickModelFields(models.Scope, r)),
       skillTools: skillToolRows.map((r) => pickModelFields(models.SkillTool, r)),
-      applications: appLinks.map((r) => pickModelFields(models.SkillApplication, r)),
+      applications: dedicatedLinks.map((r) => pickModelFields(models.SkillApplication, r)),
     },
-    aiSection,
+    metadataSection,
     uacSection,
     storageBuckets,
     entityDataItems,
@@ -642,7 +647,6 @@ function buildExportSummary(ctx, options) {
     applicationCode: ctx.application.code,
     dataMode: options.dataMode,
     includeUac: options.includeUac,
-    includeAi: options.includeAi,
     counts: {
       entities: count(ctx.entitiesSection.items),
       entityFields: count(ctx.entitiesSection.fields),
@@ -660,8 +664,8 @@ function buildExportSummary(ctx, options) {
       skills: count(ctx.skillsSection.items),
       tools: count(ctx.skillsSection.tools),
       aiScopes: count(ctx.skillsSection.scopes),
-      providers: ctx.aiSection ? count(ctx.aiSection.providers) : 0,
-      aiModels: ctx.aiSection ? count(ctx.aiSection.models) : 0,
+      metadataTables: count(ctx.metadataSection?.tables),
+      metadataFields: count(ctx.metadataSection?.fields),
       storageBuckets: count(ctx.storageBuckets),
       uacUsers: count(ctx.uacSection.users),
       uacDepartments: count(ctx.uacSection.departments),
@@ -705,7 +709,6 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
   const fileOptions = {
     dataMode: options.dataMode,
     includeUac: options.includeUac,
-    includeAi: options.includeAi,
     secretsInPlaintext: true,
     exportedAt: new Date().toISOString(),
     sourceApplicationId: ctx.sourceApplicationId,
@@ -724,12 +727,9 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
     metrics: ctx.metricsSection,
     hooks: ctx.hooks,
     skills: ctx.skillsSection,
+    metadata: ctx.metadataSection,
   });
   yield* chunkString(headJson.slice(0, -1));
-  if (ctx.aiSection) {
-    yield ',"ai":';
-    yield* chunkString(JSON.stringify(ctx.aiSection));
-  }
   yield ',"uac":';
   yield* chunkString(JSON.stringify(ctx.uacSection));
   yield ',"storageBuckets":';

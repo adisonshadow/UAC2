@@ -44,7 +44,6 @@ const uploadMiddleware = koaBody({
  *               applicationId: { type: string, format: uuid, description: '应用 ID(内置应用 EADAF 拒绝导出)' }
  *               dataMode: { type: string, enum: [structure_and_data, data_only], default: structure_and_data, description: 'data_only 时导入端不落结构,仅对目标已有同版本实体写数' }
  *               includeUac: { type: boolean, default: false, description: '是否携带用户/部门/授权等 UAC 数据(不勾选仅携带被引用的角色与权限)' }
- *               includeAi: { type: boolean, default: false, description: '是否携带实例级 AI 目录(global Skill/Provider/模型),导入会 upsert 到目标 aibase' }
  *     responses:
  *       200:
  *         description: 返回 eadaf-app-export JSON 文件附件(Content-Disposition;body 为 octet-stream)
@@ -86,7 +85,7 @@ router.post('/export', authWithBuiltinApiGuard, operationAudit({
  *             schema:
  *               $ref: '#/components/schemas/EnvelopeAppTransferPreview'
  *       400:
- *         description: 文件格式不正确 / EADAF 拒绝导入
+ *         description: 文件格式不正确 / EADAF 拒绝导入 / 误传平台导出文件
  */
 router.post('/preview', authWithBuiltinApiGuard, operationAudit({
   domain: 'system',
@@ -112,7 +111,7 @@ router.post('/preview', authWithBuiltinApiGuard, operationAudit({
  *               strategy: { type: string, enum: [overwrite, skip, abort], default: overwrite, description: '冲突策略:覆盖更新 / 跳过已存在 / 有冲突即中止(不写任何数据)' }
  *     responses:
  *       200:
- *         description: 导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac/includeAi 写入 notes 而非 errors
+ *         description: 导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac 写入 notes 而非 errors。不含平台 AI 目录/全局 Skill
  *         content:
  *           application/json:
  *             schema:

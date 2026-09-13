@@ -24,6 +24,12 @@ async function parseExportFile(filePath) {
   } catch (e) {
     throw Object.assign(new Error(`文件不是合法 JSON: ${e.message}`), { status: 400 });
   }
+  if (payload?.format === 'eadaf-platform-export') {
+    throw Object.assign(
+      new Error('这是 EADAF 平台导出文件,请到「EADAF 平台导出/导入」页导入'),
+      { status: 400 },
+    );
+  }
   if (!payload || payload.format !== 'eadaf-app-export') {
     throw Object.assign(new Error('文件格式不正确,缺少 format: "eadaf-app-export" 标识'), { status: 400 });
   }
@@ -103,6 +109,13 @@ async function previewImportFile(filePath) {
   const uac = file.uac || {};
   const buckets = Array.isArray(file.storageBuckets) ? file.storageBuckets : [];
   const entityData = Array.isArray(file.entityData) ? file.entityData : [];
+  const metadata = file.metadata || {};
+  const metadataTables = Array.isArray(metadata.tables) ? metadata.tables : [];
+  const metadataFields = Array.isArray(metadata.fields) ? metadata.fields : [];
+
+  if (options.includeAi || (ai.providers && ai.providers.length)) {
+    warnings.push('文件含实例级 AI 目录或 includeAi,应用导入已不再处理该节,请到「EADAF 平台导出/导入」页迁移平台能力');
+  }
 
   const hints = Array.isArray(entities.connectionsHint) ? entities.connectionsHint : [];
   const [targetConnections, targetApp] = await Promise.all([
@@ -218,8 +231,6 @@ async function previewImportFile(filePath) {
   if (Array.isArray(ai.scopes)) {
     await checkUnique('skills.scopes', ai.scopes, 'slug', models.Scope, 'slug');
   }
-  await checkUnique('ai.providers', providerItems, 'slug', models.Provider, 'slug');
-  await checkUnique('ai.models', aiModelItems, 'slug', models.AiModel, 'slug');
   await checkUnique('storageBuckets', buckets, 'code', models.StorageBucket, 'code');
   await checkUnique('uac.roles', uac.roles || [], 'code', models.Role, 'code');
   await checkUnique('uac.permissions', uac.permissions || [], 'code', models.Permission, 'code');
@@ -381,9 +392,7 @@ async function previewImportFile(filePath) {
         skillTools: sectionCount(skills.skillTools),
         applications: sectionCount(skills.applications),
       },
-      ai: options.includeAi
-        ? { providers: providerItems.length, models: aiModelItems.length, capabilities: sectionCount(ai.capabilities), ioTags: sectionCount(ai.ioTags) }
-        : null,
+      metadata: { tables: metadataTables.length, fields: metadataFields.length },
       uac: {
         users: sectionCount(uac.users),
         departments: sectionCount(uac.departments),
