@@ -1213,17 +1213,35 @@ declare namespace API {
     type?: 'business_key' | 'second_key';
   };
 
-  /** 导入预览:连接匹配结果(只匹配不创建) */
+  /** 导入预览:连接匹配结果(可 willCreate=用目标凭证创建本地连接) */
   type AppTransferConnectionMatch = {
     sourceId?: string;
     name?: string;
     dbType?: string;
     targetSchema?: string;
     isDefault?: boolean;
+    host?: string | null;
+    port?: number | null;
+    databaseName?: string | null;
+    username?: string | null;
     matched?: boolean;
-    confidence?: 'default' | 'schema' | 'name' | 'none';
+    willCreate?: boolean;
+    confidence?: 'default' | 'schema' | 'name' | 'will_create' | 'none';
     targetId?: string;
     targetName?: string;
+    createFromName?: string | null;
+  };
+
+  /** 导入预览:物化库表摘要 */
+  type AppTransferPhysicalTable = {
+    entityCode?: string;
+    tableName?: string | null;
+    targetSchema?: string | null;
+    dbType?: string | null;
+    columnCount?: number;
+    rowCount?: number | null;
+    rowsOmitted?: boolean;
+    omitReason?: string | null;
   };
 
   /** 导入预览:行数据可写性 */
@@ -1249,6 +1267,7 @@ declare namespace API {
     conflicts?: AppTransferPreviewConflict[];
     hookMultiMatch?: { name?: string; eventType?: string; matched?: number }[];
     connectionMatches?: AppTransferConnectionMatch[];
+    physicalTables?: AppTransferPhysicalTable[];
     entityData?: AppTransferEntityDataPreview[];
     missingReferences?: string[];
     largeEntities?: { entityCode?: string; rowCount?: number }[];

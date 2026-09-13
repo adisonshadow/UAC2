@@ -1,15 +1,16 @@
 /**
  * 应用导入服务(review 方案 §3/§5.3)。
  *
- * 依赖链:uac 最小结构 → uac 用户数据(可选)→ application → entities(结构) → 物化
- * → entityData → apiServices → collectionPipelines → outboundWebhooks → metrics
- * → hooks → skills → storageBuckets。
+ * 依赖链:uac 最小结构 → uac 用户数据(可选)→ application → entities(结构)
+ * → databaseConnections → 物化 → entityData → apiServices → collectionPipelines
+ * → outboundWebhooks → metrics → hooks → skills → storageBuckets。
  * 硬终止节:uac / application / entities(后续外键依赖结构)。
- * 软失败节:uacUsers / materialization / entityData / ai — 只标红本节约,继续后续元数据。
+ * 软失败节:uacUsers / databaseConnections / materialization / entityData / ai — 只标红本节约,继续后续元数据。
  *
  * 关键规则:
  * - idMap 只覆盖元数据表;物化表行数据保留源主键;
- * - database_connections 只匹配不创建(is_default+db_type → (db_type,target_schema) → name);
+ * - database_connections 先匹配(is_default+db_type → (db_type,target_schema) → name);
+ *   未命中则用目标同类型连接凭证创建本地连接(绝不写入源 host/密码);
  * - 第二唯一键(route_path / function_name)撞到另一条目标记录 → 该条 failed,不静默改;
  * - overwrite 行数据 = 目标表 DELETE 后按实际列集批量插入(连接内同事务);
  * - data_only 模式:不落结构,目标无同 code 实体或版本不符 → 跳过写数。
@@ -26,6 +27,8 @@ const connectionRunner = require('../businessData/materialization/connectionRunn
 const {
   loadAndValidateFile,
   matchTargetConnection,
+  findCredentialTemplate,
+  getFileConnectionHints,
 } = require('./appPreviewService');
 const { pickModelFields, readTableColumns } = require('./appExportService');
 
@@ -146,28 +149,114 @@ class ImportContext {
     return message;
   }
 
-  // ---------- 连接匹配(只匹配不创建) ----------
+  // ---------- 连接匹配 / 按目标凭证创建 ----------
 
-  async getTargetConnections() {
-    if (!this.targetConnections) {
+  async getTargetConnections({ force = false } = {}) {
+    if (force || !this.targetConnections) {
       this.targetConnections = await models.BizdataDatabaseConnection.findAll({ raw: true });
     }
     return this.targetConnections;
   }
 
-  async resolveConnection(sourceConnId) {
+  getConnectionHint(sourceConnId) {
+    return getFileConnectionHints(this.file).find((h) => h.sourceId === sourceConnId) || null;
+  }
+
+  /**
+   * 用目标同类型连接作凭证模板,创建指向目标物化库的本地连接(不用源 host/密码)。
+   * @returns {Promise<object|null>} 新建连接的 raw 行
+   */
+  async createLocalConnectionFromTemplate(hint, section) {
+    const targets = await this.getTargetConnections();
+    const template = findCredentialTemplate(hint, targets);
+    if (!template) {
+      if (section) {
+        this.itemFailed(
+          section,
+          hint.name || hint.sourceId,
+          new Error(`目标无 ${hint.dbType || '未知'} 类型连接作凭证模板,请先在「数据库连接」页建好本地连接`),
+        );
+      }
+      return null;
+    }
+    const hasDefaultOfType = targets.some((c) => c.is_default && c.db_type === hint.dbType);
+    const created = await models.BizdataDatabaseConnection.create({
+      name: hint.name || `${hint.dbType}-${hint.targetSchema || 'mat'}`,
+      db_type: hint.dbType || template.db_type,
+      host: template.host,
+      port: template.port,
+      username: template.username,
+      password_enc: template.password_enc,
+      database_name: template.database_name,
+      target_schema: hint.targetSchema || template.target_schema || 'bizdata_mat',
+      is_default: !hasDefaultOfType,
+    });
+    const row = created.toJSON ? created.toJSON() : created.get({ plain: true });
+    this.targetConnections = null; // 下次强制刷新
+    if (section) {
+      section.counts.created += 1;
+      section.notes.push(
+        `已用目标连接「${template.name}」的凭证创建「${row.name}」(schema=${row.target_schema}),未使用源库 host/密码`,
+      );
+    }
+    return row;
+  }
+
+  async resolveConnection(sourceConnId, { section = null, allowCreate = true } = {}) {
     if (!sourceConnId) return null;
     if (this.connectionMatchCache.has(sourceConnId)) {
       return this.connectionMatchCache.get(sourceConnId);
     }
-    const hint = (this.file.entities?.connectionsHint || []).find((h) => h.sourceId === sourceConnId);
+    const hint = this.getConnectionHint(sourceConnId);
     let connection = null;
     if (hint) {
       const targets = await this.getTargetConnections();
       connection = matchTargetConnection(hint, targets).connection;
+      if (!connection && allowCreate) {
+        connection = await this.createLocalConnectionFromTemplate(hint, section);
+      } else if (!connection && section) {
+        this.itemFailed(section, hint.name || sourceConnId, new Error('目标未匹配到连接且未允许创建'));
+      } else if (connection && section) {
+        section.counts.matched = (section.counts.matched || 0) + 1;
+      }
+    } else if (section) {
+      this.itemFailed(section, sourceConnId, new Error('导出文件中无对应连接提示'));
     }
     this.connectionMatchCache.set(sourceConnId, connection);
     return connection;
+  }
+
+  /** 预解析/创建文件中全部连接提示,写入 databaseConnections 节结果 */
+  async ensureDatabaseConnections() {
+    const section = this.beginSection('databaseConnections');
+    // counts 扩展 matched(匹配到已有),created/failed 沿用通用字段
+    section.counts.matched = 0;
+    const hints = getFileConnectionHints(this.file);
+    if (!hints.length) {
+      return this.skipSection(section, '文件无 databaseConnections / connectionsHint');
+    }
+    for (const hint of hints) {
+      if (!hint.sourceId) {
+        this.itemFailed(section, hint.name || '(无 sourceId)', new Error('缺少 sourceId'));
+        continue;
+      }
+      if (this.connectionMatchCache.has(hint.sourceId)) continue;
+      const targets = await this.getTargetConnections();
+      const matched = matchTargetConnection(hint, targets).connection;
+      if (matched) {
+        this.connectionMatchCache.set(hint.sourceId, matched);
+        section.counts.matched += 1;
+        continue;
+      }
+      const created = await this.createLocalConnectionFromTemplate(hint, section);
+      this.connectionMatchCache.set(hint.sourceId, created);
+    }
+    if (section.counts.failed > 0 && section.counts.matched === 0 && section.counts.created === 0) {
+      section.status = 'failed';
+    } else if (section.counts.failed > 0) {
+      section.status = 'failed';
+    }
+    return section;
   }
 
   // ---------- 通用 upsert ----------
@@ -634,7 +723,7 @@ class ImportContext {
       byConnection.get(conn.id).push({ entityId, version: item.entityVersion, entityCode: item.entityCode });
     }
     if (skippedEntities.length) {
-      section.errors.push(`以下实体因连接未匹配/缺失未安排物化(其行数据也将失败): ${skippedEntities.join(', ')}`);
+      section.errors.push(`以下实体因连接未匹配/无法创建未安排物化(其行数据也将失败): ${skippedEntities.join(', ')}`);
     }
     try {
       for (const [connId, entries] of byConnection) {
@@ -1462,6 +1551,7 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
     ['uacUsers', () => ctx.importUacUsers()],
     ['application', () => ctx.importApplication()],
     ['entities', () => ctx.importEntities()],
+    ['databaseConnections', () => ctx.ensureDatabaseConnections()],
     ['materialization', () => ctx.materializeEntities()],
     ['entityData', () => ctx.importEntityData()],
     ['apiServices', () => ctx.importApiServices()],
@@ -1473,8 +1563,8 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
     ['skills', () => ctx.importSkills()],
     ['storageBuckets', () => ctx.importStorageBuckets()],
   ];
-  // 物化/行数据失败不挡住 API 等元数据;uacUsers / metadata 本就可选
-  const softFailSections = new Set(['uacUsers', 'materialization', 'entityData', 'metadata']);
+  // 物化/行数据/连接创建失败不挡住 API 等元数据;uacUsers / metadata 本就可选
+  const softFailSections = new Set(['uacUsers', 'databaseConnections', 'materialization', 'entityData', 'metadata']);
 
   for (const [name, step] of chainSteps) {
      

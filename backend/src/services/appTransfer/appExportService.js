@@ -6,7 +6,9 @@
  * - 响应以异步 generator 逐节产出 JSON chunk,由控制器 Readable.from 流式下载;
  * - 密文字段(encryptApiKey 加密,绑定实例 ENCRYPTION_KEY)导出时解密为明文段,
  *   导入端用目标实例密钥重新加密;app_secret/client_secret 库内即明文,原样往返;
- * - 不导出 database_connections(password_enc 不出库),只给 connectionsHint 供匹配。
+ * - 导出 databaseConnections 元数据(含 host/port/databaseName/username 供预览),
+ *   **不导出** password_enc;导入端优先匹配,失败则用目标同类型连接凭证创建本地连接。
+ * - physicalTables 为 entityData 的库表摘要,便于预览一眼看到物化表清单。
  */
 const { Op } = require('sequelize');
 const { Client: PgClient } = require('pg');
@@ -587,13 +589,40 @@ async function buildExportContext(app, options) {
   const connRows = connectionIdSet.size
     ? await models.BizdataDatabaseConnection.findAll({ where: { id: { [Op.in]: [...connectionIdSet] } }, raw: true })
     : [];
-  const connectionsHint = connRows.map((c) => ({
+  // 完整连接元数据(无密码);connectionsHint 保留同结构兼容旧导入
+  const databaseConnections = connRows.map((c) => ({
     sourceId: c.id,
     name: c.name,
     dbType: c.db_type,
     targetSchema: c.target_schema,
     isDefault: Boolean(c.is_default),
+    host: c.host || null,
+    port: c.port == null ? null : Number(c.port),
+    databaseName: c.database_name || null,
+    username: c.username || null,
   }));
+  const connectionsHint = databaseConnections.map((c) => ({
+    sourceId: c.sourceId,
+    name: c.name,
+    dbType: c.dbType,
+    targetSchema: c.targetSchema,
+    isDefault: c.isDefault,
+  }));
+  const physicalTables = entityDataItems.map((item) => {
+    const row = {
+      entityCode: item.entityCode,
+      tableName: item.tableName || null,
+      targetSchema: item.targetSchema || null,
+      dbType: item.dbType || null,
+      columnCount: Array.isArray(item.columns) ? item.columns.length : 0,
+      rowCount: item.rowCount == null ? null : Number(item.rowCount),
+    };
+    if (item.rowsOmitted) {
+      row.rowsOmitted = true;
+      row.omitReason = item.omitReason || null;
+    }
+    return row;
+  });
 
   return {
     application: pickModelFields(models.Application, app.toJSON()),
@@ -603,7 +632,9 @@ async function buildExportContext(app, options) {
       enums: enums.map((r) => pickModelFields(models.BizdataEnum, r)),
       relations: relations.map((r) => pickModelFields(models.BizdataRelation, r)),
       scopeDocs: scopeDocs.map((r) => pickModelFields(models.BizdataScopeDoc, r)),
+      databaseConnections,
       connectionsHint,
+      physicalTables,
     },
     apiServicesSection: {
       items: apiServices.map((r) => pickModelFields(models.BizdataApiService, r)),
@@ -653,6 +684,8 @@ function buildExportSummary(ctx, options) {
       enums: count(ctx.entitiesSection.enums),
       relations: count(ctx.entitiesSection.relations),
       scopeDocs: count(ctx.entitiesSection.scopeDocs),
+      databaseConnections: count(ctx.entitiesSection.databaseConnections),
+      physicalTables: count(ctx.entitiesSection.physicalTables),
       apiServices: count(ctx.apiServicesSection.items),
       apiServiceOperations: count(ctx.apiServicesSection.operations),
       apiServicePermissions: count(ctx.apiServicesSection.permissions),

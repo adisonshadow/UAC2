@@ -3,8 +3,9 @@
  *
  * 解析上传的导出文件(不写任何数据),对目标实例做:
  * - 节条数统计;业务键 + 第二唯一键冲突清单(api_services/collection_pipelines 的 route_path、tools 的 function_name);
- * - 连接匹配结果(connectionsHint → 目标 database_connections,只匹配不创建);
- * - 行数据可写性(pg/mysql 之外、未物化、连接不匹配的实体);
+ * - 连接匹配结果(databaseConnections/connectionsHint → 目标 database_connections;
+ *   未匹配且目标有同类型凭证模板时标记 willCreate,导入时用目标凭证创建本地连接);
+ * - 行数据可写性(pg/mysql 之外、未物化、连接不匹配且无法创建的实体);
  * - 缺失引用(关系端点、实体/指标引用、Webhook 绑定的 API 等);
  * - EADAF 拒绝、超 10 万行警告。
  */
@@ -49,7 +50,7 @@ function safeFileScopeCodes(file) {
 }
 
 /**
- * 连接匹配(只匹配不创建):
+ * 连接匹配(优先匹配;未命中时导入端可按目标凭证创建):
  * 1) is_default 且 db_type 相同;2) (db_type, target_schema) 相同;3) name 相同(低置信,仅提示)。
  */
 function matchTargetConnection(hint, targetConnections) {
@@ -62,6 +63,32 @@ function matchTargetConnection(hint, targetConnections) {
   const tier3 = targetConnections.find((c) => c.name === hint.name);
   if (tier3) return { connection: tier3, confidence: 'name' };
   return { connection: null, confidence: 'none' };
+}
+
+/** 目标是否存在可作凭证模板的同 db_type 连接(创建本地连接用,绝不使用源 host/密码) */
+function findCredentialTemplate(hint, targetConnections) {
+  const dbType = hint.dbType || null;
+  if (!dbType) return null;
+  return (
+    targetConnections.find((c) => c.is_default && c.db_type === dbType)
+    || targetConnections.find((c) => c.db_type === dbType)
+    || null
+  );
+}
+
+/**
+ * 从导出文件读取连接提示:优先 databaseConnections,回退 connectionsHint(旧包)。
+ * @returns {object[]}
+ */
+function getFileConnectionHints(file) {
+  const entities = file?.entities || {};
+  if (Array.isArray(entities.databaseConnections) && entities.databaseConnections.length) {
+    return entities.databaseConnections;
+  }
+  if (Array.isArray(entities.connectionsHint)) {
+    return entities.connectionsHint;
+  }
+  return [];
 }
 
 /**
@@ -117,7 +144,20 @@ async function previewImportFile(filePath) {
     warnings.push('文件含实例级 AI 目录或 includeAi,应用导入已不再处理该节,请到「EADAF 平台导出/导入」页迁移平台能力');
   }
 
-  const hints = Array.isArray(entities.connectionsHint) ? entities.connectionsHint : [];
+  const hints = getFileConnectionHints(file);
+  const physicalTables = Array.isArray(entities.physicalTables)
+    ? entities.physicalTables
+    : (Array.isArray(entityData)
+      ? entityData.map((item) => ({
+        entityCode: item.entityCode,
+        tableName: item.tableName || null,
+        targetSchema: item.targetSchema || null,
+        dbType: item.dbType || null,
+        columnCount: Array.isArray(item.columns) ? item.columns.length : 0,
+        rowCount: item.rowCount == null ? null : Number(item.rowCount),
+        ...(item.rowsOmitted ? { rowsOmitted: true, omitReason: item.omitReason || null } : {}),
+      }))
+      : []);
   const [targetConnections, targetApp] = await Promise.all([
     models.BizdataDatabaseConnection.findAll({ raw: true }),
     models.Application.findOne({ where: { code: appCode }, raw: true }),
@@ -251,23 +291,31 @@ async function previewImportFile(filePath) {
     }
   }
 
-  // ---- 连接匹配 ----
+  // ---- 连接匹配(未命中且有目标凭证模板 → willCreate) ----
   const connectionMatches = hints.map((hint) => {
     const { connection, confidence } = matchTargetConnection(hint, targetConnections);
+    const template = connection ? null : findCredentialTemplate(hint, targetConnections);
+    const willCreate = !connection && Boolean(template);
     return {
       sourceId: hint.sourceId,
       name: hint.name,
       dbType: hint.dbType,
       targetSchema: hint.targetSchema,
       isDefault: Boolean(hint.isDefault),
+      host: hint.host || null,
+      port: hint.port == null ? null : Number(hint.port),
+      databaseName: hint.databaseName || null,
+      username: hint.username || null,
       matched: Boolean(connection),
-      confidence,
+      willCreate,
+      confidence: connection ? confidence : (willCreate ? 'will_create' : 'none'),
       targetId: connection ? connection.id : null,
       targetName: connection ? connection.name : null,
+      createFromName: willCreate ? template.name : null,
     };
   });
-  const connMatchBySourceId = new Map(
-    connectionMatches.filter((m) => m.matched).map((m) => [m.sourceId, m]),
+  const connUsableBySourceId = new Map(
+    connectionMatches.filter((m) => m.matched || m.willCreate).map((m) => [m.sourceId, m]),
   );
 
   // ---- 行数据可写性 ----
@@ -284,9 +332,9 @@ async function previewImportFile(filePath) {
     } else if (!SUPPORTED_ROW_DB.includes(item.dbType)) {
       entry.writable = false;
       entry.reason = `目标暂仅支持 postgresql/mysql 行数据写入,当前 ${item.dbType || '未知'}`;
-    } else if (item.connectionSourceId && !connMatchBySourceId.has(item.connectionSourceId)) {
+    } else if (item.connectionSourceId && !connUsableBySourceId.has(item.connectionSourceId)) {
       entry.writable = false;
-      entry.reason = '文件中的源连接在目标实例未匹配到可用连接(只匹配不创建)';
+      entry.reason = '文件中的源连接在目标实例未匹配到,且无可用于创建本地连接的同类型凭证模板';
     } else {
       const targetEntity = await models.BizdataEntity.findOne({
         where: { code: item.entityCode },
@@ -347,9 +395,13 @@ async function previewImportFile(filePath) {
   if (largeEntities.length) {
     warnings.push(`以下实体行数超过 10 万,导入耗时可能较长: ${largeEntities.map((e) => e.entityCode).join(', ')}`);
   }
-  const unmatchedConns = connectionMatches.filter((m) => !m.matched);
+  const unmatchedConns = connectionMatches.filter((m) => !m.matched && !m.willCreate);
+  const willCreateConns = connectionMatches.filter((m) => m.willCreate);
+  if (willCreateConns.length) {
+    warnings.push(`有 ${willCreateConns.length} 条源连接未匹配,导入时将用目标同类型连接凭证创建本地连接(不使用源库 host/密码): ${willCreateConns.map((c) => c.name).join(', ')}`);
+  }
   if (unmatchedConns.length) {
-    warnings.push(`有 ${unmatchedConns.length} 条源连接未在目标实例匹配到(连接只匹配不创建),关联实体行数据将失败: ${unmatchedConns.map((c) => c.name).join(', ')}`);
+    warnings.push(`有 ${unmatchedConns.length} 条源连接无法匹配且目标无同类型凭证模板,关联实体行数据将失败(请先在「数据库连接」页建好本地连接): ${unmatchedConns.map((c) => c.name).join(', ')}`);
   }
   // scope 覆盖提示:文件应用配置的 bizdata_scope_codes
   const scopeCodes = safeFileScopeCodes(file);
@@ -371,7 +423,9 @@ async function previewImportFile(filePath) {
         enums: sectionCount(entities.enums),
         relations: sectionCount(entities.relations),
         scopeDocs: sectionCount(entities.scopeDocs),
+        databaseConnections: hints.length,
         connectionsHint: hints.length,
+        physicalTables: physicalTables.length,
       },
       apiServices: {
         items: apiItems.length,
@@ -408,6 +462,7 @@ async function previewImportFile(filePath) {
     conflicts,
     hookMultiMatch,
     connectionMatches,
+    physicalTables,
     entityData: entityDataPreview,
     missingReferences,
     largeEntities,
@@ -438,6 +493,8 @@ module.exports = {
   previewImportFile,
   loadAndValidateFile,
   matchTargetConnection,
+  findCredentialTemplate,
+  getFileConnectionHints,
   cleanupFile,
   SUPPORTED_ROW_DB,
 };

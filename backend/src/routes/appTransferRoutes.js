@@ -68,7 +68,7 @@ router.post('/export', authWithBuiltinApiGuard, operationAudit({
  * /api/v1/system/app-transfer/preview:
  *   post:
  *     tags: [System]
- *     summary: 预览应用导出文件(节条数/冲突/连接匹配/缺失引用,不写数据) [需要认证]
+ *     summary: 预览应用导出文件(节条数/冲突/连接匹配与将创建/物化库表摘要/缺失引用,不写数据) [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       content:
@@ -99,7 +99,7 @@ router.post('/preview', authWithBuiltinApiGuard, operationAudit({
  * /api/v1/system/app-transfer/import:
  *   post:
  *     tags: [System]
- *     summary: 按策略导入应用导出文件(写操作,不可自动撤销;物化 run.created_by 记操作者 UUID) [需要认证]
+ *     summary: 按策略导入应用导出文件(写操作,不可自动撤销;连接未匹配时用目标凭证创建本地连接;物化 run.created_by 记操作者 UUID) [需要认证]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       content:

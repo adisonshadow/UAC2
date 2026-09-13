@@ -42,6 +42,8 @@ const SYSTEM_APPLICATION_CODE = 'EADAF';
 const EXPORT_CONTENT_ITEMS = [
   '应用配置(SSO / API 接入、数据域 Scope、顶层 Skill 说明)',
   '数据实体结构(实体 / 字段 / 枚举 / 关系 / Scope 文档)',
+  '数据库连接元数据(name / dbType / targetSchema / host 等,不含密码;导入优先匹配,失败则用目标同类型凭证创建本地连接)',
+  '物化库表摘要(表名 / schema / 列数 / 行数)',
   '实体绑定的逻辑元数据(数据标准目录不随应用包,仅带 code+version 供重映射)',
   '实体行数据(仅 PostgreSQL / MySQL 物化表,保留原主键)',
   'API 服务(定义 / 操作 / 授权)',
@@ -57,6 +59,7 @@ const EXPORT_CONTENT_ITEMS = [
 const SECTION_LABELS: Record<string, string> = {
   application: '应用配置',
   entities: '数据实体',
+  databaseConnections: '数据库连接',
   apiServices: 'API 服务',
   collectionPipelines: '采集管道',
   outboundWebhooks: 'Outbound Webhook',
@@ -79,6 +82,8 @@ const SUB_LABELS: Record<string, string> = {
   relations: '关系',
   scopeDocs: 'Scope 文档',
   connectionsHint: '连接提示',
+  databaseConnections: '数据库连接',
+  physicalTables: '物化表',
   operations: '操作',
   permissions: '授权',
   applications: '应用绑定',
@@ -90,6 +95,7 @@ const SUB_LABELS: Record<string, string> = {
   updated: '更新',
   skipped: '跳过',
   failed: '失败',
+  matched: '匹配',
   users: '用户',
   departments: '部门',
   roles: '角色',
@@ -102,6 +108,15 @@ const SUB_LABELS: Record<string, string> = {
   ioTags: 'IO 标签',
   tables: '表',
   totalRows: '总行数',
+};
+
+const CONNECTION_STATUS_META: Record<
+  string,
+  { color: string; text: string }
+> = {
+  matched: { color: 'success', text: '已匹配' },
+  willCreate: { color: 'processing', text: '将创建' },
+  unmatched: { color: 'error', text: '无法创建' },
 };
 
 /** request 封装只返回 body,附件文件名在前端按同一规则构造 */
@@ -165,7 +180,13 @@ function flattenSectionCounts(
     if (typeof value === 'number') {
       detail = `${value} 项`;
     } else if (value && typeof value === 'object') {
-      const parts = Object.entries(value as Record<string, unknown>)
+      const obj = value as Record<string, unknown>;
+      // 导入结果节为 { status, counts, errors };预览节为扁平计数对象
+      const countSource =
+        obj.counts && typeof obj.counts === 'object'
+          ? (obj.counts as Record<string, unknown>)
+          : obj;
+      const parts = Object.entries(countSource)
         .filter(([, v]) => typeof v === 'number' && v > 0)
         .map(([k, v]) => `${SUB_LABELS[k] || k} ${v}`);
       detail = parts.length ? parts.join('、') : '空';
@@ -476,7 +497,7 @@ const AppTransferTab: React.FC = () => {
             type="warning"
             showIcon
             message="导入会写入目标实例数据,不可自动撤销"
-            description="建议先预览确认冲突与连接匹配结果,再选择冲突策略执行。物化行数据写在外部数据库,不会随主库回滚。"
+            description="建议先预览确认冲突、连接匹配与库表清单,再选择冲突策略执行。连接未匹配时会用目标同类型凭证创建本地连接(不连源库)。物化行数据写在外部数据库,不会随主库回滚。"
             style={{ marginBottom: 16 }}
           />
           <Upload.Dragger
@@ -561,6 +582,99 @@ const AppTransferTab: React.FC = () => {
                   { title: '条数', dataIndex: 'detail' },
                 ]}
               />
+              {(preview.connectionMatches?.length || 0) > 0 && (
+                <Table
+                  size="small"
+                  style={{ marginTop: 12 }}
+                  pagination={false}
+                  rowKey={(r) => r.sourceId || r.name || String(Math.random())}
+                  title={() => '数据库连接匹配'}
+                  dataSource={preview.connectionMatches}
+                  columns={[
+                    {
+                      title: '源连接',
+                      dataIndex: 'name',
+                      ellipsis: true,
+                      render: (name: string, row) => (
+                        <span>
+                          {name || '-'}
+                          <Typography.Text
+                            type="secondary"
+                            style={{ display: 'block', fontSize: 12 }}
+                          >
+                            {[row.dbType, row.targetSchema, row.databaseName]
+                              .filter(Boolean)
+                              .join(' / ')}
+                          </Typography.Text>
+                        </span>
+                      ),
+                    },
+                    {
+                      title: '状态',
+                      width: 100,
+                      render: (_, row) => {
+                        const key = row.matched
+                          ? 'matched'
+                          : row.willCreate
+                            ? 'willCreate'
+                            : 'unmatched';
+                        const meta = CONNECTION_STATUS_META[key];
+                        return <Tag color={meta.color}>{meta.text}</Tag>;
+                      },
+                    },
+                    {
+                      title: '目标',
+                      ellipsis: true,
+                      render: (_, row) => {
+                        if (row.matched) {
+                          return row.targetName || row.targetId || '-';
+                        }
+                        if (row.willCreate) {
+                          return `将用「${row.createFromName || '目标同类型连接'}」凭证创建`;
+                        }
+                        return '无可用凭证模板';
+                      },
+                    },
+                  ]}
+                />
+              )}
+              {(preview.physicalTables?.length || 0) > 0 && (
+                <Table
+                  size="small"
+                  style={{ marginTop: 12 }}
+                  pagination={{ pageSize: 8, size: 'small' }}
+                  rowKey={(r) => r.entityCode || r.tableName || String(Math.random())}
+                  title={() => '物化库表摘要'}
+                  dataSource={preview.physicalTables}
+                  columns={[
+                    {
+                      title: '实体',
+                      dataIndex: 'entityCode',
+                      ellipsis: true,
+                    },
+                    {
+                      title: '表名',
+                      dataIndex: 'tableName',
+                      ellipsis: true,
+                      render: (v: string) => v || '-',
+                    },
+                    {
+                      title: 'Schema',
+                      dataIndex: 'targetSchema',
+                      width: 110,
+                      render: (v: string) => v || '-',
+                    },
+                    {
+                      title: '列/行',
+                      width: 90,
+                      render: (_, row) =>
+                        row.rowsOmitted
+                          ? '已跳过'
+                          : `${row.columnCount ?? 0} / ${row.rowCount ?? 0}`,
+                    },
+                  ]}
+                />
+              )}
               {conflictCount > 0 && (
                 <Alert
                   type="error"
