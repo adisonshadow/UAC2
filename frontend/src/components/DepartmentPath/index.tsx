@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { useInitialState } from '@/providers/InitialStateProvider';
+import React, { useContext, useEffect, useState, useMemo } from 'react';
+import { InitialStateContext } from '@/providers/initialStateContext';
 import { Tooltip, Cascader } from 'antd';
 import type { CascaderProps } from 'antd';
 import { getDepartmentPath } from '@/utils/department';
@@ -11,14 +11,15 @@ interface DepartmentPathProps {
   isOnlyShowTail?: boolean;
 }
 
-const DepartmentPath: React.FC<DepartmentPathProps> = ({ 
-  departmentId, 
+const DepartmentPath: React.FC<DepartmentPathProps> = ({
+  departmentId,
   editable = false,
   onChange,
-  isOnlyShowTail = true 
+  isOnlyShowTail = true,
 }) => {
-  const { initialState } = useInitialState();
-  const departments = initialState?.departments || [];
+  // 直接读 Context：无 Provider / HMR 错位时降级为空列表，避免整页抛错
+  const ctx = useContext(InitialStateContext);
+  const departments = ctx?.initialState?.departments || [];
   const [path, setPath] = useState<string[]>([]);
 
   useEffect(() => {
@@ -29,12 +30,11 @@ const DepartmentPath: React.FC<DepartmentPathProps> = ({
     fetchPath();
   }, [departmentId, departments]);
 
-  // 构建级联选择器的选项
   const options = useMemo(() => {
     const buildOptions = (parentId: string | null = null): CascaderProps['options'] => {
       return departments
-        .filter(dept => dept.parent_id === parentId)
-        .map(dept => ({
+        .filter((dept) => dept.parent_id === parentId)
+        .map((dept) => ({
           value: dept.department_id,
           label: dept.name,
           children: buildOptions(dept.department_id),
@@ -43,32 +43,30 @@ const DepartmentPath: React.FC<DepartmentPathProps> = ({
     return buildOptions();
   }, [departments]);
 
-  // 获取当前部门路径
   const pathMemo = useMemo(() => {
     const buildPath = (id: string): string[] => {
-      const dept = departments.find(d => d.department_id === id);
+      const dept = departments.find((d) => d.department_id === id);
       if (!dept) return [];
-      
+
       if (!dept.parent_id) {
         return [dept.name];
       }
-      
+
       return [...buildPath(dept.parent_id), dept.name];
     };
 
     return buildPath(departmentId);
   }, [departmentId, departments]);
 
-  // 获取当前部门ID的完整路径
   const getValue = useMemo(() => {
     const buildValue = (id: string): string[] => {
-      const dept = departments.find(d => d.department_id === id);
+      const dept = departments.find((d) => d.department_id === id);
       if (!dept) return [];
-      
+
       if (!dept.parent_id) {
         return [dept.department_id];
       }
-      
+
       return [...buildValue(dept.parent_id), dept.department_id];
     };
 
@@ -98,4 +96,4 @@ const DepartmentPath: React.FC<DepartmentPathProps> = ({
   );
 };
 
-export default DepartmentPath; 
+export default DepartmentPath;

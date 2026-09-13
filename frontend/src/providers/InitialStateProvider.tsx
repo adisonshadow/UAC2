@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import defaultSettings from '../../config/defaultSettings';
 import { getDepartments } from '@/services/UAC/api/departments';
 import { getAuthCheck } from '@/services/UAC/api/auth';
@@ -10,63 +10,20 @@ import {
   applyDocumentBranding,
   fetchSystemBranding,
   resolveBrandingDisplay,
-  type AppBranding,
 } from '@/utils/appBranding';
+import {
+  InitialStateContext,
+  type Department,
+  type DepartmentTreeOption,
+  type InitialState,
+  type MenuPermissionItem,
+} from './initialStateContext';
 
-export interface DepartmentTreeOption {
-  value: string;
-  label: string;
-  children?: DepartmentTreeOption[];
-  disabled?: boolean;
-}
-
-interface Department {
-  department_id: string;
-  name: string;
-  code: string;
-  parent_id: string | null;
-  status: 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
-  description: string;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
-}
-
-export interface MenuPermissionItem {
-  permission_id: string;
-  code: string;
-  access_restriction?: { mode: 'none' | 'role' | 'department'; roleIds?: string[]; departmentIds?: string[] } | null;
-}
-
-export interface InitialState {
-  fetchUserInfo: () => Promise<CurrentUser | undefined>;
-  fetchDepartments: () => Promise<
-    | {
-        departments: Department[];
-        departmentsTreeData: DepartmentTreeOption[];
-      }
-    | undefined
-  >;
-  currentUser?: CurrentUser;
-  departments?: Department[];
-  departmentsTreeData?: DepartmentTreeOption[];
-  departmentsLastUpdate?: number;
-  /** 菜单权限（含 access_restriction），用于运行时过滤菜单可见性 */
-  menuPermissions?: MenuPermissionItem[];
-  name: string;
-  settings: typeof defaultSettings;
-  appBranding?: AppBranding;
-  systemFeatures?: API.SystemFeatures;
-}
-
-interface InitialStateContextValue {
-  initialState?: InitialState;
-  setInitialState: (updater: InitialState | ((prev?: InitialState) => InitialState | undefined)) => void;
-  loading: boolean;
-  refresh: () => Promise<void>;
-}
-
-const InitialStateContext = createContext<InitialStateContextValue | null>(null);
+export type {
+  DepartmentTreeOption,
+  InitialState,
+  MenuPermissionItem,
+} from './initialStateContext';
 
 async function fetchUserInfo() {
   try {
