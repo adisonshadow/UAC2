@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS aibase.api_request_logs (
     status_code INT NOT NULL,
     duration_ms INT NOT NULL,
     error_code VARCHAR(50),
+    turn_id VARCHAR(64),
+    tool_function_name VARCHAR(128),
+    tool_execution_type VARCHAR(32),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -63,3 +66,5 @@ CREATE INDEX IF NOT EXISTS idx_api_request_logs_slug
     ON aibase.api_request_logs(slug);
 CREATE INDEX IF NOT EXISTS idx_api_request_logs_created_at
     ON aibase.api_request_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_api_request_logs_turn_id
+    ON aibase.api_request_logs(turn_id);

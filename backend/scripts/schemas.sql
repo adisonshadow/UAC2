@@ -156,6 +156,21 @@ FOREIGN KEY (user_id) REFERENCES uac.users(user_id) ON DELETE CASCADE,
 ADD CONSTRAINT fk_user_roles_role
 FOREIGN KEY (role_id) REFERENCES uac.roles(role_id) ON DELETE CASCADE;
 
+-- 部门角色关联表（组织多角色绑定）
+CREATE TABLE uac.department_roles (
+    department_id UUID NOT NULL,
+    role_id UUID NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (department_id, role_id)
+);
+
+ALTER TABLE uac.department_roles
+ADD CONSTRAINT fk_department_roles_department
+FOREIGN KEY (department_id) REFERENCES uac.departments(department_id) ON DELETE CASCADE,
+ADD CONSTRAINT fk_department_roles_role
+FOREIGN KEY (role_id) REFERENCES uac.roles(role_id) ON DELETE CASCADE;
+
 -- 数据权限规则表（含软删除）
 CREATE TABLE uac.data_permission_rules (
     rule_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -174,17 +189,29 @@ ADD CONSTRAINT fk_data_permission_rules_role
 FOREIGN KEY (role_id) REFERENCES uac.roles(role_id) ON DELETE CASCADE;
 
 -- 第六部分：创建日志和令牌相关表
--- 操作日志表（Saga模式）
+-- 操作日志表（Saga模式；审计列前向合并自 migrate-operation-log-audit.sql）
 CREATE TABLE uac.operation_logs (
     log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID,
+    operator_id UUID,
+    operator_name VARCHAR(100),
+    operator_type VARCHAR(20) NOT NULL DEFAULT 'USER'
+        CHECK (operator_type IN ('USER', 'APPLICATION', 'SYSTEM', 'ANONYMOUS')),
+    application_id UUID,
     operation_type VARCHAR(50) NOT NULL,
     resource_type VARCHAR(50) NOT NULL,
-    resource_id VARCHAR(50) NOT NULL,
+    resource_id VARCHAR(200) NOT NULL,
+    resource_name VARCHAR(200),
+    domain VARCHAR(50),
     old_data JSONB,
     new_data JSONB,
     status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS' CHECK(status IN ('SUCCESS', 'FAILED', 'PENDING')),
     error_message TEXT,
+    ip VARCHAR(45),
+    user_agent VARCHAR(500),
+    trace_id VARCHAR(64),
+    duration_ms INTEGER,
+    request_summary JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );

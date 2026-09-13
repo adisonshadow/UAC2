@@ -76,6 +76,7 @@ echo "开始执行结构对齐增量迁移..."
 
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-builtin-api-system.sql" || { echo "内置 API 系统迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-operation-log-audit.sql" || { echo "操作日志审计迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-department-roles.sql" || { echo "部门角色关联表迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-permission-access-restriction.sql" || { echo "权限 access_restriction 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-services-optional-entity.sql" || { echo "API 服务可选实体迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-api-services-form-v2.sql" || { echo "API 服务表单 v2 迁移失败"; exit 1; }
@@ -86,7 +87,9 @@ PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-scope-docs.sql" 
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-data-standards.sql" || { echo "数据标准表迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-bizdata-metadata-catalog.sql" || { echo "逻辑元数据目录迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-apiservice-transport-protocols.sql" || { echo "API 服务传输协议迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-outbound-webhooks-contract.sql" || { echo "Outbound Webhook 契约迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-skill-completion-strategy.sql" || { echo "Skill 完成策略迁移失败"; exit 1; }
+PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-api-request-log-tool-audit.sql" || { echo "AI 请求日志 turn/tool 审计迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-hook-center.sql" || { echo "钩子管理迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-application-outbound-webhook-scope.sql" || { echo "应用 outbound_webhook_scope 迁移失败"; exit 1; }
 PGPASSWORD="$DB_PASS" $PSQL_CMD -f "$SCRIPT_DIR/migrate-system-storage-bucket.sql" || { echo "系统存储桶种子失败"; exit 1; }
