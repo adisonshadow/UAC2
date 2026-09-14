@@ -14,3 +14,17 @@ allowBuilds:
 overrides:
   "@types/react": "^19.2.17"
   "@types/react-dom": "^19.2.3"
+  # 1.9.0 发布未满服务器 minimumReleaseAge（约 1 天）会拦安装；1.8.1 已足够旧
+  b4a: "1.8.1"
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+    - linux
+  cpu:
+    - current
+    - x64
+    - arm64
+  libc:
+    - current
+    - glibc
