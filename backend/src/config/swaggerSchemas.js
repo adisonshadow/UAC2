@@ -961,7 +961,7 @@ Object.assign(schemas, {
     obj('应用导出文件预览摘要', {
       format: str('文件格式标识', 'eadaf-app-export'),
       formatVersion: int('文件版本', 1),
-      options: obj('导出选项'),
+      options: obj('导出选项(dataMode / includeUac / includeFiles)'),
       application: obj('应用信息', { code: str('应用编码', 'CRM'), name: str('应用名称') }),
       targetApplicationExists: bool('目标实例是否已存在同 code 应用'),
       sections: obj('各节条数统计'),
@@ -994,7 +994,7 @@ Object.assign(schemas, {
     obj('EADAF 平台导出文件预览摘要', {
       format: str('文件格式标识', 'eadaf-platform-export'),
       formatVersion: int('文件版本', 1),
-      options: obj('导出选项'),
+      options: obj('导出选项(includeFiles)'),
       platform: obj('平台信息', { applicationCode: str('应用编码', 'EADAF'), name: str('应用名称') }),
       sections: obj('各节条数统计'),
       conflicts: { type: 'array', items: { type: 'object' }, description: '冲突清单(业务键/第二唯一键)' },

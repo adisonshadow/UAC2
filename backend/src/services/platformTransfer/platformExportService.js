@@ -7,6 +7,9 @@ const models = require('../../models');
 const { decryptApiKey } = require('../../utils/encryption');
 const logger = require('../../utils/logger');
 const { pickModelFields } = require('../appTransfer/appExportService');
+const { collectPlatformStorage } = require('../appTransfer/transferStorage');
+const { buildManifest, createTransferZipArchive } = require('../appTransfer/transferZip');
+const { Readable } = require('stream');
 
 const SYSTEM_APPLICATION_CODE = 'EADAF';
 const FORMAT = 'eadaf-platform-export';
@@ -45,7 +48,14 @@ async function resolveEadafApplication() {
   return app;
 }
 
-async function buildPlatformExport() {
+function normalizeOptions(raw = {}) {
+  return {
+    includeFiles: raw.includeFiles === true,
+  };
+}
+
+async function buildPlatformExport(rawOptions = {}) {
+  const options = normalizeOptions(rawOptions);
   const eadafApp = await resolveEadafApplication();
 
   const globalSkills = await models.Skill.findAll({ where: { is_global: true }, raw: true });
@@ -125,8 +135,16 @@ async function buildPlatformExport() {
     ioTags: ioTags.map((r) => pickModelFields(models.ModelIoTag, r)),
   };
 
+  const warnings = [];
+  const {
+    storageBuckets,
+    storageObjects,
+    storageFileEntries,
+  } = await collectPlatformStorage(eadafApp, options, warnings);
+
   const exportSummary = {
     platformCode: SYSTEM_APPLICATION_CODE,
+    includeFiles: options.includeFiles,
     counts: {
       skills: skillsSection.items.length,
       tools: skillsSection.tools.length,
@@ -138,15 +156,18 @@ async function buildPlatformExport() {
       ioTags: aiSection.ioTags.length,
       dataStandards: dataStandards.length,
       uacPermissions: uacPermissions.length,
+      storageBuckets: storageBuckets.length,
+      storageObjects: storageObjects.length,
     },
     secretsInPlaintext: true,
-    warnings: [],
+    warnings,
   };
 
   return {
     format: FORMAT,
     formatVersion: FORMAT_VERSION,
     options: {
+      includeFiles: options.includeFiles,
       secretsInPlaintext: true,
       exportedAt: new Date().toISOString(),
     },
@@ -159,19 +180,40 @@ async function buildPlatformExport() {
     dataStandards,
     systemFeatures,
     uacPermissions,
+    storageBuckets,
+    storageObjects,
     exportSummary,
+    _storageFileEntries: storageFileEntries,
   };
 }
 
-async function* exportPlatformStream() {
-  const payload = await buildPlatformExport();
-  yield* chunkString(JSON.stringify(payload));
+async function* exportPlatformStream(rawOptions = {}) {
+  const payload = await buildPlatformExport(rawOptions);
+  const { _storageFileEntries, ...publicPayload } = payload;
+  yield* chunkString(JSON.stringify(publicPayload));
+}
+
+async function buildPlatformExportArchive(rawOptions = {}) {
+  const payload = await buildPlatformExport(rawOptions);
+  const { _storageFileEntries, ...publicPayload } = payload;
+  const includeFiles = publicPayload.options.includeFiles === true;
+  const archive = createTransferZipArchive({
+    manifest: buildManifest({
+      format: FORMAT,
+      options: publicPayload.options,
+      summary: publicPayload.exportSummary,
+      includeFiles,
+    }),
+    payloadStream: Readable.from(chunkString(JSON.stringify(publicPayload))),
+    fileEntries: includeFiles ? (_storageFileEntries || []) : [],
+  });
+  return { archive, fileName: buildExportFileName(), options: publicPayload.options };
 }
 
 function buildExportFileName(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   const ts = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-  return `eadaf-platform-export-${ts}.json`;
+  return `eadaf-platform-export-${ts}.zip`;
 }
 
 module.exports = {
@@ -180,6 +222,8 @@ module.exports = {
   SYSTEM_APPLICATION_CODE,
   buildPlatformExport,
   exportPlatformStream,
+  buildPlatformExportArchive,
   buildExportFileName,
   resolveEadafApplication,
+  normalizeOptions,
 };

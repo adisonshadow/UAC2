@@ -27,6 +27,9 @@ const {
   buildScopeAncestorCodes,
   hookEventFilterHits,
 } = require('./scopePrefix');
+const { collectAppStorage } = require('./transferStorage');
+const { buildManifest, createTransferZipArchive } = require('./transferZip');
+const { Readable } = require('stream');
 
 const SYSTEM_APPLICATION_CODE = 'EADAF';
 const LARGE_ROW_THRESHOLD = 100000;
@@ -63,6 +66,7 @@ function normalizeOptions(raw = {}) {
   return {
     dataMode,
     includeUac: raw.includeUac === true,
+    includeFiles: raw.includeFiles === true,
   };
 }
 
@@ -301,7 +305,8 @@ async function* iterateTableRows(runtime, schemaName, tableName, orderColumn, pa
  *   application: object, entitiesSection: object, apiServicesSection: object,
  *   collectionPipelinesSection: object, outboundWebhooks: object[], metricsSection: object,
  *   hooks: object[], hooksExcluded: object[], skillsSection: object,
- *   metadataSection: object, uacSection: object, storageBuckets: object[], entityDataItems: object[],
+ *   metadataSection: object, uacSection: object, storageBuckets: object[], storageObjects: object[],
+ *   storageFileEntries: object[], entityDataItems: object[],
  *   sourceApplicationId: string, warnings: string[],
  * }}
  */
@@ -515,11 +520,11 @@ async function buildExportContext(app, options) {
     uacSection.dataPermissionRules = rules.map((r) => pickModelFields(models.DataPermissionRule, r));
   }
 
-  // ---- 存储桶(仅元数据) ----
-  const storageBuckets = (await models.StorageBucket.findAll({
-    where: { application_id: app.application_id },
-    raw: true,
-  })).map((r) => pickModelFields(models.StorageBucket, r));
+  const {
+    storageBuckets,
+    storageObjects,
+    storageFileEntries,
+  } = await collectAppStorage(app, options, warnings);
 
   // ---- 行数据桩(实体 → 最新成功物化记录 → 连接) ----
   const matMap = await getLatestMaterializationMap(entityIds);
@@ -662,6 +667,8 @@ async function buildExportContext(app, options) {
     metadataSection,
     uacSection,
     storageBuckets,
+    storageObjects,
+    storageFileEntries,
     entityDataItems,
     sourceApplicationId: app.application_id,
     warnings,
@@ -678,6 +685,7 @@ function buildExportSummary(ctx, options) {
     applicationCode: ctx.application.code,
     dataMode: options.dataMode,
     includeUac: options.includeUac,
+    includeFiles: options.includeFiles,
     counts: {
       entities: count(ctx.entitiesSection.items),
       entityFields: count(ctx.entitiesSection.fields),
@@ -700,6 +708,7 @@ function buildExportSummary(ctx, options) {
       metadataTables: count(ctx.metadataSection?.tables),
       metadataFields: count(ctx.metadataSection?.fields),
       storageBuckets: count(ctx.storageBuckets),
+      storageObjects: count(ctx.storageObjects),
       uacUsers: count(ctx.uacSection.users),
       uacDepartments: count(ctx.uacSection.departments),
       uacRoles: count(ctx.uacSection.roles),
@@ -732,22 +741,16 @@ function* chunkString(text, size = 1024 * 1024) {
  * 导出流:逐节产出合法 JSON 文本。
  * 元数据节一次性 stringify(体量小),行数据按页流式输出。
  */
-async function* exportAppStream(applicationId, rawOptions = {}) {
-  const app = await assertExportableApplication(applicationId);
-  const options = normalizeOptions(rawOptions);
-
-  const ctx = await buildExportContext(app, options);
-  const summary = buildExportSummary(ctx, options);
-
+async function* exportAppPayloadStream(ctx, options, summary) {
   const fileOptions = {
     dataMode: options.dataMode,
     includeUac: options.includeUac,
+    includeFiles: options.includeFiles,
     secretsInPlaintext: true,
     exportedAt: new Date().toISOString(),
     sourceApplicationId: ctx.sourceApplicationId,
   };
 
-  // 去掉收尾 '}',后续节继续拼接(最终由文末 '}' 闭合根对象)
   const headJson = JSON.stringify({
     format: 'eadaf-app-export',
     formatVersion: 1,
@@ -767,6 +770,8 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
   yield* chunkString(JSON.stringify(ctx.uacSection));
   yield ',"storageBuckets":';
   yield* chunkString(JSON.stringify(ctx.storageBuckets));
+  yield ',"storageObjects":';
+  yield* chunkString(JSON.stringify(ctx.storageObjects || []));
   yield ',"entityData":[';
 
   let first = true;
@@ -787,10 +792,8 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
       yield prefix + JSON.stringify(meta);
       continue;
     }
-    // 两种模式均携带行数据与结构指纹;data_only 的差异在导入端不落结构(见 appImportService)
     meta.columns = item.columns;
     meta.rowCount = item.rowCount;
-    // 去掉 meta 收尾 '}',继续拼 "rows":[...](由行后的 ']}' 闭合)
     yield `${prefix}${JSON.stringify(meta).slice(0, -1)},"rows":[`;
     let firstRow = true;
      
@@ -805,17 +808,56 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
   yield '}';
 }
 
-/** 构造下载文件名:eadaf-app-export-{appCode}-{yyyyMMddHHmmss}.json */
+async function prepareAppExport(applicationId, rawOptions = {}) {
+  const app = await assertExportableApplication(applicationId);
+  const options = normalizeOptions(rawOptions);
+  const ctx = await buildExportContext(app, options);
+  const summary = buildExportSummary(ctx, options);
+  return { app, options, ctx, summary };
+}
+
+async function* exportAppStream(applicationId, rawOptions = {}) {
+  const { ctx, options, summary } = await prepareAppExport(applicationId, rawOptions);
+  yield* exportAppPayloadStream(ctx, options, summary);
+}
+
+function buildAppExportArchive(applicationId, rawOptions = {}) {
+  return prepareAppExport(applicationId, rawOptions).then(({ app, options, ctx, summary }) => {
+    const fileOptions = {
+      dataMode: options.dataMode,
+      includeUac: options.includeUac,
+      includeFiles: options.includeFiles,
+      secretsInPlaintext: true,
+      exportedAt: new Date().toISOString(),
+      sourceApplicationId: ctx.sourceApplicationId,
+    };
+    const archive = createTransferZipArchive({
+      manifest: buildManifest({
+        format: 'eadaf-app-export',
+        options: fileOptions,
+        summary,
+        includeFiles: options.includeFiles,
+      }),
+      payloadStream: Readable.from(exportAppPayloadStream(ctx, options, summary)),
+      fileEntries: options.includeFiles ? (ctx.storageFileEntries || []) : [],
+    });
+    return { app, options, archive, fileName: buildExportFileName(app.code) };
+  });
+}
+
+/** 构造下载文件名:eadaf-app-export-{appCode}-{yyyyMMddHHmmss}.zip */
 function buildExportFileName(appCode, date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   const ts = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-  return `eadaf-app-export-${appCode}-${ts}.json`;
+  return `eadaf-app-export-${appCode}-${ts}.zip`;
 }
 
 module.exports = {
   assertExportableApplication,
   buildExportFileName,
   exportAppStream,
+  buildAppExportArchive,
+  prepareAppExport,
   normalizeOptions,
   pickModelFields,
   readTableColumns,

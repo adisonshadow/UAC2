@@ -8,6 +8,10 @@ const logger = require('../../utils/logger');
 const { pickModelFields } = require('../appTransfer/appExportService');
 const { parsePlatformExportFile } = require('./platformPreviewService');
 const { resolveEadafApplication } = require('./platformExportService');
+const {
+  importStorageBucketsSection,
+  importStorageObjectsSection,
+} = require('../appTransfer/transferStorage');
 
 const STRATEGIES = ['overwrite', 'skip', 'abort'];
 
@@ -24,7 +28,12 @@ class ImportContext {
       aiModels: new Map(),
       permissions: new Map(),
       standards: new Map(),
+      buckets: new Map(),
+      applications: new Map(),
     };
+    this.targetAppId = null;
+    this.defaultStorageApplicationId = null;
+    this.sourceAppId = null;
   }
 
   beginSection(name) {
@@ -413,6 +422,18 @@ class ImportContext {
     }
     return section;
   }
+
+  async importStorageBuckets() {
+    return importStorageBucketsSection(this, {
+      defaultApplicationId: this.defaultStorageApplicationId,
+    });
+  }
+
+  async importStorageObjects() {
+    return importStorageObjectsSection(this, {
+      defaultApplicationId: this.defaultStorageApplicationId,
+    });
+  }
 }
 
 async function importPlatformFile(filePath, strategy = 'overwrite') {
@@ -421,6 +442,10 @@ async function importPlatformFile(filePath, strategy = 'overwrite') {
   const ctx = new ImportContext(file, effectiveStrategy);
   const result = { strategy: effectiveStrategy, sections: {}, warnings: [], durationMs: 0 };
   ctx.result = result;
+  const eadafApp = await resolveEadafApplication();
+  ctx.targetAppId = eadafApp.application_id;
+  ctx.defaultStorageApplicationId = eadafApp.application_id;
+  ctx.idMap.applications.set(eadafApp.application_id, eadafApp.application_id);
   const startedAt = Date.now();
 
   if (effectiveStrategy === 'abort') {
@@ -448,6 +473,8 @@ async function importPlatformFile(filePath, strategy = 'overwrite') {
     ['dataStandards', () => ctx.importDataStandards()],
     ['systemFeatures', () => ctx.importSystemFeatures()],
     ['uacPermissions', () => ctx.importUacPermissions()],
+    ['storageBuckets', () => ctx.importStorageBuckets()],
+    ['storageObjects', () => ctx.importStorageObjects()],
   ];
 
   for (const [, step] of steps) {

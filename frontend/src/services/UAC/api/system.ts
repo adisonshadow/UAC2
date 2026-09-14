@@ -55,7 +55,7 @@ export async function postSystemBackupRestore(file: File) {
   });
 }
 
-/** 按应用导出 JSON 迁移文件：返回附件 blob（失败时可能是 JSON 错误信封） */
+/** 按应用导出 zip 迁移包：返回附件 blob（失败时可能是 JSON 错误信封） */
 export async function postAppTransferExport(
   body: API.AppTransferExportParams,
 ): Promise<Blob> {
@@ -84,10 +84,13 @@ export async function postAppTransferPreview(file: File) {
   });
 }
 
-/** 导出 EADAF 平台包 JSON：返回附件 blob */
-export async function postPlatformTransferExport(): Promise<Blob> {
+/** 导出 EADAF 平台 zip 包：返回附件 blob */
+export async function postPlatformTransferExport(
+  body?: { includeFiles?: boolean },
+): Promise<Blob> {
   return request<Blob>(`${BASE}/platform-transfer/export`, {
     method: 'POST',
+    data: body || {},
     responseType: 'blob',
     skipErrorHandler: true,
     timeout: APP_TRANSFER_TIMEOUT,

@@ -4651,7 +4651,7 @@
               },
               "options": {
                 "type": "object",
-                "description": "导出选项",
+                "description": "导出选项(dataMode / includeUac / includeFiles)",
                 "properties": {}
               },
               "application": {
@@ -4699,7 +4699,14 @@
                 "items": {
                   "type": "object"
                 },
-                "description": "连接匹配结果(只匹配不创建)"
+                "description": "连接匹配结果(matched / willCreate / unmatched;willCreate=导入时用目标同类型凭证创建本地连接)"
+              },
+              "physicalTables": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "物化库表摘要(表名/schema/列数/行数)"
               },
               "entityData": {
                 "type": "array",
@@ -4762,18 +4769,144 @@
               },
               "sections": {
                 "type": "object",
-                "description": "各节执行结果 { status, counts, errors, notes }。notes 为预期跳过说明,不算失败",
+                "description": "各节执行结果 { status, counts, errors, notes }。含 databaseConnections(matched/created/failed);notes 为预期跳过说明,不算失败",
                 "properties": {}
               },
               "chainStoppedAt": {
                 "type": "string",
-                "description": "硬依赖链终止节(uac/application/entities);物化与行数据失败不写入此项",
+                "description": "硬依赖链终止节(uac/application/entities);连接创建/物化与行数据失败不写入此项",
                 "example": "entities"
               },
               "chainError": {
                 "type": "string",
                 "description": "硬依赖链终止原因",
                 "example": "string"
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "abort 中止时的冲突清单"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "durationMs": {
+                "type": "integer",
+                "description": "总耗时(毫秒)",
+                "example": 1234
+              }
+            }
+          }
+        }
+      },
+      "EnvelopePlatformTransferPreview": {
+        "type": "object",
+        "description": "标准业务响应外壳 { code, message, data }",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "业务状态码",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "提示信息",
+            "example": "预览解析完成"
+          },
+          "data": {
+            "type": "object",
+            "description": "EADAF 平台导出文件预览摘要",
+            "properties": {
+              "format": {
+                "type": "string",
+                "description": "文件格式标识",
+                "example": "eadaf-platform-export"
+              },
+              "formatVersion": {
+                "type": "integer",
+                "description": "文件版本",
+                "example": 1
+              },
+              "options": {
+                "type": "object",
+                "description": "导出选项(includeFiles)",
+                "properties": {}
+              },
+              "platform": {
+                "type": "object",
+                "description": "平台信息",
+                "properties": {
+                  "applicationCode": {
+                    "type": "string",
+                    "description": "应用编码",
+                    "example": "EADAF"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "应用名称",
+                    "example": "string"
+                  }
+                }
+              },
+              "sections": {
+                "type": "object",
+                "description": "各节条数统计",
+                "properties": {}
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "冲突清单(业务键/第二唯一键)"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "EnvelopePlatformTransferImport": {
+        "type": "object",
+        "description": "标准业务响应外壳 { code, message, data }",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "业务状态码",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "description": "提示信息",
+            "example": "导入执行完成"
+          },
+          "data": {
+            "type": "object",
+            "description": "EADAF 平台导入结果",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "description": "冲突策略",
+                "example": "overwrite"
+              },
+              "aborted": {
+                "type": "boolean",
+                "description": "abort 策略下是否因冲突中止",
+                "example": false
+              },
+              "sections": {
+                "type": "object",
+                "description": "各节执行结果 { status, counts, errors, notes }。notes 为预期跳过说明,不算失败",
+                "properties": {}
               },
               "conflicts": {
                 "type": "array",
@@ -10093,6 +10226,151 @@
           },
           "500": {
             "description": "服务器错误"
+          }
+        }
+      }
+    },
+    "/api/v1/system/platform-transfer/export": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "summary": "导出 EADAF 平台 zip 包(Skill/Tool、AI 目录、数据标准、系统开关、UAC 权限目录;可选桶和文件;含明文密钥,高危) [需要认证]",
+        "description": "不含业务实体/API/行数据/用户。内置应用 EADAF 的平台能力跨实例同步,与应用导出/导入分开。勾选 includeFiles 时携带 EADAF/系统桶及其对象,不含业务应用桶。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "includeFiles": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "是否导出 EADAF / 系统桶及其对象文件(不含业务应用桶)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回 eadaf-platform-export zip 附件(Content-Disposition;body 为 octet-stream)",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "zip 包,内含 manifest.json / payload.json,勾选 includeFiles 时另含 files/"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "导出失败"
+          }
+        }
+      }
+    },
+    "/api/v1/system/platform-transfer/preview": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "summary": "预览 EADAF 平台导出包(节条数/冲突,不写数据) [需要认证]",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "eadaf-platform-export .zip 包(仍接受旧版单 .json)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "预览摘要",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopePlatformTransferPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "文件格式不正确 / 误传应用导出文件"
+          }
+        }
+      }
+    },
+    "/api/v1/system/platform-transfer/import": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "summary": "按策略导入 EADAF 平台导出包(写操作,不可自动撤销;各节失败互不硬终止) [需要认证]",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "eadaf-platform-export .zip 包(仍接受旧版单 .json)"
+                  },
+                  "strategy": {
+                    "type": "string",
+                    "enum": [
+                      "overwrite",
+                      "skip",
+                      "abort"
+                    ],
+                    "default": "overwrite",
+                    "description": "冲突策略:覆盖更新 / 跳过已存在 / 有冲突即中止(不写任何数据)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "导入结果(分节计数/errors/notes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopePlatformTransferImport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "文件或策略不合法 / 误传应用导出文件"
           }
         }
       }
@@ -19671,7 +19949,7 @@
         "tags": [
           "System"
         ],
-        "summary": "按应用导出 JSON 迁移文件(附件流式下载,含明文密钥,高危) [需要认证]",
+        "summary": "按应用导出 zip 迁移包(manifest.json + payload.json + 可选 files/,含明文密钥,高危) [需要认证]",
         "security": [
           {
             "bearerAuth": []
@@ -19705,10 +19983,10 @@
                     "default": false,
                     "description": "是否携带用户/部门/授权等 UAC 数据(不勾选仅携带被引用的角色与权限)"
                   },
-                  "includeAi": {
+                  "includeFiles": {
                     "type": "boolean",
                     "default": false,
-                    "description": "是否携带实例级 AI 目录(global Skill/Provider/模型),导入会 upsert 到目标 aibase"
+                    "description": "是否携带存储对象文件(该应用桶内对象 + 归属本应用的对象;不勾选仅桶元数据)"
                   }
                 }
               }
@@ -19717,13 +19995,13 @@
         },
         "responses": {
           "200": {
-            "description": "返回 eadaf-app-export JSON 文件附件(Content-Disposition;body 为 octet-stream)",
+            "description": "返回 eadaf-app-export zip 附件(Content-Disposition;body 为 octet-stream)",
             "content": {
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
                   "format": "binary",
-                  "description": "eadaf-app-export 格式的完整导出文件(JSON 内容)"
+                  "description": "zip 包,内含 manifest.json / payload.json,勾选 includeFiles 时另含 files/"
                 }
               }
             }
@@ -19739,7 +20017,7 @@
         "tags": [
           "System"
         ],
-        "summary": "预览应用导出文件(节条数/冲突/连接匹配/缺失引用,不写数据) [需要认证]",
+        "summary": "预览应用导出包(节条数/冲突/连接匹配与将创建/物化库表摘要/缺失引用/文件计数,不写数据) [需要认证]",
         "security": [
           {
             "bearerAuth": []
@@ -19754,7 +20032,7 @@
                   "file": {
                     "type": "string",
                     "format": "binary",
-                    "description": "eadaf-app-export .json 文件"
+                    "description": "eadaf-app-export .zip 包(仍接受旧版单 .json)"
                   }
                 }
               }
@@ -19773,7 +20051,7 @@
             }
           },
           "400": {
-            "description": "文件格式不正确 / EADAF 拒绝导入"
+            "description": "文件格式不正确 / EADAF 拒绝导入 / 误传平台导出文件"
           }
         }
       }
@@ -19783,7 +20061,7 @@
         "tags": [
           "System"
         ],
-        "summary": "按策略导入应用导出文件(写操作,不可自动撤销;物化 run.created_by 记操作者 UUID) [需要认证]",
+        "summary": "按策略导入应用导出包(写操作,不可自动撤销;连接未匹配时用目标凭证创建本地连接;物化 run.created_by 记操作者 UUID) [需要认证]",
         "security": [
           {
             "bearerAuth": []
@@ -19798,7 +20076,7 @@
                   "file": {
                     "type": "string",
                     "format": "binary",
-                    "description": "eadaf-app-export .json 文件"
+                    "description": "eadaf-app-export .zip 包(仍接受旧版单 .json)"
                   },
                   "strategy": {
                     "type": "string",
@@ -19817,7 +20095,7 @@
         },
         "responses": {
           "200": {
-            "description": "导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac/includeAi 写入 notes 而非 errors",
+            "description": "导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac / includeFiles 写入 notes 而非 errors。不含平台 AI 目录/全局 Skill",
             "content": {
               "application/json": {
                 "schema": {

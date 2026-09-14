@@ -3,7 +3,7 @@
  *
  * 依赖链:uac 最小结构 → uac 用户数据(可选)→ application → entities(结构)
  * → databaseConnections → 物化 → entityData → apiServices → collectionPipelines
- * → outboundWebhooks → metrics → hooks → skills → storageBuckets。
+ * → outboundWebhooks → metrics → hooks → skills → storageBuckets → storageObjects。
  * 硬终止节:uac / application / entities(后续外键依赖结构)。
  * 软失败节:uacUsers / databaseConnections / materialization / entityData / ai — 只标红本节约,继续后续元数据。
  *
@@ -31,6 +31,10 @@ const {
   getFileConnectionHints,
 } = require('./appPreviewService');
 const { pickModelFields, readTableColumns } = require('./appExportService');
+const {
+  importStorageBucketsSection,
+  importStorageObjectsSection,
+} = require('./transferStorage');
 
 const STRATEGIES = ['overwrite', 'skip', 'abort'];
 
@@ -85,6 +89,7 @@ class ImportContext {
     this.createdBy = normalizeCreatedBy(options.createdBy);
     this.dataMode = file.options?.dataMode === 'data_only' ? 'data_only' : 'structure_and_data';
     this.includeUac = file.options?.includeUac === true;
+    this.includeFiles = file.options?.includeFiles === true;
     this.sourceAppId = file.options?.sourceApplicationId || file.application?.application_id || null;
     this.targetAppId = null;
     this.currentSection = null;
@@ -1334,25 +1339,14 @@ class ImportContext {
     return section;
   }
 
-  /** 存储桶(仅元数据,不含对象文件) */
+  /** 存储桶(系统桶按 code 匹配不重建) */
   async importStorageBuckets() {
-    const section = this.beginSection('storageBuckets');
-    const buckets = Array.isArray(this.file.storageBuckets) ? this.file.storageBuckets : [];
-    try {
-      await this.withSectionTransaction(async (transaction) => {
-        for (const bucket of buckets) {
-          const overrides = { application_id: this.targetAppId };
-          if (bucket.access_restrictions?.role_ids?.length) {
-            section.errors.push(`存储桶「${bucket.code}」的 access_restrictions.role_ids 指向目标实例角色,请导入后人工核对`);
-          }
-           
-          await this.upsertMeta(models.StorageBucket, bucket, 'code', this.idMap.buckets, overrides, section, { transaction });
-        }
-      });
-    } catch (e) {
-      this.markFailed(section, e.message);
-    }
-    return section;
+    return importStorageBucketsSection(this, { defaultApplicationId: this.targetAppId });
+  }
+
+  /** 存储对象文件(保留 object_id) */
+  async importStorageObjects() {
+    return importStorageObjectsSection(this, { defaultApplicationId: this.targetAppId });
   }
 }
 
@@ -1562,9 +1556,10 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
     ['hooks', () => ctx.importHooks()],
     ['skills', () => ctx.importSkills()],
     ['storageBuckets', () => ctx.importStorageBuckets()],
+    ['storageObjects', () => ctx.importStorageObjects()],
   ];
   // 物化/行数据/连接创建失败不挡住 API 等元数据;uacUsers / metadata 本就可选
-  const softFailSections = new Set(['uacUsers', 'databaseConnections', 'materialization', 'entityData', 'metadata']);
+  const softFailSections = new Set(['uacUsers', 'databaseConnections', 'materialization', 'entityData', 'metadata', 'storageObjects']);
 
   for (const [name, step] of chainSteps) {
      
@@ -1585,6 +1580,7 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
   }
 
   result.includeUac = ctx.includeUac;
+  result.includeFiles = ctx.includeFiles;
   result.dataMode = ctx.dataMode;
   if (!result.chainStoppedAt) {
     const failedSections = Object.entries(result.sections)

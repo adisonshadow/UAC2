@@ -21,6 +21,7 @@ import {
   Row,
   Space,
   Spin,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -42,6 +43,8 @@ const SECTION_LABELS: Record<string, string> = {
   dataStandards: '数据标准',
   systemFeatures: '系统开关',
   uacPermissions: 'UAC 权限目录',
+  storageBuckets: '存储桶',
+  storageObjects: '存储文件',
   aborted: '导入中止',
 };
 
@@ -58,6 +61,7 @@ const SUB_LABELS: Record<string, string> = {
   created: '新建',
   updated: '更新',
   skipped: '跳过',
+  copied: '拷贝文件',
   failed: '失败',
 };
 
@@ -91,7 +95,7 @@ function buildExportFileName() {
   const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
     d.getDate(),
   )}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  return `eadaf-platform-export-${ts}.json`;
+  return `eadaf-platform-export-${ts}.zip`;
 }
 
 async function extractErrorMessage(
@@ -157,6 +161,7 @@ function flattenSectionCounts(
 
 /** EADAF 平台导出/导入 Tab(与业务应用包分开) */
 const PlatformTransferTab: React.FC = () => {
+  const [includeFiles, setIncludeFiles] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -171,7 +176,7 @@ const PlatformTransferTab: React.FC = () => {
   const handleExport = async () => {
     try {
       setExporting(true);
-      const blob = await postPlatformTransferExport();
+      const blob = await postPlatformTransferExport({ includeFiles });
       if (blob.type?.includes('application/json')) {
         const text = await blob.text();
         try {
@@ -288,6 +293,16 @@ const PlatformTransferTab: React.FC = () => {
             description="Provider API Key 将以明文写入导出文件。本包不含业务应用、实体、API 或行数据。"
             style={{ marginBottom: 16 }}
           />
+          <Space style={{ marginBottom: 16 }} align="start">
+            <Switch
+              size="small"
+              checked={includeFiles}
+              onChange={setIncludeFiles}
+            />
+            <span>
+              导出桶和文件(EADAF / 系统桶及其对象;不含业务应用桶)
+            </span>
+          </Space>
           <Typography.Paragraph type="secondary">
             用于把本实例的平台能力同步到另一套 EADAF,与「应用导出/导入」互斥。
           </Typography.Paragraph>
@@ -297,6 +312,13 @@ const PlatformTransferTab: React.FC = () => {
                 <Typography.Text type="secondary">{item}</Typography.Text>
               </li>
             ))}
+            <li>
+              <Typography.Text type="secondary">
+                {includeFiles
+                  ? 'EADAF / 系统桶元数据及其对象文件'
+                  : '默认不含存储桶与对象文件(勾选上方选项后携带)'}
+              </Typography.Text>
+            </li>
           </ul>
           <Button
             type="primary"
@@ -304,7 +326,7 @@ const PlatformTransferTab: React.FC = () => {
             loading={exporting}
             onClick={() => void handleExport()}
           >
-            导出平台 JSON
+            导出平台 ZIP
           </Button>
         </Card>
       </Col>
@@ -326,7 +348,7 @@ const PlatformTransferTab: React.FC = () => {
             style={{ marginBottom: 16 }}
           />
           <Upload.Dragger
-            accept=".json"
+            accept=".zip,.json"
             maxCount={1}
             fileList={
               importFile
@@ -348,10 +370,10 @@ const PlatformTransferTab: React.FC = () => {
               <InboxOutlined />
             </p>
             <p className="ant-upload-text">
-              点击或拖拽 eadaf-platform-export 的 .json 文件到此处
+              点击或拖拽 eadaf-platform-export 的 .zip 文件到此处
             </p>
             <p className="ant-upload-hint">
-              仅支持平台包;应用包请到「应用导出/导入」页
+              支持平台 zip 包(仍接受旧版单 .json);应用包请到「应用导出/导入」页
             </p>
           </Upload.Dragger>
 

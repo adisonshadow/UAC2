@@ -10,21 +10,14 @@
  * - EADAF 拒绝、超 10 万行警告。
  */
 const { Op } = require('sequelize');
-const fs = require('fs');
-const fsp = require('fs/promises');
 const models = require('../../models');
 const { prefixHit } = require('./scopePrefix');
+const { openTransferPackage, cleanupUpload } = require('./transferZip');
 
 const SUPPORTED_ROW_DB = ['postgresql', 'mysql'];
 
 async function parseExportFile(filePath) {
-  const text = await fsp.readFile(filePath, 'utf8');
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch (e) {
-    throw Object.assign(new Error(`文件不是合法 JSON: ${e.message}`), { status: 400 });
-  }
+  const payload = await openTransferPackage(filePath);
   if (payload?.format === 'eadaf-platform-export') {
     throw Object.assign(
       new Error('这是 EADAF 平台导出文件,请到「EADAF 平台导出/导入」页导入'),
@@ -110,8 +103,8 @@ async function previewImportFile(filePath) {
   if (options.secretsInPlaintext !== true) {
     warnings.push('文件头未声明 secretsInPlaintext,密文字段可能无法在目标实例解密(跨实例 ENCRYPTION_KEY 不同)');
   }
-  if (file.application?.logo_url) {
-    warnings.push('应用 Logo / 头像等对象存储文件不随文件迁移,导入后链接可能失效');
+  if (file.application?.logo_url && file.options?.includeFiles !== true) {
+    warnings.push('应用 Logo / 头像等对象存储文件未随包迁移(未勾选携带存储文件),导入后链接可能失效');
   }
 
   const entities = file.entities || {};
@@ -135,6 +128,7 @@ async function previewImportFile(filePath) {
   const aiModelItems = Array.isArray(ai.models) ? ai.models : [];
   const uac = file.uac || {};
   const buckets = Array.isArray(file.storageBuckets) ? file.storageBuckets : [];
+  const storageObjects = Array.isArray(file.storageObjects) ? file.storageObjects : [];
   const entityData = Array.isArray(file.entityData) ? file.entityData : [];
   const metadata = file.metadata || {};
   const metadataTables = Array.isArray(metadata.tables) ? metadata.tables : [];
@@ -457,6 +451,7 @@ async function previewImportFile(filePath) {
         dataPermissionRules: sectionCount(uac.dataPermissionRules),
       },
       storageBuckets: buckets.length,
+      storageObjects: storageObjects.length,
       entityData: { items: entityData.length, totalRows: entityData.reduce((s, i) => s + (Number(i.rowCount) || 0), 0) },
     },
     conflicts,
@@ -483,9 +478,7 @@ async function loadAndValidateFile(filePath) {
 }
 
 function cleanupFile(filePath) {
-  if (filePath && fs.existsSync(filePath)) {
-    fsp.unlink(filePath).catch(() => {});
-  }
+  return cleanupUpload(filePath);
 }
 
 module.exports = {

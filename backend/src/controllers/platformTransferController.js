@@ -1,7 +1,7 @@
-const { Readable } = require('stream');
 const PlatformTransferExportService = require('../services/platformTransfer/platformExportService');
 const PlatformTransferPreviewService = require('../services/platformTransfer/platformPreviewService');
 const PlatformTransferImportService = require('../services/platformTransfer/platformImportService');
+const { cleanupUpload } = require('../services/appTransfer/transferZip');
 const logger = require('../utils/logger');
 const { formatApiError } = require('../utils/formatApiError');
 
@@ -22,13 +22,18 @@ class PlatformTransferController {
   static async exportPlatform(ctx) {
     let streamStarted = false;
     try {
-      const fileName = PlatformTransferExportService.buildExportFileName();
+      const body = ctx.request.body || {};
+      const { archive, fileName, options } = await PlatformTransferExportService.buildPlatformExportArchive(body);
       streamStarted = true;
       ctx.status = 200;
       ctx.set('Content-Type', 'application/octet-stream');
       ctx.set('Content-Disposition', `attachment; filename="${fileName}"`);
-      ctx.body = Readable.from(PlatformTransferExportService.exportPlatformStream());
-      logger.info('[platformTransfer] EADAF 平台导出开始', { fileName });
+      archive.on('error', (err) => {
+        logger.error(`[platformTransfer] zip 导出失败: ${err.message}`, { stack: err.stack });
+        ctx.res.destroy();
+      });
+      ctx.body = archive;
+      logger.info('[platformTransfer] EADAF 平台导出开始', { fileName, options });
     } catch (error) {
       if (streamStarted) {
         ctx.res.destroy();
@@ -42,7 +47,7 @@ class PlatformTransferController {
     const file = getRequestFile(ctx);
     if (!file || !file.filepath) {
       ctx.status = 400;
-      ctx.body = { code: 400, message: '请上传 EADAF 平台导出的 .json 文件', data: null };
+      ctx.body = { code: 400, message: '请上传 EADAF 平台导出的 .zip 或旧版 .json 文件', data: null };
       return;
     }
     try {
@@ -51,7 +56,7 @@ class PlatformTransferController {
     } catch (error) {
       sendError(ctx, error, 400);
     } finally {
-      PlatformTransferPreviewService.cleanupFile(file.filepath);
+      await cleanupUpload(file.filepath);
     }
   }
 
@@ -59,7 +64,7 @@ class PlatformTransferController {
     const file = getRequestFile(ctx);
     if (!file || !file.filepath) {
       ctx.status = 400;
-      ctx.body = { code: 400, message: '请上传 EADAF 平台导出的 .json 文件', data: null };
+      ctx.body = { code: 400, message: '请上传 EADAF 平台导出的 .zip 或旧版 .json 文件', data: null };
       return;
     }
     const strategy = String(ctx.request.body?.strategy || 'overwrite');
@@ -70,7 +75,7 @@ class PlatformTransferController {
         message: `strategy 仅支持: ${PlatformTransferImportService.STRATEGIES.join(' / ')}`,
         data: null,
       };
-      PlatformTransferPreviewService.cleanupFile(file.filepath);
+      await cleanupUpload(file.filepath);
       return;
     }
     try {
@@ -83,7 +88,7 @@ class PlatformTransferController {
     } catch (error) {
       sendError(ctx, error, 400);
     } finally {
-      PlatformTransferPreviewService.cleanupFile(file.filepath);
+      await cleanupUpload(file.filepath);
     }
   }
 }

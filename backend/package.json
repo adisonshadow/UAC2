@@ -33,6 +33,7 @@
     "@tus/file-store": "^2.1.1",
     "@tus/server": "^2.4.4",
     "ajv": "^8.20.0",
+    "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.3.1",
     "eslint": "^9.27.0",
@@ -59,6 +60,7 @@
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0",
     "ws": "^8.18.0",
+    "yauzl": "^3.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

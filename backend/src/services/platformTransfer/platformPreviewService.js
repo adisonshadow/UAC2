@@ -2,19 +2,13 @@
  * EADAF 平台导入预览:解析文件、冲突清单,不写数据。
  */
 const { Op } = require('sequelize');
-const fs = require('fs');
-const fsp = require('fs/promises');
 const models = require('../../models');
 const { FORMAT, FORMAT_VERSION } = require('./platformExportService');
+const { openTransferPackage, cleanupUpload } = require('../appTransfer/transferZip');
+const { isSystemBucketCode } = require('../storage/systemBucketService');
 
 async function parsePlatformExportFile(filePath) {
-  const text = await fsp.readFile(filePath, 'utf8');
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch (e) {
-    throw Object.assign(new Error(`文件不是合法 JSON: ${e.message}`), { status: 400 });
-  }
+  const payload = await openTransferPackage(filePath);
   if (payload?.format === 'eadaf-app-export') {
     throw Object.assign(
       new Error('这是业务应用导出文件,请到「应用导出/导入」页导入'),
@@ -50,6 +44,8 @@ async function previewImportFile(filePath) {
   const aiModelItems = Array.isArray(ai.models) ? ai.models : [];
   const dataStandards = Array.isArray(file.dataStandards) ? file.dataStandards : [];
   const uacPermissions = Array.isArray(file.uacPermissions) ? file.uacPermissions : [];
+  const buckets = Array.isArray(file.storageBuckets) ? file.storageBuckets : [];
+  const storageObjects = Array.isArray(file.storageObjects) ? file.storageObjects : [];
   const systemFeatures = file.systemFeatures && typeof file.systemFeatures === 'object'
     ? file.systemFeatures
     : {};
@@ -112,6 +108,7 @@ async function previewImportFile(filePath) {
   await checkUnique('ai.providers', providerItems, 'slug', models.Provider, 'slug');
   await checkUnique('ai.models', aiModelItems, 'slug', models.AiModel, 'slug');
   await checkUnique('uacPermissions', uacPermissions, 'code', models.Permission, 'code');
+  await checkUnique('storageBuckets', buckets.filter((b) => !isSystemBucketCode(b.code)), 'code', models.StorageBucket, 'code');
 
   if (dataStandards.length) {
     const exist = await models.BizdataDataStandard.findAll({
@@ -157,6 +154,8 @@ async function previewImportFile(filePath) {
       dataStandards: dataStandards.length,
       systemFeatures: Object.keys(systemFeatures).length,
       uacPermissions: uacPermissions.length,
+      storageBuckets: buckets.length,
+      storageObjects: storageObjects.length,
     },
     conflicts,
     warnings,
@@ -164,9 +163,7 @@ async function previewImportFile(filePath) {
 }
 
 function cleanupFile(filePath) {
-  if (filePath && fs.existsSync(filePath)) {
-    fsp.unlink(filePath).catch(() => {});
-  }
+  return cleanupUpload(filePath);
 }
 
 module.exports = {
