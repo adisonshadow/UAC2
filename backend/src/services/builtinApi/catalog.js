@@ -1100,7 +1100,7 @@ const BUILTIN_API_CATALOG = [
     routePath: '/api/v1/system/app-transfer/export',
     httpMethods: ['POST'],
     actions: ['read'],
-    description: '按应用导出 JSON 迁移文件(含明文密钥,建议仅超管使用)',
+    description: '按应用导出 zip 迁移包(含明文密钥,可选对象文件,建议仅超管使用)',
   },
   {
     code: 'system:app_transfer:preview',
@@ -1127,7 +1127,7 @@ const BUILTIN_API_CATALOG = [
     routePath: '/api/v1/system/platform-transfer/export',
     httpMethods: ['POST'],
     actions: ['read'],
-    description: '导出 EADAF 平台包(Skill/Tool、AI 目录、数据标准、系统开关、UAC 权限目录;含明文密钥,建议仅超管使用)',
+    description: '导出 EADAF 平台 zip 包(Skill/Tool、AI 目录、数据标准、系统开关、UAC 权限目录;可选桶和文件;含明文密钥,建议仅超管使用)',
   },
   {
     code: 'system:platform_transfer:preview',

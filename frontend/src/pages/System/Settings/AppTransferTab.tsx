@@ -52,7 +52,6 @@ const EXPORT_CONTENT_ITEMS = [
   '指标与指标卡片',
   '钩子(event_filter 命中本应用实体 / API)',
   '该应用专用 Skill 及其 Tools / AI Scope(不含全局 / EADAF 平台 Skill)',
-  '存储桶元数据(不含对象文件内容)',
   'UAC:勾选「携带 UAC」时含用户 / 部门 / 授权,否则仅含被引用的角色与权限',
 ];
 
@@ -70,6 +69,7 @@ const SECTION_LABELS: Record<string, string> = {
   uac: 'UAC 数据',
   uacUsers: 'UAC 用户数据',
   storageBuckets: '存储桶',
+  storageObjects: '存储文件',
   entityData: '行数据',
   materialization: '物化',
   aborted: '导入中止',
@@ -94,6 +94,7 @@ const SUB_LABELS: Record<string, string> = {
   created: '新建',
   updated: '更新',
   skipped: '跳过',
+  copied: '拷贝文件',
   failed: '失败',
   matched: '匹配',
   users: '用户',
@@ -126,7 +127,7 @@ function buildExportFileName(appCode: string) {
   const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
     d.getDate(),
   )}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  return `eadaf-app-export-${appCode}-${ts}.json`;
+  return `eadaf-app-export-${appCode}-${ts}.zip`;
 }
 
 /** blob 响应可能是 JSON 错误信封(导出失败时),解析出 message */
@@ -221,7 +222,7 @@ const SECTION_STATUS_META: Record<string, { color: string; text: string }> = {
   skipped: { color: 'default', text: '跳过' },
 };
 
-/** 应用导出/导入 Tab(系统设置;与整库备份互为补充,按应用维度迁移 JSON) */
+/** 应用导出/导入 Tab(系统设置;与整库备份互为补充,按应用维度迁移 zip) */
 const AppTransferTab: React.FC = () => {
   // ---------- 导出 ----------
   const [exportForm] = Form.useForm();
@@ -232,6 +233,7 @@ const AppTransferTab: React.FC = () => {
     'structure_and_data',
   );
   const [includeUac, setIncludeUac] = useState(false);
+  const [includeFiles, setIncludeFiles] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const loadApplications = useCallback(async () => {
@@ -268,6 +270,7 @@ const AppTransferTab: React.FC = () => {
         applicationId: values.applicationId,
         dataMode,
         includeUac,
+        includeFiles,
       });
       // 导出文件本身是 JSON;正常情况下后端以 octet-stream 附件返回。
       // 若响应是 application/json:优先按错误信封处理,但内容带
@@ -461,6 +464,17 @@ const AppTransferTab: React.FC = () => {
                     授权;不勾选仅携带被引用的角色与权限)
                   </span>
                 </Space>
+                <Space>
+                  <Switch
+                    size="small"
+                    checked={includeFiles}
+                    onChange={setIncludeFiles}
+                  />
+                  <span>
+                    携带存储文件(该应用桶内对象 +
+                    归属本应用的对象;不勾选仅桶元数据)
+                  </span>
+                </Space>
               </Space>
             </Form.Item>
             <Form.Item label="导出内容清单">
@@ -470,6 +484,13 @@ const AppTransferTab: React.FC = () => {
                     <Typography.Text type="secondary">{item}</Typography.Text>
                   </li>
                 ))}
+                <li>
+                  <Typography.Text type="secondary">
+                    {includeFiles
+                      ? '存储桶元数据及对象文件(该应用桶内对象 + 归属本应用的对象)'
+                      : '存储桶元数据(不勾选「携带存储文件」时不含对象文件内容)'}
+                  </Typography.Text>
+                </li>
               </ul>
             </Form.Item>
           </Form>
@@ -479,7 +500,7 @@ const AppTransferTab: React.FC = () => {
             loading={exporting}
             onClick={handleExport}
           >
-            导出 JSON 文件
+            导出 ZIP 文件
           </Button>
         </Card>
       </Col>
@@ -501,7 +522,7 @@ const AppTransferTab: React.FC = () => {
             style={{ marginBottom: 16 }}
           />
           <Upload.Dragger
-            accept=".json"
+            accept=".zip,.json"
             maxCount={1}
             fileList={
               importFile
@@ -523,11 +544,11 @@ const AppTransferTab: React.FC = () => {
               <InboxOutlined />
             </p>
             <p className="ant-upload-text">
-              点击或拖拽应用导出的 .json 文件到此处
+              点击或拖拽应用导出的 .zip 文件到此处
             </p>
             <p className="ant-upload-hint">
-              仅支持 format 为 eadaf-app-export 的文件;平台包请到「EADAF
-              平台导出/导入」页。选择后自动预览,不会写入数据
+              支持 format 为 eadaf-app-export 的 zip 包(仍接受旧版单
+              .json);平台包请到「EADAF 平台导出/导入」页。选择后自动预览,不会写入数据
             </p>
           </Upload.Dragger>
 
