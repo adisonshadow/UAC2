@@ -104,6 +104,41 @@ cd rontend && pnpm dev
 
 ---
 
+## pm2 托管
+
+前后端均提供 `pm2dev` / `pm2prod` 命令，把进程挂到 pm2 守护。底层用 `pm2 startOrReload`，幂等：未运行则启动、已运行则按新配置重载，重复执行不会产生重复进程。
+
+```bash
+# 仓库根目录一键挂起前后端
+pnpm pm2dev        # 开发模式：uac-api-dev + eadaf-web-dev
+pnpm pm2prod       # 生产模式：uac-api + eadaf-web
+
+# 或分包执行（也可先 cd 进包目录再 pnpm pm2dev）
+pnpm --filter ./backend pm2dev
+pnpm --filter ./frontend pm2prod
+```
+
+| 命令 | pm2 进程名 | 说明 |
+|------|-----------|------|
+| `backend pm2dev` | `uac-api-dev` | `NODE_ENV=development`，pm2 watch 文件变更自动重启 |
+| `backend pm2prod` | `uac-api` | `NODE_ENV=production`，加载 `.env.production` |
+| `frontend pm2dev` | `eadaf-web-dev` | vite dev server（9527，自带 HMR） |
+| `frontend pm2prod` | `eadaf-web` | `vite preview` 托管已构建的 `dist`（需先 `pnpm --filter ./frontend build`），`/api/v1` 代理到 `localhost:9526` |
+
+配置文件：`backend/ecosystem.config.cjs`、`frontend/ecosystem.config.cjs`（每个文件内含 dev/prod 两个进程定义，脚本通过 `--only` 选择）。
+
+常用操作（pm2 是 workspace devDependency，无需全局安装；包目录内直接可用，根目录用 `pnpm --filter ./backend exec pm2 <cmd>`）：
+
+```bash
+pm2 list                       # 查看进程
+pm2 logs uac-api --lines 200   # 查看日志
+pm2 stop uac-api-dev           # 停止（保留进程项）
+pm2 delete uac-api eadaf-web   # 移除进程项
+pm2 kill                       # 关闭 pm2 守护进程
+```
+
+---
+
 ## 关键注意事项
 
 1. **`init-db` 会 DROP 并重建 `uac` schema**，仅用于开发/首次安装，勿对生产库执行。
