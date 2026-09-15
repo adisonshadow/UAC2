@@ -5,9 +5,13 @@
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
-    "url": "https://github.com/adisonshadow/UAC2.git"
+    "url": "git+https://github.com/adisonshadow/UAC2.git",
+    "directory": "AIBase_with_example/package/ai-base"
   },
   "homepage": "https://www.npmjs.com/package/@eadaf/ai-base",
+  "bugs": {
+    "url": "https://github.com/adisonshadow/UAC2/issues"
+  },
   "keywords": [
     "eadaf",
     "ai-base",
@@ -21,24 +25,32 @@
   ],
   "type": "module",
   "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./style.css": "./dist/style.css"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "dev": "tsup --watch",
     "build": "tsup && cp src/ui/AIChatPanel.css dist/style.css && cat src/a2ui/NextStepA2uiDeck.css >> dist/style.css && cat src/ui/UserChoiceCard.css >> dist/style.css && cat src/ui/ToolResultSurface.css >> dist/style.css && cat src/ui/invocation/InvocationCard.css >> dist/style.css",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build",
+    "release": "pnpm publish --access public --no-git-checks"
   },
   "peerDependencies": {
     "@ant-design/icons": "^6.0.0",

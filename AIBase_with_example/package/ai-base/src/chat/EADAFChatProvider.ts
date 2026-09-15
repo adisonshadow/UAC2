@@ -37,8 +37,13 @@ export interface EADAFChatInput {
 
 const PLACEHOLDER = '正在思考中...';
 
-function isPlaceholder(content?: string) {
-  return !content || content === PLACEHOLDER;
+function contentAsText(content: EADAFChatMessage['content'] | undefined): string {
+  return typeof content === 'string' ? content : '';
+}
+
+function isPlaceholder(content?: EADAFChatMessage['content']) {
+  const text = contentAsText(content);
+  return !text || text === PLACEHOLDER;
 }
 
 export class EADAFChatProvider extends AbstractChatProvider<EADAFChatMessage, EADAFChatInput, SseChunk> {
@@ -73,7 +78,7 @@ export class EADAFChatProvider extends AbstractChatProvider<EADAFChatMessage, EA
 
   transformMessage(info: TransformMessage<EADAFChatMessage, SseChunk>): EADAFChatMessage {
     const { originMessage, chunk } = info;
-    const prevContent = isPlaceholder(originMessage?.content) ? '' : (originMessage?.content ?? '');
+    const prevContent = isPlaceholder(originMessage?.content) ? '' : contentAsText(originMessage?.content);
     const prevReasoning = originMessage?.reasoningContent ?? '';
 
     const pack = (content: string, reasoningContent?: string): EADAFChatMessage => ({

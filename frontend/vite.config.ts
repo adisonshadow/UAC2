@@ -112,6 +112,7 @@ export default defineConfig({
   },
   server: {
     port: APP_ENV.port,
+    allowedHosts: true,
     watch: {
       ignored: ['!**/AIBase_with_example/package/ai-base/src/**'],
     },
@@ -126,6 +127,7 @@ export default defineConfig({
   },
   preview: {
     port: APP_ENV.port,
+    allowedHosts: true,
     proxy: {
       '/api/v1': {
         target: APP_ENV.devApiBaseUrl,
