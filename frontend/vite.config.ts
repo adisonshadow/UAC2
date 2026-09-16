@@ -111,6 +111,7 @@ export default defineConfig({
     ],
   },
   server: {
+    host: true,
     port: APP_ENV.port,
     allowedHosts: true,
     watch: {
@@ -126,6 +127,7 @@ export default defineConfig({
     },
   },
   preview: {
+    host: true,
     port: APP_ENV.port,
     allowedHosts: true,
     proxy: {
