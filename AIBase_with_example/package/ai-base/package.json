@@ -49,8 +49,8 @@
   "scripts": {
     "dev": "tsup --watch",
     "build": "tsup && cp src/ui/AIChatPanel.css dist/style.css && cat src/a2ui/NextStepA2uiDeck.css >> dist/style.css && cat src/ui/UserChoiceCard.css >> dist/style.css && cat src/ui/ToolResultSurface.css >> dist/style.css && cat src/ui/invocation/InvocationCard.css >> dist/style.css",
-    "prepublishOnly": "pnpm run build",
-    "release": "pnpm publish --access public --no-git-checks"
+    "prepublishOnly": "npm run build",
+    "release": "npm publish --access public"
   },
   "peerDependencies": {
     "@ant-design/icons": "^6.0.0",

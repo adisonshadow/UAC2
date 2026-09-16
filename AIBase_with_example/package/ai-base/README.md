@@ -1,21 +1,34 @@
 # @eadaf/ai-base
 
-EADAF AI 聊天基础库。宿主应用通过 `AIChatProvider` 接入侧边栏 / 漂浮按钮式 AI 助手，并可在页面内配置 Skill、Tool、Prompts、Chat 引用等能力。
+EADAF AI 聊天基础库。已发布到 npm：[`@eadaf/ai-base`](https://www.npmjs.com/package/@eadaf/ai-base)。宿主应用通过 `AIChatProvider` 接入侧边栏 / 漂浮按钮式 AI 助手，并可在页面内配置 Skill、Tool、Prompts、Chat 引用等能力。
 
-> 仓库内 `AIBase_with_example` 仅作演示与联调沙箱，正式接入请以本 README 与 `dist/` 为准。  
-> **架构权威文档**（定位、插件内核、多应用扩展）：仓库 [`docs/TODOs/新Agent架构方案/`](../../../docs/TODOs/新Agent架构方案/README.md)（尤其 [08-多应用扩展](../../../docs/TODOs/新Agent架构方案/08-多应用扩展.md)、[05-展示协议](../../../docs/TODOs/新Agent架构方案/05-展示协议.md)）。
+> **架构权威文档**（定位、插件内核、多应用扩展）：[新Agent架构方案](https://github.com/adisonshadow/UAC2/tree/main/docs/TODOs/新Agent架构方案)（尤其 [08-多应用扩展](https://github.com/adisonshadow/UAC2/blob/main/docs/TODOs/新Agent架构方案/08-多应用扩展.md)、[05-展示协议](https://github.com/adisonshadow/UAC2/blob/main/docs/TODOs/新Agent架构方案/05-展示协议.md)）。
 
-## 宿主接入（读 dist）
+## 安装
 
-运行时通过包 `exports` 加载 **`dist/`**。改动本包源码后需重新 build；宿主侧可用 `pnpm refresh:ai-base`（若已配置）清除缓存并同步。
+**独立项目（从 npm 安装）：**
 
 ```bash
-pnpm build
+pnpm add @eadaf/ai-base
+# 或
+npm add @eadaf/ai-base
 ```
+
+宿主还需自行安装 peer 依赖：`react`、`react-dom`、`antd`、`@ant-design/icons`、`@ant-design/x`、`@ant-design/x-sdk`、`@ant-design/x-markdown`、`@ant-design/x-card`（版本见本包 `peerDependencies`）。
 
 ```tsx
 import { AIChatProvider } from '@eadaf/ai-base';
 import '@eadaf/ai-base/style.css';
+```
+
+**本仓库（UAC2 monorepo）不要执行 `pnpm add @eadaf/ai-base`。** `frontend` 与 `AIBase_with_example` 使用 `"@eadaf/ai-base": "workspace:*"` 链接本地源码。`AIBase_with_example` 仅作演示与联调沙箱。
+
+## 本仓库改源码后如何同步
+
+运行时通过包 `exports` 加载 **`dist/`**。改动本包源码后需重新 build；UAC2 宿主可用 `pnpm refresh:ai-base`（若已配置）清除缓存并同步。
+
+```bash
+pnpm build
 ```
 
 修改 **导出** 或 **dist 行为** 后若新 API 不生效，重新 build、刷新宿主依赖链接，并重启 frontend dev。
@@ -701,12 +714,21 @@ setToolInvokeLogger((entry) => {
 
 ---
 
-## 构建
+## 构建与发布
 
 ```bash
 pnpm build    # dist/index.js、dist/index.d.ts、dist/style.css
 pnpm dev      # tsup --watch（宿主读 dist 联调时可用）
 ```
+
+发布到 [npmjs.com](https://www.npmjs.com/package/@eadaf/ai-base)（需已登录，且使用 Linux / nvm 的 npm，WSL 下不要用 Windows 的 npm/pnpm）：
+
+```bash
+cd AIBase_with_example/package/ai-base
+npm publish --access public
+```
+
+版本号以本包 `package.json` 的 `version` 为准；发新版本先改 version 再 publish。
 
 ## 常见报错
 

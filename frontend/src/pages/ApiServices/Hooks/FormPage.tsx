@@ -117,20 +117,18 @@ const HookFormPage: React.FC<{ mode: 'create' | 'edit' }> = ({ mode }) => {
     getBusinessDataEntities({ size: 500, summary: true }).then((res) => {
       if (isApiSuccess(res)) {
         setEntities(
-          (getApiData<API.BusinessDataEntityList>(res)?.items || []).map((e) => ({
-            label: `${e.label}（${e.code}）`,
-            value: e.code,
-          })),
+          (getApiData<API.BusinessDataEntityList>(res)?.items || []).flatMap((e) =>
+            e.code ? [{ label: `${e.label}（${e.code}）`, value: e.code }] : [],
+          ),
         );
       }
     });
     getApiServices({ size: 500, status: 'published' }).then((res) => {
       if (isApiSuccess(res)) {
         setApiServices(
-          (getApiData<API.ApiServiceListResult>(res)?.items || []).map((s) => ({
-            label: `${s.name || s.code}（${s.code}）`,
-            value: s.id,
-          })),
+          (getApiData<API.ApiServiceListResult>(res)?.items || []).flatMap((s) =>
+            s.id ? [{ label: `${s.name || s.code}（${s.code}）`, value: s.id }] : [],
+          ),
         );
       }
     });
@@ -144,6 +142,10 @@ const HookFormPage: React.FC<{ mode: 'create' | 'edit' }> = ({ mode }) => {
         return;
       }
       const hook = getApiData<API.Hook>(res);
+      if (!hook) {
+        message.error('钩子加载失败');
+        return;
+      }
       const cfg = hook.actionConfig || {};
       setSecretSet(Boolean(cfg.auth?.secretSet));
       setSecretMasked(cfg.auth?.secretMasked || null);

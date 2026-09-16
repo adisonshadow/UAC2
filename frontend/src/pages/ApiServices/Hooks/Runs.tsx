@@ -14,7 +14,7 @@ import {
   getAutomationHookRuns,
   postAutomationHookRunRetry,
 } from '@/services/UAC/api/automationHooks';
-import { getApiErrorMessage, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
+import { getApiData, getApiErrorMessage, isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
 import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack';
 import { hookRunStatusEnum, hookTriggerSourceEnum, renderHookRunStatus } from './schema';
