@@ -9,6 +9,8 @@ const Application = require('../../models/application');
 const User = require('../../models/user');
 const { normalizeRestrictions } = require('./storageAccessService');
 const { isSystemBucket, isSystemBucketCode } = require('./systemBucketService');
+const imgCropService = require('./imgCropService');
+const logger = require('../../utils/logger');
 
 function getStorageRoot() {
   return path.join(process.cwd(), config.storage.root);
@@ -220,9 +222,63 @@ async function getObjectById(id) {
   return row ? formatObject(row) : null;
 }
 
+function resolveSafeStoragePath(relativePath) {
+  if (!relativePath) {
+    const err = new Error('文件路径为空');
+    err.status = 400;
+    throw err;
+  }
+  const root = path.resolve(getStorageRoot());
+  const abs = path.resolve(root, relativePath);
+  const rel = path.relative(root, abs);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    const err = new Error('非法文件路径');
+    err.status = 400;
+    throw err;
+  }
+  return abs;
+}
+
 async function getObjectFilePath(objectRow) {
   const relative = objectRow.relative_path || objectRow.relativePath;
-  return path.join(getStorageRoot(), relative);
+  return resolveSafeStoragePath(relative);
+}
+
+async function deleteObject(id) {
+  const row = await StorageObject.findByPk(id);
+  if (!row) return false;
+
+  let filePath = null;
+  try {
+    filePath = await getObjectFilePath(row);
+  } catch (error) {
+    logger.warn('删除文件时路径无效，仅删除记录', { objectId: id, message: error.message });
+  }
+
+  const relativePath = row.relative_path;
+  const others = relativePath
+    ? await StorageObject.count({
+      where: { relative_path: relativePath, object_id: { [Op.ne]: id } },
+    })
+    : 0;
+
+  await row.destroy();
+
+  if (filePath && others === 0 && fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      logger.warn('删除存储文件失败', { objectId: id, filePath, message: error.message });
+    }
+  }
+
+  try {
+    imgCropService.purgeCropCache(id);
+  } catch (error) {
+    logger.warn('清理裁剪缓存失败', { objectId: id, message: error.message });
+  }
+
+  return true;
 }
 
 async function uploadObject({ bucketCode, file, authContext, applicationId }) {
@@ -289,6 +345,7 @@ module.exports = {
   listObjects,
   getObjectById,
   getObjectFilePath,
+  deleteObject,
   uploadObject,
   formatBucket,
   formatObject,

@@ -101,9 +101,26 @@ async function cropImage({ objectId, sourcePath, query }) {
   return cachedImagePath;
 }
 
+function purgeCropCache(objectId) {
+  if (!objectId) return;
+  const dir = config.storage.cropCacheDir;
+  if (!dir || !fs.existsSync(dir)) return;
+  const prefix = `${objectId}_`;
+  const names = fs.readdirSync(dir);
+  names.forEach((name) => {
+    if (!name.startsWith(prefix) || !name.endsWith('.webp')) return;
+    try {
+      fs.unlinkSync(path.join(dir, name));
+    } catch {
+      // 缓存文件缺失或占用时忽略，不影响主删除
+    }
+  });
+}
+
 module.exports = {
   FIT_VALUES,
   parseCropQuery,
   buildResizeOptions,
   cropImage,
+  purgeCropCache,
 };

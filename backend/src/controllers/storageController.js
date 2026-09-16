@@ -90,6 +90,20 @@ class StorageController {
     }
   }
 
+  static async deleteObject(ctx) {
+    try {
+      const ok = await storageService.deleteObject(ctx.params.id);
+      if (!ok) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '文件不存在', data: null };
+        return;
+      }
+      ctx.body = { code: 200, message: '删除文件成功', data: null };
+    } catch (error) {
+      StorageController.sendError(ctx, error);
+    }
+  }
+
   static async uploadObject(ctx) {
     try {
       const file = ctx.request.files?.file;

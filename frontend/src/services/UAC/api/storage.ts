@@ -50,6 +50,12 @@ export async function getStorageObjects(params?: {
   });
 }
 
+export async function deleteStorageObject(id: string) {
+  return request<{ code: number; message: string; data: null }>(`${BASE}/objects/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function postStorageObjectUpload(formData: FormData) {
   return request<{ code: number; message: string; data: API.StorageObject }>(`${BASE}/objects/upload`, {
     method: 'POST',

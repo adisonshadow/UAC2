@@ -147,6 +147,7 @@ pm2 kill                       # 关闭 pm2 守护进程
 4. **AI Base 联动**：修改 `AIBase_with_example/package/ai-base` 后需 `pnpm build`，前端可执行 `pnpm refresh:ai-base` 刷新依赖。
 5. **增量迁移**：部分功能有独立 SQL（如 `scripts/migrate-*.sql`），在已有库上按需手动执行。
 6. **业务数据物化**：目标 Schema/库不存在时，前端会提示确认后自动创建（PostgreSQL / MongoDB）。
+7. 本项目为了开发测试便利，未直接使用npm安装 @eadaf/ai-base，所以 frontend 里build 前，**先确认** 最新的 AIBase_with_example/package/ai-base 有没有被 build 过。
 
 ---
 

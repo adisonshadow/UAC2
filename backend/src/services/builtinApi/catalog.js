@@ -405,6 +405,15 @@ const BUILTIN_API_CATALOG = [
     actions: ['read'],
     description: '按 w/h 缩放图片并缓存；同时指定宽高时 fit=cover|contain',
   },
+  {
+    code: 'storage:object:delete',
+    domain: 'storage',
+    label: '删除文件',
+    routePath: '/api/v1/storage/objects/:id',
+    httpMethods: ['DELETE'],
+    actions: ['delete'],
+    description: '删除文件记录及对应的物理文件',
+  },
 
   // ===== bizdata 域：业务数据 - 实体 =====
   {

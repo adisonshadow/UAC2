@@ -384,6 +384,41 @@ router.get('/tus/:id/result', authRequired, StorageController.getTusResult);
 
 /**
  * @swagger
+ * /api/v1/storage/objects/{id}:
+ *   delete:
+ *     tags: [Storage]
+ *     summary: 删除文件 [需要认证]
+ *     description: 删除文件记录，并同步删除磁盘上的原文件及对应图片裁剪缓存。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *         description: 文件资源 ID（storage_objects.object_id）
+ *     responses:
+ *       200:
+ *         description: 删除成功，data 为 null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeNull'
+ *       404:
+ *         description: 文件不存在
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnvelopeError'
+ */
+router.delete('/objects/:id', authWithBuiltinApiGuard, operationAudit({
+  domain: 'storage',
+  operationType: 'DELETE',
+  resourceType: 'object',
+  resourceId: (ctx) => ctx.params.id,
+}), StorageController.deleteObject);
+
+/**
+ * @swagger
  * /api/v1/storage/objects/{id}/download:
  *   get:
  *     tags: [Storage]

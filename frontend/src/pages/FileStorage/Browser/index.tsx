@@ -1,14 +1,16 @@
-import { DownloadOutlined, EyeOutlined, PauseCircleOutlined, PlayCircleOutlined, ScissorOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, DownloadOutlined, EyeOutlined, PauseCircleOutlined, PlayCircleOutlined, ScissorOutlined, UploadOutlined } from '@ant-design/icons';
 import { ActionType, PageContainer, ProColumns, ProTable } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { Button, Image, Input, Modal, Progress, Select, Space, Table, Upload, Tooltip, Typography } from 'antd';
-import { message } from '@/utils/antdAppApis';
+import { message, modal } from '@/utils/antdAppApis';
 import React, { useRef, useState, useMemo } from 'react';
 import { useAIChatPrompts, useChatReference } from '@eadaf/ai-base';
 import { buildStorageBrowserPrompts } from '@/ai/pageChatPrompts';
 import { buildStorageObjectReference } from '@/ai/chatReferenceBuilders';
 import { augmentColumnsWithChatReference } from '@/utils/augmentColumnsWithChatReference';
+import { getApplications } from '@/services/UAC/api/applications';
 import {
+  deleteStorageObject,
   getStorageBuckets,
   getStorageCropUrl,
   getStorageDownloadUrl,
@@ -19,11 +21,35 @@ import { resolveApiUrl } from '@/constants/env';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
 import { TABLE_ACTION_COLUMN_BASE, TableActionButton, TableActions } from '@/components/TableActions';
-import { parseApiListResponse } from '@/utils/apiResponse';
+import { isApiSuccess, parseApiListResponse } from '@/utils/apiResponse';
 import { request } from '@/utils/request';
 import { startStorageTusUpload, type TusUploadHandle } from '@/utils/tusStorageUpload';
 
 type ObjectRecord = API.StorageObject;
+
+const BROWSER_FILTER_KEYS = ['name', 'bucketId', 'mimeType', 'applicationId'] as const;
+
+async function loadBucketSelectOptions() {
+  const res = await getStorageBuckets({ size: 200 });
+  const { items } = parseApiListResponse<API.StorageBucket>(res);
+  return items
+    .filter((bucket): bucket is API.StorageBucket & { bucketId: string } => Boolean(bucket.bucketId))
+    .map((bucket) => ({
+      label: bucket.name || bucket.code || bucket.bucketId,
+      value: bucket.bucketId,
+    }));
+}
+
+async function loadApplicationSelectOptions() {
+  const res = await getApplications({ size: -1 });
+  const { items } = parseApiListResponse<API.Application>(res);
+  return items
+    .filter((app): app is API.Application & { application_id: string } => Boolean(app.application_id))
+    .map((app) => ({
+      label: app.name || app.code || app.application_id,
+      value: app.application_id,
+    }));
+}
 
 function formatSize(size?: number) {
   if (!size) return '-';
@@ -128,6 +154,27 @@ const BrowserPage: React.FC = () => {
     }
   };
 
+  const handleDelete = (record: ObjectRecord) => {
+    if (!record.objectId) return;
+    modal.confirm({
+      title: '确认删除该文件？',
+      content: record.name
+        ? `将永久删除「${record.name}」及其磁盘文件，此操作不可恢复。`
+        : '将永久删除该记录及其磁盘文件，此操作不可恢复。',
+      okText: '删除',
+      okType: 'danger',
+      onOk: async () => {
+        const res = await deleteStorageObject(record.objectId!);
+        if (!isApiSuccess(res)) {
+          message.error('删除失败');
+          return;
+        }
+        message.success('已删除');
+        actionRef.current?.reload();
+      },
+    });
+  };
+
   return (
     <PageContainer pageHeaderRender={() => <></>}>
       <UrlSyncedProTable<ObjectRecord>
@@ -137,6 +184,7 @@ const BrowserPage: React.FC = () => {
         scroll={{ x: 1280 }}
         search={search}
         options={DEFAULT_PRO_TABLE_OPTIONS}
+        urlFilterKeys={[...BROWSER_FILTER_KEYS]}
         toolBarRender={() => [
           <Button key="upload" type="primary" className="btn-gradient-primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
             上传文件
@@ -149,29 +197,71 @@ const BrowserPage: React.FC = () => {
           const res = await getStorageObjects({
             page: params.current,
             size: params.pageSize,
-            keyword: params.keyword as string | undefined,
-            bucketId: params.bucketId as string | undefined,
+            keyword: (params.name as string) || (params.keyword as string) || undefined,
+            bucketId: (params.bucketId as string) || undefined,
+            mimeType: (params.mimeType as string) || undefined,
+            applicationId: (params.applicationId as string) || undefined,
           });
           const { items, total, success } = parseApiListResponse<ObjectRecord>(res);
           return { data: items, total, success };
         }}
         columns={[
-          { title: '资源 ID', dataIndex: 'objectId', copyable: true, ellipsis: true, width: 120 },
+          { title: '资源 ID', dataIndex: 'objectId', copyable: true, ellipsis: true, width: 120, hideInSearch: true },
           ...augmentColumnsWithChatReference<ObjectRecord>(
-            [{ title: '资源名称', dataIndex: 'name', ellipsis: true, width: 200 } as ProColumns<ObjectRecord>],
+            [{
+              title: '资源名称',
+              dataIndex: 'name',
+              ellipsis: true,
+              width: 200,
+              fieldProps: { placeholder: '按文件名搜索' },
+            } as ProColumns<ObjectRecord>],
             'name',
             buildStorageObjectReference,
           ),
-          { title: '类型', dataIndex: 'mimeType', width: 140 },
-          { title: 'Bucket', render: (_, r) => r.bucket?.name || r.bucket?.code || '-', width: 140 },
-          { title: '来源应用', render: (_, r) => r.application?.name || '-', width: 160 },
-          { title: '来源用户', render: (_, r) => r.creator?.username || r.creator?.name || '-', width: 100 },
-          { title: '大小', render: (_, r) => formatSize(r.size), width: 90 },
-          { title: '相对路径', dataIndex: 'relativePath', copyable: true, ellipsis: true, width: 220 },
-          { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime', width: 170 },
+          {
+            title: '类型',
+            dataIndex: 'mimeType',
+            width: 140,
+            fieldProps: { placeholder: '如 image/png' },
+          },
+          {
+            title: 'Bucket',
+            dataIndex: 'bucketId',
+            width: 140,
+            valueType: 'select',
+            fieldProps: { showSearch: true, optionFilterProp: 'label', allowClear: true, placeholder: '选择 Bucket' },
+            request: loadBucketSelectOptions,
+            render: (_, r) => r.bucket?.name || r.bucket?.code || '-',
+          },
+          {
+            title: '来源应用',
+            dataIndex: 'applicationId',
+            width: 160,
+            valueType: 'select',
+            fieldProps: { showSearch: true, optionFilterProp: 'label', allowClear: true, placeholder: '选择应用' },
+            request: loadApplicationSelectOptions,
+            render: (_, r) => r.application?.name || '-',
+          },
+          {
+            title: '来源用户',
+            dataIndex: 'createdBy',
+            width: 100,
+            hideInSearch: true,
+            render: (_, r) => r.creator?.username || r.creator?.name || '-',
+          },
+          {
+            title: '大小',
+            dataIndex: 'size',
+            width: 90,
+            hideInSearch: true,
+            render: (_, r) => formatSize(r.size),
+          },
+          { title: '相对路径', dataIndex: 'relativePath', copyable: true, ellipsis: true, width: 220, hideInSearch: true },
+          { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime', width: 170, hideInSearch: true },
           {
             ...TABLE_ACTION_COLUMN_BASE,
-            width: 70,
+            dataIndex: 'option',
+            width: 96,
             render: (_, record) => (
               <TableActions>
                 {record.mimeType?.startsWith('image/') ? (
@@ -185,6 +275,12 @@ const BrowserPage: React.FC = () => {
                   title="下载"
                   icon={<DownloadOutlined />}
                   onClick={() => void handleDownload(record)}
+                />
+                <TableActionButton
+                  title="删除"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleDelete(record)}
                 />
               </TableActions>
             ),
