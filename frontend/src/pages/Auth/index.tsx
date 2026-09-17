@@ -8,11 +8,10 @@ import { Modal, Form, Input, Button, Card, Space, Spin, Result } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import Lottie from 'react-lottie-player';
 import React, { useState, useRef, useEffect } from 'react';
-import { flushSync } from 'react-dom';
 import SliderCaptchaComponent, { SliderCaptchaRef } from '@/components/SliderCaptcha';
 import loadingLottie from '@/assets/lotties/loading.json';
 import './index.scss';
-import { saveAuth, checkAuth, checkTokenValid, parseAuthUser } from '@/utils/auth';
+import { saveAuth, checkTokenValid, parseAuthUser } from '@/utils/auth';
 import { getApiErrorMessage } from '@/utils/apiResponse';
 import { normalizeUploadFileId } from '@/utils/image';
 import {
@@ -21,7 +20,6 @@ import {
   resolveSsoBrandingDisplay,
 } from '@/utils/appBranding';
 import AuthPageFrame from '@/components/AuthPageFrame';
-// import { useAIChatDisplayMode } from '@eadaf/ai-base';
 
 interface LoginParams {
   username: string;
@@ -105,9 +103,7 @@ const LoginPage: React.FC = () => {
   const [isApplicationInfoLoaded, setIsApplicationInfoLoaded] = useState(false);
   const captchaRef = useRef<SliderCaptchaRef>(null);
   const ssoRedirectStartedRef = useRef(false);
-  const { setInitialState, initialState } = useInitialState();
-
-  // useAIChatDisplayMode('hidden');
+  const { refresh, initialState } = useInitialState();
 
   // 独立的SSO回调方法（显式传入 SSO 应用信息，避免闭包读取到过期的 applicationInfo）
   const submitSsoCallback = (
@@ -438,25 +434,20 @@ const LoginPage: React.FC = () => {
 
   const handleLoginSuccess = async (userInfo: UserInfo, token: string, refreshToken?: string) => {
     try {
-
-      // 保存 token
       saveAuth(token, refreshToken);
 
-      // 等待一下，确保 token 已经保存
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // 处理 SSO 回调 - 只有在URL中有app参数时才执行SSO回调
       const urlParams = new URL(window.location.href).searchParams;
       const appId = urlParams.get('app');
 
-      // SSO JWT 按应用密钥签发，check 必须带 app；否则会走平台密钥验签得到 401
-      const userResponse = await getAuthCheck(
-        appId ? { app: appId } : {},
-        { skipErrorHandler: true },
-      );
-      const userData = parseAuthUser(userResponse);
-
-      if (userData) {
+      // SSO：JWT 按应用密钥签发，check 必须带 app
+      if (appId) {
+        const userData = parseAuthUser(
+          await getAuthCheck({ app: appId }, { skipErrorHandler: true }),
+        );
+        if (!userData) {
+          message.error('登录失败，请重试');
+          return;
+        }
         const updatedUserInfo: UserInfo = {
           user_id: userData.user_id || '',
           username: userInfo.username,
@@ -469,41 +460,35 @@ const LoginPage: React.FC = () => {
           department_id: userData.department_id || null,
           must_change_password: userData.must_change_password,
         };
-
-        flushSync(() => {
-          setInitialState((s:any) => ({
-            ...s,
-            currentUser: updatedUserInfo,
-          }));
-        });
-
         if (updatedUserInfo.must_change_password) {
           message.info('首次登录请先修改默认密码');
-          history.push('/account/center');
+          await refresh();
+          history.replace('/account/center');
           return;
         }
+        await performSsoRedirect(appId, updatedUserInfo, token, refreshToken);
+        return;
+      }
 
-        if (appId) {
-          await performSsoRedirect(appId, updatedUserInfo, token, refreshToken);
-          return;
-        }
+      // 平台登录：一次 refresh 拉齐 user / menu / departments，避免竞态覆盖
+      const next = await refresh();
+      if (next?.currentUser?.must_change_password) {
+        message.info('首次登录请先修改默认密码');
+        history.replace('/account/center');
+        return;
+      }
 
-        // 验证权限并跳转
-        const redirect = urlParams.get('redirect');
-        if (redirect) {
-          // 保留 app 参数
-          const appId = urlParams.get('app');
-          const redirectWithApp = appId ? `${redirect}${redirect.includes('?') ? '&' : '?'}app=${appId}` : redirect;
-          history.push(redirectWithApp);
-        } else {
-          await checkAuth(setInitialState);
+      const redirect = urlParams.get('redirect');
+      if (redirect) {
+        try {
+          history.replace(decodeURIComponent(redirect));
+        } catch {
+          history.replace('/member_org');
         }
       } else {
-        // throw new Error('获取用户信息失败');
-        message.error('登录失败，请重试');
+        history.replace('/member_org');
       }
     } catch (error) {
-      // 清除 token
       saveAuth('', '');
       message.error('登录失败，请重试');
     }
@@ -525,15 +510,9 @@ const LoginPage: React.FC = () => {
         message.success('登录成功！');
         setShowCaptcha(false);
 
-        // 存储token
-        saveAuth(msg.data.token, msg.data.refresh_token);
-
-        // 检查是否有SSO信息需要处理 - 只有在URL中有app参数时才处理SSO
+        // SSO 响应里的应用信息先写入，后续 handleLoginSuccess 再 check + 跳转
         if (msg.data?.sso && appId) {
           const ssoInfo = msg.data.sso;
-          console.log('登录响应中包含SSO信息:', ssoInfo);
-          
-          // 更新应用信息
           setApplicationInfo({
             application_id: ssoInfo.application_id,
             name: ssoInfo.application_name,
@@ -554,48 +533,23 @@ const LoginPage: React.FC = () => {
               issuer: ssoInfo.sso_config?.issuer,
               frontend_url: ssoInfo.sso_config?.frontend_url,
               login_page: ssoInfo.sso_config?.login_page || applicationInfo?.sso_config?.login_page,
-            }
+            },
           });
-          
-          // SSO JWT 按应用密钥签发，check 必须带 app
-          const userData = parseAuthUser(
-            await getAuthCheck({ app: appId }, { skipErrorHandler: true }),
-          );
-          if (userData) {
-            const userInfo: UserInfo = {
-              user_id: userData.user_id,
-              username: loginData.username,
-              name: userData.name || loginData.username,
-              avatar: userData.avatar,
-              gender: userData.gender,
-              email: userData.email,
-              phone: userData.phone,
-              status: userData.status,
-              department_id: userData.department_id,
-            };
-
-            await handleLoginSuccess(userInfo, msg.data.token, msg.data.refresh_token);
-            return true;
-          }
-        } else {
-          const userData = parseAuthUser(await getAuthCheck({}, { skipErrorHandler: true }));
-          if (userData) {
-            const userInfo: UserInfo = {
-              user_id: userData.user_id,
-              username: loginData.username,
-              name: userData.name || loginData.username,
-              avatar: userData.avatar,
-              gender: userData.gender,
-              email: userData.email,
-              phone: userData.phone,
-              status: userData.status,
-              department_id: userData.department_id,
-            };
-
-            await handleLoginSuccess(userInfo, msg.data.token, msg.data.refresh_token);
-            return true;
-          }
         }
+
+        const userInfo: UserInfo = {
+          user_id: msg.data.user_id || '',
+          username: loginData.username,
+          name: loginData.username,
+          avatar: null,
+          gender: null,
+          email: '',
+          phone: null,
+          status: 'ACTIVE',
+          department_id: null,
+        };
+        await handleLoginSuccess(userInfo, msg.data.token, msg.data.refresh_token);
+        return true;
       } else if (msg.data?.need_captcha) {
         setLoginParams(loginData);
         const response = await getCaptcha();

@@ -15,10 +15,17 @@ const SecurityLayout: React.FC = () => {
   const { initialState, setInitialState } = useInitialState();
   const setInitialStateRef = useRef(setInitialState);
   setInitialStateRef.current = setInitialState;
+  /** 仅首次进入受保护树时全屏 Spin；之后路径变化不卸载 Outlet */
+  const hasCompletedInitialCheckRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const checkAuthentication = async () => {
+      const isFirstCheck = !hasCompletedInitialCheckRef.current;
+      if (isFirstCheck) {
+        setIsAuthChecking(true);
+      }
+
       try {
         const isAuthPage = AUTH_PAGES.includes(pathname as (typeof AUTH_PAGES)[number]);
         const hasAppParam = new URLSearchParams(search).has('app');
@@ -26,13 +33,16 @@ const SecurityLayout: React.FC = () => {
         if (isAuthPage && hasAppParam) {
           if (!cancelled) {
             setIsAuthenticated(true);
-            setIsAuthChecking(false);
+            hasCompletedInitialCheckRef.current = true;
           }
           return;
         }
 
         const isValid = await checkAuth(setInitialStateRef.current);
-        if (!cancelled) setIsAuthenticated(isValid);
+        if (!cancelled) {
+          setIsAuthenticated(isValid);
+          hasCompletedInitialCheckRef.current = true;
+        }
       } catch (error) {
         console.error('认证检查失败:', error);
         if (!cancelled) setIsAuthenticated(false);
@@ -41,15 +51,14 @@ const SecurityLayout: React.FC = () => {
       }
     };
 
-    setIsAuthChecking(true);
     checkAuthentication();
     return () => {
       cancelled = true;
     };
-    // 仅路径变化时重验；setInitialState 用 ref，避免其引用变化触发重复 getAuthCheck
-  }, [pathname, search]);
+    // 路径变化可后台重验，但不因 search（表格 query）重跑；setInitialState 用 ref
+  }, [pathname]);
 
-  if (isAuthChecking) {
+  if (isAuthChecking && !hasCompletedInitialCheckRef.current) {
     return (
       <div
         style={{

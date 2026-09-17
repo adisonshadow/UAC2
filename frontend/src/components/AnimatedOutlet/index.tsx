@@ -1,44 +1,20 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import classNames from 'classnames';
-import { useLocation, useOutlet } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import './index.scss';
-
-const EASE_OUT = [0.4, 0, 0.2, 1] as const;
 
 interface AnimatedOutletProps {
   className?: string;
 }
 
+/**
+ * 路由出口。
+ * 曾用 framer-motion AnimatePresence mode="wait" + useOutlet，父级（SecurityLayout）
+ * 在鉴权时卸载树会导致退出动画无法结束，登录后点导航彻底卡死。改为直接 Outlet。
+ */
 export default function AnimatedOutlet({ className }: AnimatedOutletProps) {
-  const location = useLocation();
-  const outlet = useOutlet();
-  const prefersReducedMotion = useReducedMotion();
-  const duration = prefersReducedMotion ? 0.12 : 0.22;
-
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={location.pathname}
-        className={classNames('eadaf-page-transition', className)}
-        initial={
-          prefersReducedMotion
-            ? { opacity: 0 }
-            : { opacity: 0, y: 10 }
-        }
-        animate={
-          prefersReducedMotion
-            ? { opacity: 1 }
-            : { opacity: 1, y: 0 }
-        }
-        exit={
-          prefersReducedMotion
-            ? { opacity: 0 }
-            : { opacity: 0, y: -6 }
-        }
-        transition={{ duration, ease: EASE_OUT }}
-      >
-        {outlet}
-      </motion.div>
-    </AnimatePresence>
+    <div className={classNames('eadaf-page-transition', className)}>
+      <Outlet />
+    </div>
   );
 }

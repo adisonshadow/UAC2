@@ -138,11 +138,12 @@ export function InitialStateProvider({ children }: { children: ReactNode }) {
   const [initialState, setInitialStateInner] = useState<InitialState | undefined>();
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<InitialState> => {
     setLoading(true);
     try {
       const next = await loadInitialState();
       setInitialStateInner(next);
+      return next;
     } finally {
       setLoading(false);
     }
