@@ -153,5 +153,6 @@ pm2 kill                       # 关闭 pm2 守护进程
 
 ## 子项目文档
 
+- [docs/dev-server-deploy.md](./docs/dev-server-deploy.md) — 服务器 DEV 部署（目录、Docker、nvm、init-db、pm2）
 - [backend/README.md](./backend/README.md) — API 服务
-- [rontend/README.md](./rontend/README.md) — 管理端前端
+- [frontend/README.md](./frontend/README.md) — 管理端前端
