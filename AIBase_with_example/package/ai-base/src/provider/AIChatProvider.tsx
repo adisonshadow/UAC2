@@ -282,13 +282,6 @@ export function AIChatProvider({ config, plugins, children }: AIChatProviderProp
   );
 
   useEffect(() => {
-    document.body.style.paddingRight = paddingRight > 0 ? `${paddingRight}px` : '0';
-    return () => {
-      document.body.style.paddingRight = '';
-    };
-  }, [paddingRight]);
-
-  useEffect(() => {
     registerAIChatControls({ openPanel: () => setChatOpen(true) });
     registerBuiltinTools();
     const disposeObs = ensureObservabilityBridge();
@@ -299,11 +292,17 @@ export function AIChatProvider({ config, plugins, children }: AIChatProviderProp
     };
   }, []);
 
+  // 侧栏占位打在业务布局容器上，勿写 document.body.paddingRight（会与 antd Modal 滚动锁冲突导致卡死）
   return (
     <AIChatLayoutContext.Provider value={layoutValue}>
       <AIChatPromptsProvider>
         <ChatReferenceProvider>
-          {children}
+          <div
+            className="aibase-chat-host"
+            style={paddingRight > 0 ? { paddingRight } : undefined}
+          >
+            {children}
+          </div>
           <ConfigProvider theme={chatTheme}>
             {displayMode !== 'hidden' && chatOpen && (
               <Suspense fallback={null}>

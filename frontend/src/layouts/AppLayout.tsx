@@ -12,7 +12,7 @@ import {
 } from '@ant-design/icons';
 import type { MenuDataItem } from '@ant-design/pro-components';
 import { ProLayout } from '@ant-design/pro-components';
-import { Suspense } from 'react';
+import { Suspense, useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AnimatedOutlet from '@/components/AnimatedOutlet';
 import { AvatarDropdown, Footer } from '@/components';
@@ -47,18 +47,48 @@ export default function AppLayout() {
   const routeMeta = findRouteMeta(location.pathname);
   const currentUser = initialState?.currentUser;
   const metadataEnabled = Boolean(initialState?.systemFeatures?.metadataEnabled);
-  const menuData = decorateMenuIcons(
-    buildMenuData(
+
+  const menuData = useMemo(
+    () =>
+      decorateMenuIcons(
+        buildMenuData(
+          initialState?.systemFeatures,
+          initialState?.menuPermissions as Parameters<typeof buildMenuData>[1],
+          {
+            roleIds: currentUser?.role_ids,
+            roleCodes: currentUser?.role_codes,
+            departmentId: currentUser?.department_id,
+            isSuperAdmin: currentUser?.role_codes?.includes('SUPER_ADMIN'),
+          },
+        ),
+      ),
+    [
       initialState?.systemFeatures,
-      initialState?.menuPermissions as Parameters<typeof buildMenuData>[1],
-      {
-        roleIds: currentUser?.role_ids,
-        roleCodes: currentUser?.role_codes,
-        departmentId: currentUser?.department_id,
-        isSuperAdmin: currentUser?.role_codes?.includes('SUPER_ADMIN'),
-      },
-    ),
+      initialState?.menuPermissions,
+      currentUser?.role_ids,
+      currentUser?.role_codes,
+      currentUser?.department_id,
+    ],
   );
+
+  const menuDataRender = useCallback(() => menuData, [menuData]);
+
+  const menuItemRender = useCallback(
+    (item: MenuDataItem, dom: ReactNode) =>
+      item.path ? <Link to={item.path}>{dom}</Link> : dom,
+    [],
+  );
+
+  const actionsRender = useCallback(
+    () => (
+      <div style={{ marginRight: 16, display: 'flex', alignItems: 'center' }}>
+        <AvatarDropdown menu />
+      </div>
+    ),
+    [],
+  );
+
+  const footerRender = useCallback(() => <Footer />, []);
 
   return (
     <ProLayout
@@ -71,16 +101,10 @@ export default function AppLayout() {
         ...initialState?.settings?.menu,
         params: { metadataEnabled },
       }}
-      menuDataRender={() => menuData}
-      menuItemRender={(item, dom) =>
-        item.path ? <Link to={item.path}>{dom}</Link> : dom
-      }
-      actionsRender={() => (
-        <div style={{ marginRight: 16, display: 'flex', alignItems: 'center' }}>
-          <AvatarDropdown menu />
-        </div>
-      )}
-      footerRender={() => <Footer />}
+      menuDataRender={menuDataRender}
+      menuItemRender={menuItemRender}
+      actionsRender={actionsRender}
+      footerRender={footerRender}
       menuRender={routeMeta?.hideMenu ? false : undefined}
       pure={routeMeta?.layout === false}
       contentStyle={

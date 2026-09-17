@@ -1,5 +1,6 @@
 import { lazy, Fragment, useEffect } from 'react';
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { notifyPathnameChange } from '@eadaf/ai-base';
 import AppLayout from '@/layouts/AppLayout';
 import SecurityLayout from '@/layouts/SecurityLayout';
 import AIChatHidden from '@/wrappers/AIChatHidden';
@@ -35,9 +36,14 @@ const Page500 = lazy(() => import('@/pages/500'));
 
 function NavigationBinder() {
   const navigate = useNavigate();
+  const location = useLocation();
   useEffect(() => {
     setNavigate(navigate);
   }, [navigate]);
+  // 显式通知 AI Chat displayMode，替代 history.pushState monkey-patch
+  useEffect(() => {
+    notifyPathnameChange();
+  }, [location.pathname, location.search]);
   return null;
 }
 

@@ -63,7 +63,7 @@ export interface InitialStateContextValue {
     updater: InitialState | ((prev?: InitialState) => InitialState | undefined),
   ) => void;
   loading: boolean;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<InitialState>;
 }
 
 export const InitialStateContext = createContext<InitialStateContextValue | null>(null);

@@ -15,6 +15,7 @@ export type {
 } from './provider/ChatReferenceContext';
 export { useAIChatLayout } from './provider/context';
 export { useAIChatDisplayMode } from './provider/useAIChatDisplayMode';
+export { notifyPathnameChange } from './provider/pathnameDisplayMode';
 export {
   AIChatPromptsProvider,
   useAIChatPrompts,
