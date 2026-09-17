@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 查找并结束本仓库的前后端开发进程（pnpm dev / nodemon / vite / preview）。
+# macOS / Linux 通用：用 ps + lsof，不依赖 Linux 的 /proc。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,19 +18,31 @@ is_dev_cmd() {
   [[ "$cmd" == *"$REPO_ROOT/scripts/preview.sh"* ]] && return 0
   [[ "$cmd" == *"$REPO_ROOT/backend/src/app.js"* ]] && return 0
   [[ "$cmd" == *"nodemon"* && "$cmd" == *"src/app.js"* ]] && return 0
+  [[ "$cmd" == *"node "* && "$cmd" == *"src/app.js"* ]] && return 0
   [[ "$cmd" == *"vite"* ]] && return 0
   [[ "$cmd" == *"pnpm"* && "$cmd" == *"--filter"* && "$cmd" == *"backend"* ]] && return 0
   [[ "$cmd" == *"pnpm"* && "$cmd" == *"--filter"* && "$cmd" == *"frontend"* ]] && return 0
   return 1
 }
 
+proc_cwd() {
+  local pid="$1"
+  if [[ -d "/proc/$pid" ]]; then
+    readlink "/proc/$pid/cwd" 2>/dev/null || true
+    return
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/ { print substr($0, 2); exit }'
+  fi
+}
+
 is_repo_related() {
   local pid="$1"
-  local cwd cmd
-  cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
-  cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-  [[ "$cwd" == "$REPO_ROOT" || "$cwd" == "$REPO_ROOT/"* ]] && return 0
+  local cmd="$2"
+  local cwd
   [[ "$cmd" == *"$REPO_ROOT"* ]] && return 0
+  cwd="$(proc_cwd "$pid")"
+  [[ "$cwd" == "$REPO_ROOT" || "$cwd" == "$REPO_ROOT/"* ]] && return 0
   return 1
 }
 
@@ -43,19 +56,17 @@ add_pid() {
   PIDS["$p"]=1
 }
 
-# 按命令行 / 工作目录收集本仓库的前后端进程
-for proc in /proc/[0-9]*; do
-  pid="${proc#/proc/}"
-  cmd="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+while read -r pid cmd; do
+  [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] || continue
   [[ -n "$cmd" ]] || continue
   is_dev_cmd "$cmd" || continue
-  is_repo_related "$pid" || continue
+  is_repo_related "$pid" "$cmd" || continue
   add_pid "$pid"
-done
+done < <(ps -ax -o pid= -o command=)
 
-# 再按监听端口收一轮（避免 pnpm/nodemon 子进程漏网）
 add_listen_port() {
   local port="$1"
+  local pid
   if command -v lsof >/dev/null 2>&1; then
     while read -r pid; do
       add_pid "$pid"
