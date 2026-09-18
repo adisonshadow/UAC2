@@ -42,7 +42,7 @@ const uploadMiddleware = koaBody({
  *               applicationId: { type: string, format: uuid, description: '应用 ID(内置应用 EADAF 拒绝导出)' }
  *               dataMode: { type: string, enum: [structure_and_data, data_only], default: structure_and_data, description: 'data_only 时导入端不落结构,仅对目标已有同版本实体写数' }
  *               includeUac: { type: boolean, default: false, description: '是否携带用户/部门/授权等 UAC 数据(不勾选仅携带被引用的角色与权限)' }
- *               includeFiles: { type: boolean, default: false, description: '是否携带存储对象文件(该应用桶内对象 + 归属本应用的对象;不勾选仅桶元数据)' }
+ *               includeFiles: { type: boolean, default: false, description: '是否携带存储对象文件(该应用桶内对象 + 归属本应用的对象,以及这些对象引用的共享桶如 fpcu;不勾选仅桶元数据)' }
  *     responses:
  *       200:
  *         description: 返回 eadaf-app-export zip 附件(Content-Disposition;body 为 octet-stream)
@@ -110,7 +110,7 @@ router.post('/preview', authWithBuiltinApiGuard, operationAudit({
  *               strategy: { type: string, enum: [overwrite, skip, abort], default: overwrite, description: '冲突策略:覆盖更新 / 跳过已存在 / 有冲突即中止(不写任何数据)' }
  *     responses:
  *       200:
- *         description: 导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac / includeFiles 写入 notes 而非 errors。不含平台 AI 目录/全局 Skill
+ *         description: 导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;源行含空值时会放开目标列 NOT NULL 再写入,避免整表回滚;对象引用的桶在目标不存在时会按 code 自动创建(public)。未勾选 includeUac / includeFiles 写入 notes 而非 errors。不含平台 AI 目录/全局 Skill
  *         content:
  *           application/json:
  *             schema:

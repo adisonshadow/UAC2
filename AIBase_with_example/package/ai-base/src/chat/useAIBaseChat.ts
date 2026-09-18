@@ -70,6 +70,7 @@ import { presentToolCall, presentToolResult } from '../runtime/surfacesRegistry'
 import { runWithConcurrency } from '../utils/runWithConcurrency';
 import { aggregateToolResults } from '../utils/aggregateToolResults';
 import { sleep } from '../utils/sleep';
+import { createRandomId } from '../utils/createRandomId';
 import { serializeToolResultForContext, resolveToolResultBudget } from '../utils/toolResultBudget';
 import { normalizeToolResult } from '../utils/normalizeToolResult';
 import { validateToolArgs } from '../utils/validateToolArgs';
@@ -523,8 +524,9 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
       // 用 UUID 生成消息 id，避免 Date.now()+偏移 在快速重发/StrictMode 双调用/
       // 自动续跑等场景下产生相同 key（曾出现 Bubble.List "two children with same key" 报错）。
-      const userId = `user-${crypto.randomUUID()}`;
-      const assistantId = `assistant-${crypto.randomUUID()}`;
+      // randomUUID 仅 HTTPS/localhost 可用；http://IP 部署走 createRandomId 回退。
+      const userId = `user-${createRandomId()}`;
+      const assistantId = `assistant-${createRandomId()}`;
       let history = messagesRef.current.map((item) => {
         const msg = item.message as EADAFChatMessage;
         return {

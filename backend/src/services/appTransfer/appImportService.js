@@ -13,6 +13,8 @@
  *   未命中则用目标同类型连接凭证创建本地连接(绝不写入源 host/密码);
  * - 第二唯一键(route_path / function_name)撞到另一条目标记录 → 该条 failed,不静默改;
  * - overwrite 行数据 = 目标表 DELETE 后按实际列集批量插入(连接内同事务);
+ * - 物化按 entity_fields 建 NOT NULL,源物理表可能更松(历史空值);
+ *   写数前对「文件行含 null」的列 DROP NOT NULL,避免整表事务回滚;
  * - data_only 模式:不落结构,目标无同 code 实体或版本不符 → 跳过写数。
  */
 const { Op } = require('sequelize');
@@ -861,7 +863,14 @@ class ImportContext {
           continue;
         }
 
-         
+        // 源表可空 + 实体字段 nullable:false 时,物化会建成 NOT NULL;
+        // 文件里哪怕只有一行空值,批量 INSERT 也会整表回滚(设备/型号页只见型号不见实例)。
+        const nullCols = columnsWithNulls(cols, rows);
+        if (nullCols.length) {
+          await relaxNotNullOnTarget(runtime, item.targetSchema, item.tableName, nullCols);
+          section.notes.push(`${label}: 源数据含空值,已放开目标列 NOT NULL: ${nullCols.join(', ')}`);
+        }
+
         const writeResult = await writeEntityRows(runtime, item.targetSchema, item.tableName, cols, rows, this.strategy);
         section.counts[writeResult] = (section.counts[writeResult] || 0) + 1;
       } catch (e) {
@@ -1386,6 +1395,49 @@ function mapMysqlImportColumnType(dataType) {
   return 'TEXT';
 }
 
+/** 插入列中,至少有一行值为 null/undefined 的列名(显式 INSERT NULL 不会走列默认值) */
+function columnsWithNulls(cols, rows) {
+  return (cols || []).filter((name) =>
+    (rows || []).some((row) => !row || row[name] == null),
+  );
+}
+
+/**
+ * 源物理表可空、目标物化按 entity_fields 建成 NOT NULL 时,写数前放开约束。
+ * 已可空的列再执行 DROP NOT NULL 是幂等的。
+ */
+async function relaxNotNullOnTarget(runtime, schemaName, tableName, columnNames) {
+  const names = (columnNames || []).filter(Boolean);
+  if (!names.length) return;
+  if (runtime.dbType === 'postgresql') {
+    await connectionRunner.withPgClient(runtime, async (client) => {
+      for (const name of names) {
+        await client.query(
+          `ALTER TABLE ${quotePgIdentifier(schemaName)}.${quotePgIdentifier(tableName)} ALTER COLUMN ${quotePgIdentifier(name)} DROP NOT NULL`,
+        );
+      }
+    });
+    return;
+  }
+  if (runtime.dbType === 'mysql') {
+    await connectionRunner.withMysqlClient(runtime, async (conn) => {
+      const db = schemaName || runtime.databaseName;
+      for (const name of names) {
+        const [rows] = await conn.query(
+          `SELECT COLUMN_TYPE AS columnType FROM information_schema.columns
+           WHERE table_schema = ? AND table_name = ? AND column_name = ?`,
+          [db, tableName, name],
+        );
+        const columnType = rows[0]?.columnType || rows[0]?.COLUMN_TYPE;
+        if (!columnType) continue;
+        await conn.query(
+          `ALTER TABLE ${quoteMysqlIdentifier(db)}.${quoteMysqlIdentifier(tableName)} MODIFY COLUMN ${quoteMysqlIdentifier(name)} ${columnType} NULL`,
+        );
+      }
+    }, { database: schemaName || runtime.databaseName });
+  }
+}
+
 /** 物化只按 entity_fields 建表;导出列来自源物理表,缺列时按文件类型补上以便写数 */
 async function ensureFileColumnsOnTarget(runtime, schemaName, tableName, fileColumns, actualColumns) {
   const actualNames = new Set((actualColumns || []).map((c) => c.name));
@@ -1597,4 +1649,5 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
 module.exports = {
   importAppFile,
   STRATEGIES,
+  columnsWithNulls,
 };

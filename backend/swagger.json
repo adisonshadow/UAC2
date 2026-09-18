@@ -9388,6 +9388,54 @@
         }
       }
     },
+    "/api/v1/storage/objects/{id}": {
+      "delete": {
+        "tags": [
+          "Storage"
+        ],
+        "summary": "删除文件 [需要认证]",
+        "description": "删除文件记录，并同步删除磁盘上的原文件及对应图片裁剪缓存。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "文件资源 ID（storage_objects.object_id）"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功，data 为 null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeNull"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "文件不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvelopeError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/storage/objects/{id}/download": {
       "get": {
         "tags": [
@@ -19986,7 +20034,7 @@
                   "includeFiles": {
                     "type": "boolean",
                     "default": false,
-                    "description": "是否携带存储对象文件(该应用桶内对象 + 归属本应用的对象;不勾选仅桶元数据)"
+                    "description": "是否携带存储对象文件(该应用桶内对象 + 归属本应用的对象,以及这些对象引用的共享桶如 fpcu;不勾选仅桶元数据)"
                   }
                 }
               }
@@ -20095,7 +20143,7 @@
         },
         "responses": {
           "200": {
-            "description": "导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;未勾选 includeUac / includeFiles 写入 notes 而非 errors。不含平台 AI 目录/全局 Skill",
+            "description": "导入结果(分节计数/errors/notes)。物化与行数据失败不终止后续 API 等元数据节;源行含空值时会放开目标列 NOT NULL 再写入,避免整表回滚;对象引用的桶在目标不存在时会按 code 自动创建(public)。未勾选 includeUac / includeFiles 写入 notes 而非 errors。不含平台 AI 目录/全局 Skill",
             "content": {
               "application/json": {
                 "schema": {

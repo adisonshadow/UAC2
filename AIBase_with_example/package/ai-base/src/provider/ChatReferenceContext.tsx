@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createRandomId } from '../utils/createRandomId';
 
 export interface ChatReferenceItem {
   id: string;
@@ -25,7 +26,7 @@ export interface ChatReferenceContextValue {
 const ChatReferenceContext = createContext<ChatReferenceContextValue | null>(null);
 
 function createReferenceId(type: string) {
-  return `${type}-${crypto.randomUUID()}`;
+  return `${type}-${createRandomId()}`;
 }
 
 export interface ChatReferenceProviderProps {

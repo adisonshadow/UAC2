@@ -79,12 +79,23 @@ async function decorateObjects(objectRows, storageBuckets, warnings) {
   const neededBucketIds = [...new Set(objectRows.map((o) => o.bucket_id).filter(Boolean))];
   const known = new Map(storageBuckets.map((b) => [b.bucket_id, b]));
   const missingIds = neededBucketIds.filter((id) => !known.has(id));
-  if (missingIds.length) {
-    const extra = await models.StorageBucket.findAll({
+  const extraRows = missingIds.length
+    ? await models.StorageBucket.findAll({
       where: { bucket_id: { [Op.in]: missingIds } },
       raw: true,
-    });
-    extra.forEach((b) => known.set(b.bucket_id, b));
+    })
+    : [];
+  extraRows.forEach((b) => known.set(b.bucket_id, b));
+
+  // 对象可能落在 application_id 为空的共享桶(如 fpcu);不导出桶则导入端找不到桶,图片全 404
+  const seen = new Set(storageBuckets.map((b) => b.bucket_id));
+  const mergedBuckets = [...storageBuckets];
+  for (const row of extraRows) {
+    const packed = pickModelFields(models.StorageBucket, row);
+    if (!seen.has(packed.bucket_id)) {
+      seen.add(packed.bucket_id);
+      mergedBuckets.push(packed);
+    }
   }
 
   const storageObjects = objectRows.map((r) => ({
@@ -98,7 +109,7 @@ async function decorateObjects(objectRows, storageBuckets, warnings) {
       `${missing.length} 个对象在磁盘上缺失,已跳过二进制: ${preview}${missing.length > 8 ? '…' : ''}`,
     );
   }
-  return { storageBuckets, storageObjects, storageFileEntries: entries };
+  return { storageBuckets: mergedBuckets, storageObjects, storageFileEntries: entries };
 }
 
 async function resolveCreatedBy(userId) {
@@ -120,7 +131,30 @@ async function resolveApplicationId(ctx, sourceAppId) {
   return ctx.defaultStorageApplicationId || ctx.targetAppId || null;
 }
 
-async function resolveTargetBucket(ctx, obj, transaction) {
+async function ensureImportedBucket(ctx, obj, section, transaction) {
+  const code = String(obj.bucket_code || '').trim();
+  if (!code || isSystemBucketCode(code)) return null;
+  const applicationId = await resolveApplicationId(ctx, obj.application_id)
+    || ctx.defaultStorageApplicationId
+    || ctx.targetAppId
+    || null;
+  const created = await models.StorageBucket.create({
+    code,
+    name: code,
+    application_id: applicationId,
+    status: 'ACTIVE',
+    // 设备型号图走匿名 crop;源端 fpcu 等共享桶即 public
+    access_mode: 'public',
+    access_restrictions: {},
+  }, transaction ? { transaction } : undefined);
+  if (obj.bucket_id) ctx.idMap.buckets.set(obj.bucket_id, created.bucket_id);
+  if (section) {
+    section.notes.push(`目标无存储桶「${code}」,已自动创建(access_mode=public)`);
+  }
+  return created;
+}
+
+async function resolveTargetBucket(ctx, obj, { transaction, section } = {}) {
   if (obj.bucket_id && ctx.idMap.buckets.has(obj.bucket_id)) {
     const mapped = ctx.idMap.buckets.get(obj.bucket_id);
     const row = await models.StorageBucket.findByPk(mapped, { transaction });
@@ -136,7 +170,7 @@ async function resolveTargetBucket(ctx, obj, transaction) {
       return byCode;
     }
   }
-  return null;
+  return ensureImportedBucket(ctx, obj, section, transaction);
 }
 
 async function copyObjectFile(srcAbs, destRelative) {
@@ -226,7 +260,7 @@ async function importStorageObjectsSection(ctx, opts = {}) {
           ctx.itemFailed(section, label, new Error('缺少 object_id'));
           continue;
         }
-        const bucketRow = await resolveTargetBucket(ctx, obj);
+        const bucketRow = await resolveTargetBucket(ctx, obj, { section });
         if (!bucketRow) {
           ctx.itemFailed(section, label, new Error(`找不到目标桶 ${obj.bucket_code || obj.bucket_id || ''}`));
           continue;
