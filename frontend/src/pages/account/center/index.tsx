@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Space, Tabs, Button } from 'antd';
+import { Tabs, Button } from 'antd';
+import { useSearchParams } from 'react-router-dom';
 import Lottie from 'react-lottie-player';
 import ProfileForm from './components/ProfileForm';
 import PasswordForm from './components/PasswordForm';
@@ -12,8 +13,16 @@ import { useInitialState } from '@/providers/InitialStateProvider';
 import goodJobLottie from '@/assets/lotties/good-job.json';
 import defaultSettings from '../../../../config/defaultSettings';
 
+function isEmbedMode(params: URLSearchParams) {
+  const embed = params.get('embed');
+  const hideHeader = params.get('hideHeader');
+  return embed === '1' || embed === 'true' || hideHeader === '1' || hideHeader === 'true';
+}
+
 const AccountCenter: React.FC = () => {
   const { initialState, refresh } = useInitialState();
+  const [searchParams] = useSearchParams();
+  const embed = isEmbedMode(searchParams);
   const [activeTab, setActiveTab] = useState('profile');
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -59,26 +68,28 @@ const AccountCenter: React.FC = () => {
   return (
     <div className={styles['account-center-container']}>
       <FirstLoginSetupModal open={mustChangePassword} />
-      <div className='d-flex justify-content-between align-items-center'>
-        <Button type='link' onClick={() => {
-          history.back();
-        }}>
-          <LeftOutlined /> 返回
-        </Button>
+      {!embed && (
+        <div className='d-flex justify-content-between align-items-center'>
+          <Button type='link' onClick={() => {
+            history.back();
+          }}>
+            <LeftOutlined /> 返回
+          </Button>
 
-        <img
-          src={brandingLogo}
-          alt={typeof brandingName === 'string' ? brandingName : undefined}
-          className={styles['account-center-logo']}
-        />
-        
-        <Button type='link' onClick={() => {
-          loginOut();
-        }}>
-          <LogoutOutlined /> 退出
-        </Button>
-      </div>
-      <div className='mt-4'>
+          <img
+            src={brandingLogo}
+            alt={typeof brandingName === 'string' ? brandingName : undefined}
+            className={styles['account-center-logo']}
+          />
+
+          <Button type='link' onClick={() => {
+            loginOut();
+          }}>
+            <LogoutOutlined /> 退出
+          </Button>
+        </div>
+      )}
+      <div className={embed ? undefined : 'mt-4'}>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}

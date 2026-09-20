@@ -4,7 +4,7 @@ import { getDepartments } from '@/services/UAC/api/departments';
 import { getAuthCheck } from '@/services/UAC/api/auth';
 import { getSystemFeatures } from '@/services/UAC/api/system';
 import { getPermissions } from '@/services/UAC/api/permissions';
-import { clearAuth, getAuth, parseAuthUser, type CurrentUser } from '@/utils/auth';
+import { clearAuth, consumeEmbedAuthFromUrl, getAuth, parseAuthUser, type CurrentUser } from '@/utils/auth';
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
 import {
   applyDocumentBranding,
@@ -30,7 +30,12 @@ async function fetchUserInfo() {
     const { token } = getAuth();
     if (!token) return undefined;
 
-    const response = await getAuthCheck({}, { skipErrorHandler: true });
+    const appId =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('app') : null;
+    const response = await getAuthCheck(
+      appId ? { app: appId } : {},
+      { skipErrorHandler: true },
+    );
     const user = parseAuthUser(response);
     if (user) return user;
     throw new Error('获取用户信息失败');
@@ -98,6 +103,7 @@ async function fetchMenuPermissions(): Promise<MenuPermissionItem[] | undefined>
 }
 
 async function loadInitialState(): Promise<InitialState> {
+  consumeEmbedAuthFromUrl();
   const [currentUser, appBranding, featuresRes] = await Promise.all([
     fetchUserInfo(),
     fetchSystemBranding(),

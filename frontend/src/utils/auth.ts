@@ -121,6 +121,21 @@ export const clearAuth = () => {
   console.log('认证信息已清除');
 };
 
+/** iframe / 第三方嵌入：从 URL 写入本域 token，并去掉敏感 query，保留 embed、app */
+export function consumeEmbedAuthFromUrl() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get('access_token') || url.searchParams.get('token');
+  const refreshToken = url.searchParams.get('refresh_token') || undefined;
+  if (!token) return;
+  saveAuth(token, refreshToken);
+  url.searchParams.delete('access_token');
+  url.searchParams.delete('token');
+  url.searchParams.delete('refresh_token');
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState(null, '', next);
+}
+
 // 保存认证信息
 export const saveAuth = (token: string, refreshToken?: string) => {
   console.log('保存认证信息...', {
@@ -159,10 +174,12 @@ export const checkAuth = async (setInitialState?: (callback: (state: any) => any
   if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_AUTH') === '1') {
     console.log('开始路由守卫检查...');
   }
+  consumeEmbedAuthFromUrl();
   const { token } = getAuth();
   const currentPath = location.pathname + location.search;
   const isCurrentAuthPage = isAuthPage(location.pathname);
   const hasCurrentAppParam = hasAppParam();
+  const appId = new URLSearchParams(location.search).get('app');
 
   if (typeof localStorage !== 'undefined' && localStorage.getItem('DEBUG_AUTH') === '1') {
     console.log('当前页面状态:', {
@@ -189,7 +206,10 @@ export const checkAuth = async (setInitialState?: (callback: (state: any) => any
   // 如果有 token，验证其有效性
   if (token && !isCurrentAuthPage) {
     try {
-      const response = await getAuthCheck({}, { skipErrorHandler: true });
+      const response = await getAuthCheck(
+        appId ? { app: appId } : {},
+        { skipErrorHandler: true },
+      );
       const currentUser = parseAuthUser(response);
 
       if (currentUser) {

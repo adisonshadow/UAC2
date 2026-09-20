@@ -1,7 +1,7 @@
 import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import { message } from '@/utils/antdAppApis';
 
-import { handleUnauthorized } from './auth';
+import { handleUnauthorized, consumeEmbedAuthFromUrl } from './auth';
 import { getApiErrorMessage, enrichAxiosError } from './apiResponse';
 import { NO_TOKEN_APIS, AUTH_HEADER, AUTH_PREFIX, AUTH_PAGES } from '@/constants/auth';
 
@@ -26,6 +26,7 @@ export interface ResponseStructure {
 // 请求拦截器
 export const requestInterceptors = [
   (url: string, options: AxiosRequestConfig) => {
+    consumeEmbedAuthFromUrl();
     const { headers = {} } = options;
 
     // console.log('请求拦截器 - 开始处理请求:', {
@@ -56,11 +57,23 @@ export const requestInterceptors = [
       [AUTH_HEADER]: `${AUTH_PREFIX}${token}`,
     };
 
+    // SSO 应用签发的 JWT 必须带 app，否则后端用平台密钥验签会报「无效的令牌」
+    const pageApp =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('app') : null;
+    const existingParams =
+      options.params && typeof options.params === 'object' && !Array.isArray(options.params)
+        ? (options.params as Record<string, unknown>)
+        : {};
+    const nextParams = pageApp
+      ? { ...existingParams, app: existingParams.app ?? pageApp }
+      : existingParams;
+
     return {
       url,
       options: {
         ...options,
         headers: newHeaders,
+        params: nextParams,
       },
     };
   },
