@@ -121,7 +121,7 @@ export const clearAuth = () => {
   console.log('认证信息已清除');
 };
 
-/** iframe / 第三方嵌入：从 URL 写入本域 token，并去掉敏感 query，保留 embed、app */
+/** iframe / 第三方嵌入：从 URL 写入本域 token，并去掉敏感 query，保留 embed、app、theme */
 export function consumeEmbedAuthFromUrl() {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);

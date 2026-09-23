@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Tabs, Button } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Tabs, Button, ConfigProvider, theme } from 'antd';
 import { useSearchParams } from 'react-router-dom';
 import Lottie from 'react-lottie-player';
 import ProfileForm from './components/ProfileForm';
@@ -19,10 +19,53 @@ function isEmbedMode(params: URLSearchParams) {
   return embed === '1' || embed === 'true' || hideHeader === '1' || hideHeader === 'true';
 }
 
+/** 嵌入方通过 ?theme=dark 切换深色；缺省及其余取值均为 light */
+export function resolveAccountTheme(params: URLSearchParams): 'light' | 'dark' {
+  return params.get('theme')?.trim().toLowerCase() === 'dark' ? 'dark' : 'light';
+}
+
 const AccountCenter: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const pageTheme = resolveAccountTheme(searchParams);
+
+  return (
+    <ConfigProvider
+      theme={{
+        algorithm: pageTheme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: {
+          colorPrimary: '#1890ff',
+        },
+      }}
+    >
+      <AccountCenterPage pageTheme={pageTheme} />
+    </ConfigProvider>
+  );
+};
+
+const AccountCenterPage: React.FC<{ pageTheme: 'light' | 'dark' }> = ({ pageTheme }) => {
+  const { token } = theme.useToken();
   const { initialState, refresh } = useInitialState();
   const [searchParams] = useSearchParams();
   const embed = isEmbedMode(searchParams);
+  const canvas = pageTheme === 'dark' ? token.colorBgLayout : token.colorBgContainer;
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = {
+      htmlBg: html.style.backgroundColor,
+      bodyBg: body.style.backgroundColor,
+      scheme: html.style.colorScheme,
+    };
+    html.style.backgroundColor = canvas;
+    body.style.backgroundColor = canvas;
+    html.style.colorScheme = pageTheme;
+    return () => {
+      html.style.backgroundColor = prev.htmlBg;
+      body.style.backgroundColor = prev.bodyBg;
+      html.style.colorScheme = prev.scheme;
+    };
+  }, [canvas, pageTheme]);
   const [activeTab, setActiveTab] = useState('profile');
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -66,58 +109,71 @@ const AccountCenter: React.FC = () => {
   const brandingName = initialState.settings?.title || defaultSettings.title;
 
   return (
-    <div className={styles['account-center-container']}>
-      <FirstLoginSetupModal open={mustChangePassword} />
-      {!embed && (
-        <div className='d-flex justify-content-between align-items-center'>
-          <Button type='link' onClick={() => {
-            history.back();
-          }}>
-            <LeftOutlined /> 返回
-          </Button>
+    <div
+      className={styles['account-center-page']}
+      data-theme={pageTheme}
+      style={{
+        background: canvas,
+        color: token.colorText,
+        ['--account-label-color' as string]: token.colorText,
+        ['--account-extra-color' as string]: token.colorTextSecondary,
+        ['--account-overlay-bg' as string]:
+          pageTheme === 'dark' ? token.colorBgElevated : 'rgba(255, 255, 255, 0.9)',
+      }}
+    >
+      <div className={styles['account-center-container']}>
+        <FirstLoginSetupModal open={mustChangePassword} />
+        {!embed && (
+          <div className='d-flex justify-content-between align-items-center'>
+            <Button type='link' onClick={() => {
+              history.back();
+            }}>
+              <LeftOutlined /> 返回
+            </Button>
 
-          <img
-            src={brandingLogo}
-            alt={typeof brandingName === 'string' ? brandingName : undefined}
-            className={styles['account-center-logo']}
+            <img
+              src={brandingLogo}
+              alt={typeof brandingName === 'string' ? brandingName : undefined}
+              className={styles['account-center-logo']}
+            />
+
+            <Button type='link' onClick={() => {
+              loginOut();
+            }}>
+              <LogoutOutlined /> 退出
+            </Button>
+          </div>
+        )}
+        <div className={embed ? undefined : 'mt-4'}>
+          <Tabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            centered
+            items={[
+              {
+                key: 'profile',
+                label: '修改资料',
+                children: <ProfileForm onSuccess={handleSuccess} />,
+              },
+              {
+                key: 'password',
+                label: '修改密码',
+                children: <PasswordForm onSuccess={handleSuccess} />,
+              },
+            ]}
           />
-
-          <Button type='link' onClick={() => {
-            loginOut();
-          }}>
-            <LogoutOutlined /> 退出
-          </Button>
         </div>
-      )}
-      <div className={embed ? undefined : 'mt-4'}>
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          centered
-          items={[
-            {
-              key: 'profile',
-              label: '修改资料',
-              children: <ProfileForm onSuccess={handleSuccess} />,
-            },
-            {
-              key: 'password',
-              label: '修改密码',
-              children: <PasswordForm onSuccess={handleSuccess} />,
-            },
-          ]}
-        />
+        {showSuccess && (
+          <div className={styles['account-center-success-animation']}>
+            <Lottie
+              animationData={goodJobLottie}
+              loop={false}
+              play
+              style={{ width: 200, height: 200 }}
+            />
+          </div>
+        )}
       </div>
-      {showSuccess && (
-        <div className={styles['account-center-success-animation']}>
-          <Lottie
-            animationData={goodJobLottie}
-            loop={false}
-            play
-            style={{ width: 200, height: 200 }}
-          />
-        </div>
-      )}
     </div>
   );
 };

@@ -584,20 +584,10 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
       let assistantDisplayContent = '';
       /** 本轮回复的有序 segment 视图；与 content 平行维护，供 UI 按输出顺序渲染 */
       let assistantSegments: AssistantSegment[] = [];
-      const CONTEXT_PREP_SEGMENT_ID = 'context-prep';
-      assistantSegments = upsertSegment(assistantSegments, {
-        kind: 'text',
-        id: CONTEXT_PREP_SEGMENT_ID,
-        content: '正在准备 Skill 与工具…',
-      });
-      const clearContextPrep = () => {
-        assistantSegments = removeSegment(assistantSegments, CONTEXT_PREP_SEGMENT_ID);
-      };
 
       /** 把本轮文本 upsert 到 segments（同 id 反复更新，保持位置稳定，避免碎片化） */
       const upsertRoundTextSegment = (round: number, text: string) => {
         const trimmed = text.trim();
-        clearContextPrep();
         clearPlanningSegmentSafe();
         assistantSegments = upsertSegment(assistantSegments, {
           kind: 'text',
@@ -679,11 +669,8 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
         );
       };
 
-      // 首帧展示「准备上下文」过程态
-      patchAssistantMessage(
-        { content: '', segments: assistantSegments },
-        { status: 'updating' },
-      );
+      // 技能与工具在 submit 前已加载完成。这里不要再用「正在准备 Skill 与工具…」
+      // 盖掉「正在生成回复...」：首轮模型冷启动时这句话会停很久，次轮首字很快所以看不出来。
 
       // 结构化终止：本回合 harness 上下文清理句柄。在 try 之前声明，
       // 保证 finally 能稳定访问（即使 try 体内 beginTurn 前就抛错）。
@@ -963,7 +950,6 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
               if (decision.action === 'terminate') {
                 // task_complete 已通过：正常终止
-                clearContextPrep();
                 clearPlanningSegmentSafe();
                 const finalReasoning =
                   enableThinking && (accumulatedReasoning || roundReasoning)
@@ -984,7 +970,6 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
 
               if (decision.action === 'hard-stop') {
                 // 命中硬停止：终止并附原因
-                clearContextPrep();
                 clearPlanningSegmentSafe();
                 const annotated = `${finalContent}\n\n⚠️ ${decision.reason}`;
                 assistantDisplayContent = annotated;
@@ -1205,7 +1190,6 @@ export function useAIBaseChat(conversationKey: string, options: UseAIBaseChatOpt
             }
 
             const appendToolStep = (step: ChatToolStep) => {
-              clearContextPrep();
               if (step.status === 'loading') {
                 assistantSegments = collapseTransientToolSurfaces(assistantSegments);
                 // 业务 Tool 开始执行 → 清除短暂 Planning 过程态
