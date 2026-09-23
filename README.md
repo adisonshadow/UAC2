@@ -142,7 +142,7 @@ pm2 kill                       # 关闭 pm2 守护进程
 ## 关键注意事项
 
 1. **`init-db` 会 DROP 并重建 `uac` schema**，仅用于开发/首次安装，勿对生产库执行。
-2. **端口约定**：API `9526`、前端 `9527`；修改时需同步 `backend/.env.*` 与 `rontend/config/env.ts` 中的 `CORS_ORIGIN` / `devApiBaseUrl`。
+2. **端口约定**：API `9526`、前端 `9527`，默认监听 `0.0.0.0`（局域网 / 公网可访问）。修改端口时需同步 `backend/.env.*` 与 `frontend/config/env.ts`。
 3. **配置入口**：后端以 `.env.development` / `.env.production` 为准（非 `config.json`）。
 4. **AI Base 联动**：修改 `AIBase_with_example/package/ai-base` 后需 `pnpm build`，前端可执行 `pnpm refresh:ai-base` 刷新依赖。
 5. **增量迁移**：部分功能有独立 SQL（如 `scripts/migrate-*.sql`），在已有库上按需手动执行。

@@ -71,6 +71,8 @@ app.use(async (ctx, next) => {
   const isSwagger = ctx.path === '/swagger' || ctx.path.startsWith('/swagger/');
   await new Promise((resolve, reject) => {
     helmet({
+      // 管理端与 API 常分端口 / 分域名，避免 CORP 拦住图片预览、tus 等跨源资源
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
       contentSecurityPolicy: isSwagger
         ? {
             directives: {
@@ -102,10 +104,46 @@ app.use(async (ctx, next) => {
 });
 
 // 中间件配置
+function isIpOrLocalHostname(hostname) {
+  if (!hostname) return false;
+  const h = hostname.toLowerCase();
+  if (h === 'localhost' || h === '::1') return true;
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(h);
+}
+
+function resolveCorsOrigin(ctx) {
+  const requestOrigin = ctx.get('Origin');
+  const allowed = config.api.cors.origin || [];
+  const allowAll = !allowed.length || allowed.includes('*');
+  if (allowAll) {
+    return requestOrigin || '*';
+  }
+  if (requestOrigin && allowed.includes(requestOrigin)) {
+    return requestOrigin;
+  }
+  // 白名单未写 * 时：仍放行 IP / localhost（局域网或公网 IP 直连）
+  if (requestOrigin) {
+    try {
+      const host = new URL(requestOrigin).hostname;
+      if (isIpOrLocalHostname(host)) return requestOrigin;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 app.use(cors({
+  origin: resolveCorsOrigin,
   credentials: true,
-  allowMethods: ['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowMethods: config.api.cors.methods.length
+    ? config.api.cors.methods
+    : ['GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowHeaders: config.api.cors.allowedHeaders,
   exposeHeaders: TUS_EXPOSE_HEADERS,
+  maxAge: config.api.cors.maxAge,
+  // Chrome 从公网站点访问局域网 HTTP API 时的 Private Network Access 预检
+  privateNetworkAccess: true,
 }));
 
 // 采集 API 须在 bodyParser 之前注册，以保留原始 body
@@ -123,7 +161,7 @@ try {
     koaSwagger({
       routePrefix: '/swagger',
       swaggerOptions: {
-        spec: swaggerSpec,
+        url: '/swagger.json',
       },
     }),
   );
@@ -137,7 +175,15 @@ try {
 app.use(async (ctx, next) => {
   if (ctx.path === '/swagger.json') {
     ctx.type = 'application/json';
-    ctx.body = swaggerSpec;
+    ctx.body = {
+      ...swaggerSpec,
+      servers: [
+        {
+          url: `${ctx.protocol}://${ctx.host}`,
+          description: '当前访问地址',
+        },
+      ],
+    };
     return;
   }
   await next();
@@ -190,15 +236,32 @@ if (process.env.NODE_ENV !== 'test') {
 let server = null;
 
 // 如果不是测试环境，则启动服务器
+function listLanIPv4() {
+  const os = require('os');
+  const ips = [];
+  const nets = os.networkInterfaces();
+  Object.values(nets).forEach((list) => {
+    (list || []).forEach((net) => {
+      const family = net.family === 4 || net.family === 'IPv4';
+      if (family && !net.internal) ips.push(net.address);
+    });
+  });
+  return ips;
+}
+
 if (process.env.NODE_ENV !== 'test') {
   const PORT = config.api.port || 3000;
+  const HOST = config.api.host || '0.0.0.0';
   try {
-    server = app.listen(PORT, () => {
-      logger.info(`🚀 ✅✅✅✅ API Server started on port ${PORT}`);
+    server = app.listen(PORT, HOST, () => {
+      logger.info(`🚀 ✅✅✅✅ API Server started on ${HOST}:${PORT}`);
       logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
-      logger.info(`🔗 Health check: http://localhost:${PORT}/api/v1/health`);
-      logger.info(`📚 Swagger UI: http://localhost:${PORT}/swagger`);
-      logger.info(`📄 Swagger JSON: http://localhost:${PORT}/swagger.json`);
+      logger.info(`🔗 Health check: http://127.0.0.1:${PORT}/api/v1/health`);
+      listLanIPv4().forEach((ip) => {
+        logger.info(`🌐 LAN/WAN: http://${ip}:${PORT}/api/v1/health`);
+      });
+      logger.info(`📚 Swagger UI: http://127.0.0.1:${PORT}/swagger`);
+      logger.info(`📄 Swagger JSON: http://127.0.0.1:${PORT}/swagger.json`);
 
       const { connectRedis } = require('./utils/redisClient');
       const { startMetricScheduler } = require('./services/metrics/metricScheduler');
@@ -234,8 +297,9 @@ if (process.env.NODE_ENV !== 'test') {
 } else {
   // 在测试环境中，创建一个服务器实例并导出
   const PORT = config.api.port || 3000;
+  const HOST = config.api.host || '0.0.0.0';
   try {
-    server = app.listen(PORT);
+    server = app.listen(PORT, HOST);
     if (!server) {
       logger.error('❌ Failed to start server');
       process.exit(1);

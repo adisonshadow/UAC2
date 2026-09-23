@@ -70,9 +70,14 @@ const postgresql = {
 
 const api = {
   port: parseInt(process.env.API_PORT, 3000),
-  host: process.env.API_HOST || 'localhost',
+  /** 默认 0.0.0.0：局域网 / 公网可访问；仅本机请设 127.0.0.1（localhost 视为 0.0.0.0，兼容旧 .env） */
+  host: (() => {
+    const raw = String(process.env.API_HOST || '0.0.0.0').trim();
+    if (!raw || raw === 'localhost') return '0.0.0.0';
+    return raw;
+  })(),
   cors: {
-    origin: parseList(process.env.CORS_ORIGIN, ['http://localhost:3000', 'http://localhost:8080']),
+    origin: parseList(process.env.CORS_ORIGIN, ['*']),
     methods: parseList(process.env.CORS_METHODS, ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']),
     allowedHeaders: parseList(process.env.CORS_ALLOWED_HEADERS, ['Content-Type', 'Authorization']),
     credentials: parseBool(process.env.CORS_CREDENTIALS, true),

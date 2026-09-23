@@ -79,7 +79,7 @@ curl -s http://localhost:9526/api/v1/health
 
 1. **配置以 `.env.development` / `.env.production` 为准**，启动时由 `src/config/index.js` 加载。
 2. **`init-db` 会 DROP SCHEMA `uac` 并重建**，会清空该 schema 下全部数据，禁止对生产库执行。
-3. **CORS**：`CORS_ORIGIN` 需包含前端地址（开发默认含 `http://localhost:9527`）。
+3. **监听与跨域**：默认 `API_HOST=0.0.0.0`、`CORS_ORIGIN=*`，局域网 IP 与公网域名可直接访问。收紧时把 `CORS_ORIGIN` 改成逗号分隔白名单（不要带 `*`）。
 4. **超管账号**：`superadmin.sql` 在 init 时写入，上线前务必改密或删除。
 5. **增量表结构**：如 `migrate-storage-tus.sql`、`migrate-bizdata-database-connections.sql`、`migrate-department-roles.sql` 等，在已有库上需手动 `psql -f` 执行。
 6. **物化执行**：目标 PostgreSQL Schema / MongoDB 库不存在时返回 409，前端确认后带 `createTargetIfMissing: true` 自动创建。

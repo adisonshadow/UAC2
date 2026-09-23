@@ -183,7 +183,7 @@ cp .env.example .env.development
 cp .env.example .env.production
 ```
 
-按机器实际情况改 `.env.development`（至少核对 Postgres / Redis 端口、`CORS_ORIGIN`）。若管理端不是本机 `localhost:9527` 访问，把实际来源地址加进 `CORS_ORIGIN`。
+按机器实际情况改 `.env.development`（至少核对 Postgres / Redis 端口）。默认 `API_HOST=0.0.0.0`、`CORS_ORIGIN=*`，用局域网 IP 或公网 IP 访问即可，不必再手写 Origin。安全组 / 防火墙需放行 `9526`、`9527`。
 
 安装 `psql`（`pnpm init-db` 依赖它）：
 
@@ -320,5 +320,5 @@ git remote -v
 | `docker compose up` 报 `443 i/o timeout` | 检查 `/etc/docker/daemon.json` 加速器，重启 docker |
 | `permission denied` 操作 docker.sock | 重新 SSH 登录，使 docker 组生效 |
 | `pnpm init-db` 连接失败 | `docker ps` 看 Postgres 是否 `healthy`；核对 `.env.development` 端口 `35432` |
-| 前端能开、接口 CORS 失败 | 把浏览器实际 origin 写入 `CORS_ORIGIN` 后重启 API |
+| 前端能开、接口 CORS 失败 | 确认 `.env.*` 里 `CORS_ORIGIN=*`（或包含当前页面 Origin），并已重启 API |
 | `pm2dev` 找不到命令 | 先在仓库根目录执行过 `pnpm install`；全局 CLI 再 `npm i -g pm2` |
