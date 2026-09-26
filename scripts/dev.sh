@@ -175,11 +175,22 @@ start_backend() {
       exit 1
     fi
 
-    started_line="$(grep -m1 -E 'API Server started on port [0-9]+' "$BACKEND_LOG" 2>/dev/null || true)"
+    # 兼容新旧启动日志：
+    #   旧: API Server started on port 9526
+    #   新: API Server started on 0.0.0.0:9526
+    started_line="$(grep -m1 -E 'API Server started on (port )?[0-9.:a-fA-F]+' "$BACKEND_LOG" 2>/dev/null || true)"
     if [[ -n "$started_line" ]]; then
-      BACKEND_PORT="$(printf '%s' "$started_line" | grep -oE 'on port [0-9]+' | grep -oE '[0-9]+' | head -n1)"
+      BACKEND_PORT="$(printf '%s' "$started_line" | grep -oE '[0-9]+' | tail -n1)"
       started=1
       echo "    检测到启动日志：$started_line"
+      break
+    fi
+
+    # 日志可能因缓冲晚出现：端口已可连 + 健康检查通过也算就绪
+    if port_listening "$EXPECTED_PORT" && backend_healthy "$EXPECTED_PORT"; then
+      BACKEND_PORT="$EXPECTED_PORT"
+      started=1
+      echo "    检测到端口 $EXPECTED_PORT 已可连且健康检查通过"
       break
     fi
 

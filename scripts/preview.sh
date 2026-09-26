@@ -102,10 +102,22 @@ while :; do
     exit 1
   fi
 
-  STARTED_LINE="$(grep -m1 -E 'API Server started on port [0-9]+' "$BACKEND_LOG" 2>/dev/null || true)"
+  # 兼容新旧启动日志：
+  #   旧: API Server started on port 9526
+  #   新: API Server started on 0.0.0.0:9526
+  STARTED_LINE="$(grep -m1 -E 'API Server started on (port )?[0-9.:a-fA-F]+' "$BACKEND_LOG" 2>/dev/null || true)"
   if [[ -n "$STARTED_LINE" ]]; then
-    BACKEND_PORT="$(printf '%s' "$STARTED_LINE" | grep -oE 'on port [0-9]+' | grep -oE '[0-9]+' | head -n1)"
+    BACKEND_PORT="$(printf '%s' "$STARTED_LINE" | grep -oE '[0-9]+' | tail -n1)"
     STARTED=1
+    break
+  fi
+
+  # 日志可能因缓冲晚出现：默认/环境端口已可连也算就绪
+  CANDIDATE_PORT="${API_PORT:-9526}"
+  if wait_for_port "$CANDIDATE_PORT" 1; then
+    BACKEND_PORT="$CANDIDATE_PORT"
+    STARTED=1
+    STARTED_LINE="(port $CANDIDATE_PORT listening)"
     break
   fi
 
