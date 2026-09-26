@@ -13,9 +13,14 @@
  *   未命中则用目标同类型连接凭证创建本地连接(绝不写入源 host/密码);
  * - 第二唯一键(route_path / function_name)撞到另一条目标记录 → 该条 failed,不静默改;
  * - overwrite 行数据 = 目标表 DELETE 后按实际列集批量插入(连接内同事务);
+ *   json/jsonb 列的对象/数组先 JSON.stringify 再绑定,避免裸驱动整表回滚;
  * - 物化按 entity_fields 建 NOT NULL,源物理表可能更松(历史空值);
  *   写数前对「文件行含 null」的列 DROP NOT NULL,避免整表事务回滚;
  * - data_only 模式:不落结构,目标无同 code 实体或版本不符 → 跳过写数。
+ * - 应用主键沿用源 application_id(手工指定的 ID 不能在目标换成新 UUID);
+ *   仅 overwrite 才对「同 code 不同 ID」做主键对齐,skip 沿用目标 ID。
+ * - 安全模式:导入请求 options.safeMode 可覆盖包内设置;未传时默认 true,
+ *   覆盖导入把已发布 API/管道/Webhook 退回 draft。显式传 false 才保持源发布状态。
  */
 const { Op } = require('sequelize');
 const models = require('../../models');
@@ -41,6 +46,7 @@ const {
 const STRATEGIES = ['overwrite', 'skip', 'abort'];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** materialization_runs.created_by 是 UUID,非 UUID 占位串会整节失败 */
 function normalizeCreatedBy(value) {
@@ -58,6 +64,99 @@ function quoteMysqlIdentifier(name) {
 
 function normalizeValue(v) {
   return v === undefined ? null : v;
+}
+
+function isJsonColumnType(dataType) {
+  const t = String(dataType || '').toLowerCase();
+  return t === 'json' || t === 'jsonb' || t.includes('json');
+}
+
+/**
+ * 裸 pg/mysql 驱动不会把 JS 对象编成 jsonb;对象/数组须先 stringify,否则整批 INSERT 回滚。
+ */
+function normalizeCellValue(value, dataType) {
+  const v = normalizeValue(value);
+  if (v == null) return null;
+  if (isJsonColumnType(dataType) && typeof v === 'object') {
+    return JSON.stringify(v);
+  }
+  return v;
+}
+
+function normalizeUuid(value) {
+  const s = String(value || '').trim();
+  return UUID_RE.test(s) ? s : null;
+}
+
+function tempApplicationCode(sourceId) {
+  return `~${String(sourceId).replace(/-/g, '').slice(0, 48)}`;
+}
+
+async function assertApplicationIdFree(applicationId, transaction) {
+  const owner = await models.Application.findByPk(applicationId, { transaction, paranoid: false });
+  if (!owner) return;
+  const state = owner.deleted_at ? '软删' : '';
+  throw new Error(`无法保持原应用 ID ${applicationId}:已被${state}应用「${owner.code}」占用,请先处理该记录后再导入`);
+}
+
+/** 把仍指向旧应用主键的列改到源 ID。applications 自身除外。 */
+async function repointApplicationReferences(oldId, newId, transaction) {
+  const [cols] = await models.sequelize.query(`
+    SELECT c.table_schema, c.table_name, c.column_name
+    FROM information_schema.columns c
+    JOIN information_schema.tables t
+      ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+    WHERE c.column_name IN ('application_id', 'source_application_id')
+      AND t.table_type = 'BASE TABLE'
+      AND c.table_schema NOT IN ('pg_catalog', 'information_schema')
+      AND NOT (c.table_schema = 'uac' AND c.table_name = 'applications')
+  `, { transaction });
+  for (const col of cols) {
+    if (!IDENT_RE.test(col.table_schema) || !IDENT_RE.test(col.table_name) || !IDENT_RE.test(col.column_name)) {
+      continue;
+    }
+    const sql = `UPDATE ${quotePgIdentifier(col.table_schema)}.${quotePgIdentifier(col.table_name)}
+      SET ${quotePgIdentifier(col.column_name)} = :newId
+      WHERE ${quotePgIdentifier(col.column_name)} = :oldId`;
+    await models.sequelize.query(sql, { replacements: { newId, oldId }, transaction });
+  }
+  const [grantCols] = await models.sequelize.query(`
+    SELECT 1 AS ok
+    FROM information_schema.columns
+    WHERE table_schema = 'bizdata'
+      AND table_name = 'api_service_permissions'
+      AND column_name = 'grant_id'
+    LIMIT 1
+  `, { transaction });
+  if (grantCols.length) {
+    await models.sequelize.query(`
+      UPDATE bizdata.api_service_permissions
+      SET grant_id = :newId
+      WHERE grant_type = 'application' AND grant_id = :oldId
+    `, { replacements: { newId, oldId }, transaction });
+  }
+}
+
+/**
+ * 目标已有同 code、但主键不是源 ID:先腾出 code,插入源 ID 行,外键改指向,再删旧行。
+ * 手工创建的 application_id 必须跨环境保持不变。
+ */
+async function adoptSourceApplicationId(existing, sourceId, transaction) {
+  const oldId = existing.application_id;
+  const originalCode = existing.code;
+  await assertApplicationIdFree(sourceId, transaction);
+  await existing.update({ code: tempApplicationCode(sourceId) }, { transaction });
+  const payload = pickModelFields(models.Application, existing.get({ plain: true }));
+  payload.application_id = sourceId;
+  payload.code = originalCode;
+  await models.Application.create(payload, { transaction });
+  await repointApplicationReferences(oldId, sourceId, transaction);
+  await models.Application.destroy({
+    where: { application_id: oldId },
+    force: true,
+    transaction,
+  });
+  return sourceId;
 }
 
 /** hooks 的 action_config.auth.secret(明文)→ secretEnc(目标实例密钥重加密) */
@@ -84,6 +183,62 @@ function importHookSecret(hook) {
   return hook;
 }
 
+/**
+ * 钩子 JSON 里嵌着源 API UUID;API 按 code 新建后主键已变,须用 idMap 改写。
+ * 有未映射 ID 时保留原过滤值,避免空数组被运行时当成「不过滤」。
+ * @returns {{ hook: object, notes: string[] }}
+ */
+function remapHookApiServiceIds(hook, apiServiceIdMap) {
+  const notes = [];
+  const next = { ...hook };
+  const cfg = next.action_config && typeof next.action_config === 'object'
+    ? { ...next.action_config }
+    : null;
+  if (cfg && cfg.apiServiceId) {
+    const sourceId = String(cfg.apiServiceId);
+    const mapped = apiServiceIdMap.get(sourceId);
+    if (mapped) {
+      cfg.apiServiceId = mapped;
+      next.action_config = cfg;
+    } else {
+      notes.push(`钩子「${hook.name}」action_config.apiServiceId ${sourceId} 未在本次导入中落库,已保留源 ID`);
+    }
+  }
+  const filter = next.event_filter && typeof next.event_filter === 'object'
+    ? { ...next.event_filter }
+    : null;
+  if (filter && Array.isArray(filter.apiServiceIds) && filter.apiServiceIds.length) {
+    const remapped = [];
+    const missing = [];
+    for (const id of filter.apiServiceIds) {
+      const sourceId = String(id);
+      const mapped = apiServiceIdMap.get(sourceId);
+      if (mapped) remapped.push(mapped);
+      else missing.push(sourceId);
+    }
+    if (missing.length) {
+      notes.push(
+        `钩子「${hook.name}」event_filter.apiServiceIds 未映射: ${missing.join(', ')},已保留源过滤以免放宽为全部 API`,
+      );
+    } else {
+      filter.apiServiceIds = remapped;
+      next.event_filter = filter;
+    }
+  }
+  return { hook: next, notes };
+}
+
+/**
+ * 导入安全模式:请求体可覆盖包内 options.safeMode。
+ * 未传时默认 true(覆盖导入退回已发布),须显式 false 才保持源发布状态。
+ */
+function resolveImportSafeMode(file, options = {}) {
+  if (Object.prototype.hasOwnProperty.call(options, 'safeMode')) {
+    return options.safeMode === true;
+  }
+  return true;
+}
+
 class ImportContext {
   constructor(file, strategy, options = {}) {
     this.file = file;
@@ -92,6 +247,7 @@ class ImportContext {
     this.dataMode = file.options?.dataMode === 'data_only' ? 'data_only' : 'structure_and_data';
     this.includeUac = file.options?.includeUac === true;
     this.includeFiles = file.options?.includeFiles === true;
+    this.safeMode = resolveImportSafeMode(file, options);
     this.sourceAppId = file.options?.sourceApplicationId || file.application?.application_id || null;
     this.targetAppId = null;
     this.currentSection = null;
@@ -548,12 +704,29 @@ class ImportContext {
     return section;
   }
 
-  /** 应用本体:按 code upsert */
+  /**
+   * 安全模式才把覆盖后仍为 published 的记录退回 draft。
+   * 默认保持源发布状态,避免离线导入后 API 全部变成未发布。
+   */
+  async demotePublishedIfSafe(result, section, transaction) {
+    if (!this.safeMode || this.strategy !== 'overwrite' || !result?.row) return;
+    if (result.row.status !== 'published') return;
+    await result.row.update({ status: 'draft', published_at: null }, { transaction });
+    section.safeDemoted = (section.safeDemoted || 0) + 1;
+  }
+
+  noteSafeDemotion(section, label) {
+    if (!section.safeDemoted) return;
+    section.notes.push(`安全模式:已将 ${section.safeDemoted} 个已发布的${label}退回未发布,需在目标环境重新发布后才会对外提供`);
+  }
+
+  /** 应用本体:按 code upsert;overwrite 时主键对齐源 application_id,skip 沿用目标 ID */
   async importApplication() {
     const section = this.beginSection('application');
     const appRow = this.file.application;
     try {
       await this.withSectionTransaction(async (transaction) => {
+        const sourceId = normalizeUuid(appRow.application_id);
         const existing = await models.Application.findOne({
           where: { code: appRow.code }, transaction, paranoid: false,
         });
@@ -561,22 +734,52 @@ class ImportContext {
           if (existing.deleted_at) {
             throw new Error('目标存在同 code 软删应用,请先恢复或物理删除后再导入');
           }
-          this.targetAppId = existing.application_id;
+          const existingIdNorm = String(existing.application_id || '').toLowerCase();
+          const sourceIdNorm = sourceId ? sourceId.toLowerCase() : null;
+          const idMismatch = Boolean(sourceIdNorm && existingIdNorm !== sourceIdNorm);
           if (this.strategy === 'overwrite') {
+            if (idMismatch) {
+              const oldId = existing.application_id;
+              this.targetAppId = await adoptSourceApplicationId(existing, sourceId, transaction);
+              section.notes.push(`目标同 code 应用 ID 与源不一致,已从 ${oldId} 对齐为源 ID ${sourceId}`);
+            } else {
+              this.targetAppId = existing.application_id;
+              if (!sourceId) {
+                section.notes.push('导出文件未携带合法应用 ID,沿用目标已有 ID');
+              }
+            }
             const payload = pickModelFields(models.Application, appRow);
             delete payload.application_id;
             delete payload.builtin_api_scope; // builtin API 授权属目标实例策略,不随导入覆盖
-            await existing.update(payload, { transaction });
+            const row = await models.Application.findByPk(this.targetAppId, { transaction });
+            await row.update(payload, { transaction });
             section.counts.updated += 1;
           } else {
+            this.targetAppId = existing.application_id;
+            if (idMismatch) {
+              section.notes.push(
+                `skip 策略未对齐应用 ID(目标 ${existing.application_id},源 ${sourceId}),已沿用目标 ID`,
+              );
+            } else if (!sourceId) {
+              section.notes.push('导出文件未携带合法应用 ID,沿用目标已有 ID');
+            }
             section.counts.skipped += 1;
           }
         } else {
           const payload = pickModelFields(models.Application, appRow);
-          delete payload.application_id;
+          if (sourceId) {
+            await assertApplicationIdFree(sourceId, transaction);
+            payload.application_id = sourceId;
+          } else {
+            delete payload.application_id;
+            section.notes.push('导出文件未携带合法应用 ID,已由目标实例分配新 ID');
+          }
           const created = await models.Application.create(payload, { transaction });
           this.targetAppId = created.application_id;
           section.counts.created += 1;
+          if (sourceId && created.application_id === sourceId) {
+            section.notes.push(`已按源应用 ID 创建: ${sourceId}`);
+          }
         }
         if (this.sourceAppId) {
           this.idMap.applications.set(this.sourceAppId, this.targetAppId);
@@ -871,7 +1074,19 @@ class ImportContext {
           section.notes.push(`${label}: 源数据含空值,已放开目标列 NOT NULL: ${nullCols.join(', ')}`);
         }
 
-        const writeResult = await writeEntityRows(runtime, item.targetSchema, item.tableName, cols, rows, this.strategy);
+        const colTypeByName = new Map();
+        for (const c of actualColumns) {
+          if (c?.name) colTypeByName.set(c.name, c.dataType);
+        }
+        for (const c of item.columns || []) {
+          if (c?.name && c.dataType && !colTypeByName.has(c.name)) {
+            colTypeByName.set(c.name, c.dataType);
+          }
+        }
+
+        const writeResult = await writeEntityRows(
+          runtime, item.targetSchema, item.tableName, cols, rows, this.strategy, colTypeByName,
+        );
         section.counts[writeResult] = (section.counts[writeResult] || 0) + 1;
       } catch (e) {
         this.itemFailed(section, label, e);
@@ -906,11 +1121,9 @@ class ImportContext {
             secondKey: { field: 'route_path', model: models.BizdataApiService },
           });
           if (!result) continue;
-          // 已发布服务被覆盖更新后回退 draft,避免目标端路由与实现不一致
-          if (this.strategy === 'overwrite' && result.row.status === 'published') {
-            await result.row.update({ status: 'draft', published_at: null }, { transaction });
-          }
+          await this.demotePublishedIfSafe(result, section, transaction);
         }
+        this.noteSafeDemotion(section, 'API');
         for (const op of operations) {
           const serviceId = this.idMap.apiServices.get(op.api_service_id);
           if (!serviceId) {
@@ -998,10 +1211,9 @@ class ImportContext {
             secondKey: { field: 'route_path', model: models.BizdataCollectionPipeline },
           });
           if (!result) continue;
-          if (this.strategy === 'overwrite' && result.row.status === 'published') {
-            await result.row.update({ status: 'draft', published_at: null }, { transaction });
-          }
+          await this.demotePublishedIfSafe(result, section, transaction);
         }
+        this.noteSafeDemotion(section, '采集管道');
         for (const link of applications) {
           const pipelineId = this.idMap.pipelines.get(link.pipeline_id);
           if (!pipelineId || link.application_id !== this.sourceAppId) {
@@ -1043,10 +1255,9 @@ class ImportContext {
             models.OutboundWebhook, webhook, 'code', this.idMap.webhooks, payload, section, { transaction },
           );
           if (!result) continue;
-          if (this.strategy === 'overwrite' && result.row.status === 'published') {
-            await result.row.update({ status: 'draft', published_at: null }, { transaction });
-          }
+          await this.demotePublishedIfSafe(result, section, transaction);
         }
+        this.noteSafeDemotion(section, '出站 Webhook');
       });
     } catch (e) {
       this.markFailed(section, e.message);
@@ -1127,7 +1338,9 @@ class ImportContext {
     try {
       await this.withSectionTransaction(async (transaction) => {
         for (const raw of hooks) {
-          const hook = importHookSecret(raw);
+          const withSecret = importHookSecret(raw);
+          const { hook, notes: remapNotes } = remapHookApiServiceIds(withSecret, this.idMap.apiServices);
+          for (const note of remapNotes) section.notes.push(note);
            
           const matches = await models.AutomationHook.findAll({
             where: { name: hook.name, event_type: hook.event_type },
@@ -1486,8 +1699,10 @@ function buildPgValuesPlaceholders(rowCount, colCount) {
 }
 
 /** 行数据写入:overwrite = DELETE + 批量 INSERT(连接内同事务);skip = 非空即跳过 */
-async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strategy) {
+async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strategy, colTypeByName = null) {
   if (!rows.length) return 'skipped';
+  const typeMap = colTypeByName instanceof Map ? colTypeByName : new Map();
+  const cell = (row, col) => normalizeCellValue(row?.[col], typeMap.get(col));
   if (runtime.dbType === 'postgresql') {
     const client = new PgClient({
       host: runtime.host, port: runtime.port, user: runtime.username,
@@ -1511,7 +1726,7 @@ async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strat
         for (let i = 0; i < rows.length; i += chunkSize) {
           const chunk = rows.slice(i, i + chunkSize);
           const valuesSql = buildPgValuesPlaceholders(chunk.length, cols.length);
-          const params = chunk.flatMap((row) => cols.map((c) => normalizeValue(row[c])));
+          const params = chunk.flatMap((row) => cols.map((c) => cell(row, c)));
            
           await client.query(`INSERT INTO ${quotePgIdentifier(schemaName)}.${quotePgIdentifier(tableName)} (${colList}) VALUES ${valuesSql}`, params);
         }
@@ -1548,7 +1763,7 @@ async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strat
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize);
         const valuesSql = chunk.map(() => `(${cols.map(() => '?').join(', ')})`).join(', ');
-        const params = chunk.flatMap((row) => cols.map((c) => normalizeValue(row[c])));
+        const params = chunk.flatMap((row) => cols.map((c) => cell(row, c)));
          
         await conn.query(`INSERT INTO ${fullName} (${colList}) VALUES ${valuesSql}`, params);
       }
@@ -1568,7 +1783,9 @@ async function writeEntityRows(runtime, schemaName, tableName, cols, rows, strat
  * 导入主入口。
  * @param {string} filePath 上传临时文件
  * @param {string} strategy overwrite | skip | abort
- * @param {{ createdBy?: string }} [options] createdBy 须为操作者 UUID,否则物化 run 记空
+ * @param {{ createdBy?: string, safeMode?: boolean }} [options]
+ *   createdBy 须为操作者 UUID,否则物化 run 记空;
+ *   safeMode 显式传入时覆盖默认(默认 true:覆盖导入退回已发布)
  */
 async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
   const effectiveStrategy = STRATEGIES.includes(strategy) ? strategy : 'overwrite';
@@ -1633,7 +1850,13 @@ async function importAppFile(filePath, strategy = 'overwrite', options = {}) {
 
   result.includeUac = ctx.includeUac;
   result.includeFiles = ctx.includeFiles;
+  result.safeMode = ctx.safeMode;
   result.dataMode = ctx.dataMode;
+  if (ctx.safeMode) {
+    result.warnings.push('安全模式已开启:覆盖导入会把已发布的 API、采集管道、出站 Webhook 退回未发布');
+  } else {
+    result.warnings.push('安全模式已关闭:覆盖导入将保持源端 API、采集管道、出站 Webhook 的发布状态');
+  }
   if (!result.chainStoppedAt) {
     const failedSections = Object.entries(result.sections)
       .filter(([name, s]) => s.status === 'failed' && name !== 'uacUsers' && name !== 'metadata')
@@ -1650,4 +1873,6 @@ module.exports = {
   importAppFile,
   STRATEGIES,
   columnsWithNulls,
+  resolveImportSafeMode,
+  remapHookApiServiceIds,
 };

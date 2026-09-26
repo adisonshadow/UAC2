@@ -213,8 +213,39 @@ async function importStorageBucketsSection(ctx, opts = {}) {
         continue;
       }
       const overrides = { application_id: defaultApplicationId };
-      if (bucket.access_restrictions?.role_ids?.length) {
-        section.errors.push(`存储桶「${bucket.code}」的 access_restrictions.role_ids 指向目标实例角色,请导入后人工核对`);
+      const restrictions = bucket.access_restrictions && typeof bucket.access_restrictions === 'object'
+        ? { ...bucket.access_restrictions }
+        : null;
+      if (restrictions && Array.isArray(restrictions.role_ids) && restrictions.role_ids.length) {
+        const roleMap = ctx.idMap.roles;
+        if (roleMap && roleMap.size) {
+          const remapped = [];
+          const missing = [];
+          for (const id of restrictions.role_ids) {
+            const sourceId = String(id);
+            const mapped = roleMap.get(sourceId);
+            if (mapped) remapped.push(mapped);
+            else missing.push(sourceId);
+          }
+          if (remapped.length) {
+            restrictions.role_ids = remapped;
+            overrides.access_restrictions = restrictions;
+            if (missing.length) {
+              section.notes.push(
+                `存储桶「${bucket.code}」access_restrictions.role_ids 未映射: ${missing.join(', ')}`,
+              );
+            }
+          } else {
+            // 全部未映射时不写空数组(空 role_ids 表示不启用角色策略,会放宽访问)
+            section.notes.push(
+              `存储桶「${bucket.code}」access_restrictions.role_ids 全部未映射: ${missing.join(', ')},已保留源角色 ID,请导入后人工核对`,
+            );
+          }
+        } else {
+          section.notes.push(
+            `存储桶「${bucket.code}」的 access_restrictions.role_ids 指向源角色 ID,本次未导入角色映射,请导入后人工核对`,
+          );
+        }
       }
       await ctx.upsertMeta(
         models.StorageBucket,

@@ -81,10 +81,15 @@ class AppTransferController {
       await cleanupUpload(file.filepath);
       return;
     }
+    const body = ctx.request.body || {};
+    const importOptions = { createdBy: ctx.state.user?.user_id };
+    // multipart 字段多为字符串;仅在显式传入时覆盖包内/默认安全模式
+    if (Object.prototype.hasOwnProperty.call(body, 'safeMode')) {
+      const raw = body.safeMode;
+      importOptions.safeMode = raw === true || raw === 'true' || raw === '1';
+    }
     try {
-      const data = await AppTransferImportService.importAppFile(file.filepath, strategy, {
-        createdBy: ctx.state.user?.user_id,
-      });
+      const data = await AppTransferImportService.importAppFile(file.filepath, strategy, importOptions);
       ctx.body = {
         code: 200,
         message: data.chainStoppedAt

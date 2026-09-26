@@ -131,10 +131,17 @@ export async function postPlatformTransferImport(file: File, strategy: string) {
 }
 
 /** 按策略执行导入（overwrite/skip/abort），返回分节结果 */
-export async function postAppTransferImport(file: File, strategy: string) {
+export async function postAppTransferImport(
+  file: File,
+  strategy: string,
+  options: { safeMode?: boolean } = {},
+) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('strategy', strategy);
+  if (typeof options.safeMode === 'boolean') {
+    formData.append('safeMode', options.safeMode ? 'true' : 'false');
+  }
   return request<{
     code: number;
     message: string;

@@ -2,6 +2,7 @@
  * 应用导出服务(review 方案 §4/§5.2)。
  *
  * - 按应用配置的 scope 前缀筛选各节数据(禁止冒号首段膨胀,见 scopePrefix.js);
+ *   实体/管道/指标优先 bizdata_scope_codes,为空时回退 api_data_scope.domainCodes;
  * - 行数据仅支持 postgresql/mysql,复用物化记录定位连接,保留行原主键;
  * - 响应以异步 generator 逐节产出 JSON chunk,由控制器 Readable.from 流式下载;
  * - 密文字段(encryptApiKey 加密,绑定实例 ENCRYPTION_KEY)导出时解密为明文段,
@@ -67,6 +68,20 @@ function normalizeOptions(raw = {}) {
     dataMode,
     includeUac: raw.includeUac === true,
     includeFiles: raw.includeFiles === true,
+    // 默认关闭:导入保持源发布状态。开启后覆盖导入才把已发布 API/管道/Webhook 退回未发布
+    safeMode: raw.safeMode === true,
+  };
+}
+
+function buildFileOptions(options, sourceApplicationId) {
+  return {
+    dataMode: options.dataMode,
+    includeUac: options.includeUac,
+    includeFiles: options.includeFiles,
+    safeMode: options.safeMode === true,
+    secretsInPlaintext: true,
+    exportedAt: new Date().toISOString(),
+    sourceApplicationId,
   };
 }
 
@@ -314,14 +329,26 @@ async function buildExportContext(app, options) {
   const warnings = [];
   const scopeCodes = Array.isArray(app.bizdata_scope_codes) ? app.bizdata_scope_codes : [];
   const apiDataScope = parseApiDataScope(app.api_data_scope);
+  // 实体/管道/指标:优先 bizdata_scope_codes;为空时才回退到 api_data_scope.domainCodes
+  const trimmedBizScopes = scopeCodes.map((s) => String(s || '').trim()).filter(Boolean);
+  const trimmedDomainCodes = (apiDataScope.domainCodes || []).map((s) => String(s || '').trim()).filter(Boolean);
+  const entityScopeCodes = trimmedBizScopes.length
+    ? [...new Set(trimmedBizScopes)]
+    : [...new Set(trimmedDomainCodes)];
   const webhookScope = app.outbound_webhook_scope && typeof app.outbound_webhook_scope === 'object'
     ? app.outbound_webhook_scope : {};
 
   // ---- 实体域 ----
   const allEntities = await models.BizdataEntity.findAll({ raw: true });
-  const entities = allEntities.filter((e) => prefixHit(e.code, scopeCodes));
+  const entities = allEntities.filter((e) => prefixHit(e.code, entityScopeCodes));
   const entityIds = entities.map((e) => e.id);
   const entityCodeSet = new Set(entities.map((e) => e.code));
+  if (!entityScopeCodes.length) {
+    warnings.push('应用未配置 bizdata_scope_codes,且 api_data_scope.domainCodes 为空,未导出任何实体');
+  } else if (!entities.length) {
+    const scopeLabel = trimmedBizScopes.length ? 'bizdata_scope_codes' : 'api_data_scope.domainCodes';
+    warnings.push(`按 ${scopeLabel} [${entityScopeCodes.join(', ')}] 未命中任何实体`);
+  }
 
   const fields = entityIds.length
     ? await models.BizdataEntityField.findAll({
@@ -334,7 +361,7 @@ async function buildExportContext(app, options) {
   const fieldsText = JSON.stringify(fields);
   const allEnums = await models.BizdataEnum.findAll({ raw: true });
   const enums = allEnums.filter(
-    (en) => prefixHit(en.code, scopeCodes) || fieldsText.includes(en.code),
+    (en) => prefixHit(en.code, entityScopeCodes) || fieldsText.includes(en.code),
   );
 
   const relations = entityIds.length
@@ -375,7 +402,7 @@ async function buildExportContext(app, options) {
 
   // ---- 采集管道 ----
   const allPipelines = await models.BizdataCollectionPipeline.findAll({ raw: true });
-  const pipelines = allPipelines.filter((p) => prefixHit(p.code, scopeCodes));
+  const pipelines = allPipelines.filter((p) => prefixHit(p.code, entityScopeCodes));
   const pipelineIds = pipelines.map((p) => p.id);
   const pipelineApplications = pipelineIds.length
     ? await models.BizdataCollectionPipelineApplication.findAll({
@@ -401,11 +428,11 @@ async function buildExportContext(app, options) {
 
   // ---- 指标 ----
   const allMetrics = await models.BizdataMetric.findAll({ raw: true });
-  const metrics = allMetrics.filter((m) => prefixHit(m.code, scopeCodes));
+  const metrics = allMetrics.filter((m) => prefixHit(m.code, entityScopeCodes));
   const metricIdSet = new Set(metrics.map((m) => m.id));
   const allMetricCards = await models.BizdataMetricCard.findAll({ raw: true });
   const metricCards = allMetricCards.filter(
-    (c) => metricIdSet.has(c.metric_id) && prefixHit(c.domain_code, scopeCodes),
+    (c) => metricIdSet.has(c.metric_id) && prefixHit(c.domain_code, entityScopeCodes),
   );
 
   // ---- 钩子 ----
@@ -472,11 +499,28 @@ async function buildExportContext(app, options) {
     warnings.push(`逻辑元数据节导出失败(已跳过): ${e.message}`);
   }
 
+  // ---- 存储(须早于 UAC 引用角色,以便把桶 access_restrictions.role_ids 算进被引用角色) ----
+  const {
+    storageBuckets,
+    storageObjects,
+    storageFileEntries,
+  } = await collectAppStorage(app, options, warnings);
+
   // ---- UAC(不勾选仅导出被引用 roles/permissions) ----
+  const bucketRoleIds = [];
+  for (const bucket of storageBuckets) {
+    const restrictions = bucket.access_restrictions;
+    if (restrictions && Array.isArray(restrictions.role_ids)) {
+      for (const id of restrictions.role_ids) {
+        if (id) bucketRoleIds.push(id);
+      }
+    }
+  }
   const referencedRoleIds = [
-    ...new Set(
-      apiServicePermissions.filter((p) => p.grant_type === 'role').map((p) => p.grant_id),
-    ),
+    ...new Set([
+      ...apiServicePermissions.filter((p) => p.grant_type === 'role').map((p) => p.grant_id),
+      ...bucketRoleIds,
+    ]),
   ];
   const referencedRoleRows = referencedRoleIds.length
     ? await models.Role.findAll({ where: { role_id: { [Op.in]: referencedRoleIds } }, raw: true })
@@ -519,12 +563,6 @@ async function buildExportContext(app, options) {
     uacSection.rolePermissions = allRolePermissions.map((r) => pickModelFields(models.RolePermission, r));
     uacSection.dataPermissionRules = rules.map((r) => pickModelFields(models.DataPermissionRule, r));
   }
-
-  const {
-    storageBuckets,
-    storageObjects,
-    storageFileEntries,
-  } = await collectAppStorage(app, options, warnings);
 
   // ---- 行数据桩(实体 → 最新成功物化记录 → 连接) ----
   const matMap = await getLatestMaterializationMap(entityIds);
@@ -686,6 +724,7 @@ function buildExportSummary(ctx, options) {
     dataMode: options.dataMode,
     includeUac: options.includeUac,
     includeFiles: options.includeFiles,
+    safeMode: options.safeMode === true,
     counts: {
       entities: count(ctx.entitiesSection.items),
       entityFields: count(ctx.entitiesSection.fields),
@@ -742,14 +781,7 @@ function* chunkString(text, size = 1024 * 1024) {
  * 元数据节一次性 stringify(体量小),行数据按页流式输出。
  */
 async function* exportAppPayloadStream(ctx, options, summary) {
-  const fileOptions = {
-    dataMode: options.dataMode,
-    includeUac: options.includeUac,
-    includeFiles: options.includeFiles,
-    secretsInPlaintext: true,
-    exportedAt: new Date().toISOString(),
-    sourceApplicationId: ctx.sourceApplicationId,
-  };
+  const fileOptions = buildFileOptions(options, ctx.sourceApplicationId);
 
   const headJson = JSON.stringify({
     format: 'eadaf-app-export',
@@ -823,14 +855,7 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
 
 function buildAppExportArchive(applicationId, rawOptions = {}) {
   return prepareAppExport(applicationId, rawOptions).then(({ app, options, ctx, summary }) => {
-    const fileOptions = {
-      dataMode: options.dataMode,
-      includeUac: options.includeUac,
-      includeFiles: options.includeFiles,
-      secretsInPlaintext: true,
-      exportedAt: new Date().toISOString(),
-      sourceApplicationId: ctx.sourceApplicationId,
-    };
+    const fileOptions = buildFileOptions(options, ctx.sourceApplicationId);
     const archive = createTransferZipArchive({
       manifest: buildManifest({
         format: 'eadaf-app-export',
@@ -859,6 +884,7 @@ module.exports = {
   buildAppExportArchive,
   prepareAppExport,
   normalizeOptions,
+  buildFileOptions,
   pickModelFields,
   readTableColumns,
 };
