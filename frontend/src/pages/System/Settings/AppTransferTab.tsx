@@ -234,6 +234,7 @@ const AppTransferTab: React.FC = () => {
   );
   const [includeUac, setIncludeUac] = useState(false);
   const [includeFiles, setIncludeFiles] = useState(false);
+  const [safeMode, setSafeMode] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const loadApplications = useCallback(async () => {
@@ -271,6 +272,7 @@ const AppTransferTab: React.FC = () => {
         dataMode,
         includeUac,
         includeFiles,
+        safeMode,
       });
       // 导出文件本身是 JSON;正常情况下后端以 octet-stream 附件返回。
       // 若响应是 application/json:优先按错误信封处理,但内容带
@@ -310,6 +312,8 @@ const AppTransferTab: React.FC = () => {
     null,
   );
   const [strategy, setStrategy] = useState('overwrite');
+  /** 导入安全模式:默认开启(覆盖时退回已发布),显式关闭才保持源发布状态 */
+  const [importSafeMode, setImportSafeMode] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] =
     useState<API.AppTransferImportResult | null>(null);
@@ -318,6 +322,7 @@ const AppTransferTab: React.FC = () => {
     setImportFile(null);
     setPreview(null);
     setStrategy('overwrite');
+    setImportSafeMode(true);
     setImportResult(null);
   };
 
@@ -366,9 +371,12 @@ const AppTransferTab: React.FC = () => {
     }
     const strategyDesc =
       STRATEGY_OPTIONS.find((o) => o.value === strategy)?.label || strategy;
+    const safeModeDesc = importSafeMode
+      ? '开启安全模式(覆盖时退回已发布 API/管道/Webhook)'
+      : '关闭安全模式(保持源端发布状态)';
     modal.confirm({
       title: '确认导入应用数据?',
-      content: `将按「${strategyDesc}」策略把「${
+      content: `将按「${strategyDesc}」策略、${safeModeDesc}把「${
         preview.application?.code || ''
       }」导入当前实例,导入不会自动撤销,请确认。`,
       okText: '开始导入',
@@ -377,7 +385,9 @@ const AppTransferTab: React.FC = () => {
       onOk: async () => {
         setImporting(true);
         try {
-          const res = await postAppTransferImport(importFile, strategy);
+          const res = await postAppTransferImport(importFile, strategy, {
+            safeMode: importSafeMode,
+          });
           if (isApiSuccess(res)) {
             const data = getApiData<API.AppTransferImportResult>(res) || null;
             setImportResult(data);
@@ -473,6 +483,16 @@ const AppTransferTab: React.FC = () => {
                   <span>
                     携带存储文件(该应用桶内对象 +
                     归属本应用的对象;不勾选仅桶元数据)
+                  </span>
+                </Space>
+                <Space align="start">
+                  <Switch
+                    size="small"
+                    checked={safeMode}
+                    onChange={setSafeMode}
+                  />
+                  <span>
+                    包内安全模式标记(供预览)。导入默认开启安全模式退回已发布;可在导入侧关闭以保持源发布状态
                   </span>
                 </Space>
               </Space>
@@ -589,6 +609,13 @@ const AppTransferTab: React.FC = () => {
                       preview.options?.dataMode === 'data_only'
                         ? '仅数据'
                         : '结构和数据',
+                  },
+                  {
+                    key: 'safeMode',
+                    label: '包内安全模式标记',
+                    children: preview.options?.safeMode
+                      ? '包内标记为开启'
+                      : '包内标记为关闭(导入默认仍开启安全模式,可在下方关闭)',
                   },
                 ]}
               />
@@ -793,6 +820,19 @@ const AppTransferTab: React.FC = () => {
                       ))}
                     </Space>
                   </Radio.Group>
+                </Form.Item>
+                <Form.Item label="安全模式" style={{ marginBottom: 8 }}>
+                  <Space align="start">
+                    <Switch
+                      size="small"
+                      checked={importSafeMode}
+                      onChange={setImportSafeMode}
+                    />
+                    <span>
+                      默认开启:覆盖导入把已发布的 API、采集管道、出站 Webhook
+                      退回未发布。关闭后保持源端发布状态
+                    </span>
+                  </Space>
                 </Form.Item>
               </Form>
               <Button
