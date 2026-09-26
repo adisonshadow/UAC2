@@ -76,6 +76,24 @@ describe_port() {
   fi
 }
 
+# 打印本机局域网 IPv4（给 monorepo 启动摘要用；backend 日志写到文件时终端也能看到）
+print_lan_urls() {
+  local port="$1"
+  local label="${2:-}"
+  local ip
+  while read -r ip; do
+    [[ -n "$ip" ]] || continue
+    if [[ -n "$label" ]]; then
+      echo "    ${label} http://${ip}:${port}"
+    else
+      echo "    http://${ip}:${port}"
+    fi
+  done < <(
+    ifconfig 2>/dev/null | awk '/inet / && $2 != "127.0.0.1" { print $2 }' \
+      || ip -4 -o addr show scope global 2>/dev/null | awk '{ print $4 }' | cut -d/ -f1
+  )
+}
+
 # 杀掉 pid 及其全部子孙（nodemon → node src/app.js）。
 kill_tree() {
   local pid="$1"
@@ -230,7 +248,8 @@ echo "================================================================"
 if port_listening "$EXPECTED_PORT"; then
   if backend_healthy "$EXPECTED_PORT"; then
     echo "♻️  端口 $EXPECTED_PORT 上已有可用 backend，跳过重复启动（nodemon 会热重载）。"
-    echo "    http://localhost:${EXPECTED_PORT}/api/v1/health"
+    echo "    Local:   http://localhost:${EXPECTED_PORT}/api/v1/health"
+    print_lan_urls "$EXPECTED_PORT" "Network:"
     echo "    若要强制重启：pnpm killdev && pnpm dev"
   else
     echo "❌ 端口 $EXPECTED_PORT 已被占用，但健康检查失败，无法确认是本仓库 backend："
@@ -242,12 +261,15 @@ if port_listening "$EXPECTED_PORT"; then
   fi
 else
   start_backend
+  echo "    Local:   http://localhost:${BACKEND_PORT}/api/v1/health"
+  print_lan_urls "$BACKEND_PORT" "Network:"
 fi
 
 echo ""
 echo "================================================================"
 echo "🟢 [2/2] 启动 frontend (pnpm --filter \"$FRONTEND_FILTER\" dev)"
 echo "        backend: http://localhost:${BACKEND_PORT:-<unknown>}"
+print_lan_urls "${BACKEND_PORT:-$EXPECTED_PORT}" "        backend Network:"
 echo "================================================================"
 echo ""
 

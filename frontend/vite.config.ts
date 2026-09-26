@@ -111,7 +111,8 @@ export default defineConfig({
     ],
   },
   server: {
-    host: '0.0.0.0',
+    // true：监听 0.0.0.0，并在启动日志里打印真实局域网 IP（勿写死 '0.0.0.0'，否则 Network 只会显示 0.0.0.0）
+    host: true,
     port: APP_ENV.port,
     allowedHosts: true,
     cors: true,
@@ -128,7 +129,7 @@ export default defineConfig({
     },
   },
   preview: {
-    host: '0.0.0.0',
+    host: true,
     port: APP_ENV.port,
     allowedHosts: true,
     cors: true,
