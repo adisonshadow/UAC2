@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Modal, Space, Switch, Table, Typography, Upload } from 'antd';
+import { Alert, Button, Card, Modal, Segmented, Space, Switch, Table, Typography, Upload } from 'antd';
 import type { UploadFile } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import { message, modal } from '@/utils/antdAppApis';
@@ -14,6 +14,7 @@ import {
 } from '@/services/UAC/api/system';
 import { useInitialState } from '@/providers/InitialStateProvider';
 import { getApiData, isApiSuccess } from '@/utils/apiResponse';
+import { useUiTheme, type UiThemePreference } from '@/theme/uiTheme';
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -22,6 +23,36 @@ function formatSize(bytes: number) {
 }
 
 const DEFAULT_AUTO_BACKUP_CRON = '0 3 * * *';
+
+const UI_THEME_OPTIONS: { label: string; value: UiThemePreference }[] = [
+  { label: '跟随系统', value: 'system' },
+  { label: '浅色', value: 'light' },
+  { label: '深色', value: 'dark' },
+];
+
+export const GeneralSettingsTab: React.FC = () => {
+  const { preference, setPreference } = useUiTheme();
+
+  return (
+    <Card>
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <Typography.Text strong>界面主题</Typography.Text>
+            <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+              仅保存在本浏览器；跟随系统时会随操作系统浅色/深色自动切换
+            </div>
+          </div>
+          <Segmented
+            options={UI_THEME_OPTIONS}
+            value={preference}
+            onChange={(value) => setPreference(value as UiThemePreference)}
+          />
+        </div>
+      </Space>
+    </Card>
+  );
+};
 
 /** react-js-cron 中文本地化文案 */
 const AUTO_BACKUP_CRON_LOCALE = {

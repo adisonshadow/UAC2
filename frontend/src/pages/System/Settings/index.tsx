@@ -6,6 +6,7 @@ import PlatformTransferTab from './PlatformTransferTab';
 import {
   ApiServiceSettingsTab,
   BackupSettingsTab,
+  GeneralSettingsTab,
   MetadataSettingsTab,
 } from './tabs';
 
@@ -14,6 +15,11 @@ const SystemSettingsPage: React.FC = () => {
     <PageContainer title={<></>}>
       <Tabs
         items={[
+          {
+            key: 'general',
+            label: '通用',
+            children: <GeneralSettingsTab />,
+          },
           {
             key: 'metadata',
             label: '元数据',

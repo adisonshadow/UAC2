@@ -10,8 +10,40 @@
     color: #0476e7 !important;
 }
 
-.ant-menu-item.ant-menu-item-selected{
+.ant-menu-light .ant-menu-item.ant-menu-item-selected {
     color: #0476e7 !important;
+}
+
+/* 深色顶栏：选中 / hover / 展开均不要色块背景，仅用底边指示选中 */
+html[data-theme='dark'] .ant-menu.ant-menu-dark.ant-menu-horizontal {
+    > .ant-menu-item,
+    > .ant-menu-submenu,
+    > .ant-menu-submenu > .ant-menu-submenu-title {
+        background: transparent !important;
+    }
+
+    > .ant-menu-item:hover,
+    > .ant-menu-item-active,
+    > .ant-menu-item-selected,
+    > .ant-menu-submenu:hover,
+    > .ant-menu-submenu-active,
+    > .ant-menu-submenu-open,
+    > .ant-menu-submenu-selected,
+    > .ant-menu-submenu:hover > .ant-menu-submenu-title,
+    > .ant-menu-submenu-active > .ant-menu-submenu-title,
+    > .ant-menu-submenu-open > .ant-menu-submenu-title,
+    > .ant-menu-submenu-selected > .ant-menu-submenu-title {
+        background: transparent !important;
+        color: #fff !important;
+    }
+
+    > .ant-menu-item-selected::after,
+    > .ant-menu-submenu-selected::after {
+        border-bottom-width: 2px !important;
+        border-bottom-style: solid !important;
+        border-bottom-color: #1890ff !important;
+        opacity: 1 !important;
+    }
 }
 
 .milkdown .ProseMirror {
@@ -39,7 +71,30 @@
     }
 }
 
+html[data-theme='dark'] .ant-pro-query-filter-container .ant-btn-primary {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.2) !important;
+        color: #fff !important;
+    }
+}
+
 
 .ant-menu-submenu-popup.ant-menu-submenu {
     background: #ffffffe3 !important;
+}
+
+/* 深色下拉：高不透明度，避免背后浅色内容透出导致白字看不见 */
+html[data-theme='dark'] .ant-menu-submenu-popup.ant-menu-submenu {
+    background: rgba(22, 22, 24, 0.96) !important;
+    backdrop-filter: blur(10px);
+    box-shadow:
+      0 6px 16px rgba(0, 0, 0, 0.45),
+      0 3px 6px rgba(0, 0, 0, 0.3) !important;
+}
+
+html[data-theme='dark'] .ant-menu-submenu-popup .ant-menu {
+    background: transparent !important;
 }

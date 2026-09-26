@@ -19,6 +19,7 @@ import { AvatarDropdown, Footer } from '@/components';
 import defaultSettings from '../../config/defaultSettings';
 import { buildMenuData, findRouteMeta } from '@/routes/config';
 import { useInitialState } from '@/providers/InitialStateProvider';
+import { useUiTheme } from '@/theme/uiTheme';
 
 const iconMap: Record<string, ReactNode> = {
   TeamOutlined: <TeamOutlined />,
@@ -44,6 +45,7 @@ export default function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { initialState } = useInitialState();
+  const { resolved: uiTheme } = useUiTheme();
   const routeMeta = findRouteMeta(location.pathname);
   const currentUser = initialState?.currentUser;
   const metadataEnabled = Boolean(initialState?.systemFeatures?.metadataEnabled);
@@ -94,6 +96,7 @@ export default function AppLayout() {
     <ProLayout
       {...defaultSettings}
       {...initialState?.settings}
+      navTheme={uiTheme === 'dark' ? 'realDark' : 'light'}
       location={location}
       route={{ routes: menuData }}
       menu={{

@@ -42,3 +42,30 @@
   text-align: center;
   padding: 8px;
 }
+
+html[data-theme='dark'] .metric-dash-domain {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme='dark'] .metric-dash-card {
+  background: linear-gradient(145deg, #1a2332 0%, #1e2438 48%, #1a2a2e 100%);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme='dark'] .metric-dash-card__more {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme='dark'] .metric-dash-card__more:hover {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .metric-dash-card__meta,
+html[data-theme='dark'] .metric-dash-card__empty {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+html[data-theme='dark'] .metric-dash-card__hint {
+  color: #f0a05a;
+}

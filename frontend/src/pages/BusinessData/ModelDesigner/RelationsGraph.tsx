@@ -7,6 +7,7 @@ import PageContainerTitleWithBack from '@/components/PageContainerTitleWithBack'
 import { getBusinessDataSchema } from '@/services/UAC/api/businessData';
 import { getApiData, getApiErrorMessage, isApiSuccess } from '@/utils/apiResponse';
 import { message } from '@/utils/antdAppApis';
+import { useUiTheme } from '@/theme/uiTheme';
 import {
   firstLevelScope,
   relationCardinalityLabel,
@@ -94,6 +95,8 @@ function buildGraphData(
 const RelationsGraphPage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
+  const { resolved: uiTheme } = useUiTheme();
+  const isDark = uiTheme === 'dark';
   const [loading, setLoading] = useState(true);
   const [entities, setEntities] = useState<API.BusinessDataEntity[]>([]);
   const [relations, setRelations] = useState<API.BusinessDataRelation[]>([]);
@@ -175,26 +178,26 @@ const RelationsGraphPage: React.FC = () => {
         style: {
           size: 42,
           fill: (d: { data?: { fill?: string } }) => d.data?.fill || '#1677ff',
-          stroke: '#fff',
+          stroke: isDark ? 'rgba(255,255,255,0.35)' : '#fff',
           lineWidth: 2,
           labelText: (d: { data?: { label?: string } }) => d.data?.label || '',
           labelPlacement: 'bottom',
-          labelFill: 'rgba(0,0,0,0.88)',
+          labelFill: isDark ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.88)',
           labelFontSize: 12,
           labelOffsetY: 4,
         },
       },
       edge: {
         style: {
-          stroke: '#bfbfbf',
+          stroke: isDark ? 'rgba(255,255,255,0.35)' : '#bfbfbf',
           lineWidth: 1.5,
           endArrow: true,
           labelText: (d: { data?: { label?: string } }) => d.data?.label || '',
-          labelFill: 'rgba(0,0,0,0.65)',
+          labelFill: isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)',
           labelFontSize: 11,
           labelBackground: true,
-          labelBackgroundFill: '#fff',
-          labelBackgroundOpacity: 0.9,
+          labelBackgroundFill: isDark ? 'rgba(30,30,30,0.92)' : '#fff',
+          labelBackgroundOpacity: 0.95,
           labelPadding: [2, 4],
         },
       },
@@ -223,7 +226,7 @@ const RelationsGraphPage: React.FC = () => {
       graph.destroy();
       graphRef.current = null;
     };
-  }, [graphData, loading]);
+  }, [graphData, loading, isDark]);
 
   return (
     <FixHeaderPage
