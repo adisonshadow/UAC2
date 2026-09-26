@@ -578,6 +578,9 @@ const LoginPage: React.FC = () => {
   const handleCaptchaSuccess = async (duration: number, trail: { x?: number; y?: number; timestamp?: number }[]) => {
     if (!loginParams || !captchaId) return;
 
+    // 滑块验证已通过。先关弹窗再登录，避免窗口停在「验证成功」上，让人以为没通过。
+    setShowCaptcha(false);
+
     try {
       const loginData = {
         ...loginParams,
@@ -585,14 +588,12 @@ const LoginPage: React.FC = () => {
           captcha_id: captchaId,
         },
       };
-      
+
       const success = await handleLogin(loginData);
       if (!success) {
-        setShowCaptcha(false);
         captchaRef.current?.reset();
       }
     } catch (error: any) {
-      setShowCaptcha(false);
       captchaRef.current?.reset();
       message.error(error.response?.data?.message || '登录失败', 20);
     }
