@@ -1,8 +1,8 @@
 .milkdown-crepe-editor {
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--ant-color-border, #d9d9d9);
   border-radius: 6px;
   overflow: auto;
-  background: #fff;
+  background: var(--ant-color-bg-container, #fff);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -20,9 +20,35 @@
 }
 
 .milkdown-crepe-editor--readonly {
-  background: #fafafa;
+  background: var(--ant-color-bg-layout, #fafafa);
 }
 
 .milkdown-crepe-editor--readonly .milkdown .ProseMirror {
   cursor: default;
+}
+
+/* classic-dark token：覆盖 crepe 浅色变量，使正文/工具栏跟宿主深色一致 */
+html[data-theme='dark'] .milkdown-crepe-editor .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: rgba(255, 255, 255, 0.88);
+  --crepe-color-surface: #1f1f1f;
+  --crepe-color-surface-low: #141414;
+  --crepe-color-on-surface: rgba(255, 255, 255, 0.88);
+  --crepe-color-on-surface-variant: rgba(255, 255, 255, 0.65);
+  --crepe-color-outline: rgba(255, 255, 255, 0.25);
+  --crepe-color-primary: #8cb4ff;
+  --crepe-color-secondary: #3a3a4a;
+  --crepe-color-on-secondary: rgba(255, 255, 255, 0.85);
+  --crepe-color-inverse: rgba(255, 255, 255, 0.88);
+  --crepe-color-on-inverse: #1f1f1f;
+  --crepe-color-inline-code: #ff9c9c;
+  --crepe-color-error: #ff9c9c;
+  --crepe-color-hover: rgba(255, 255, 255, 0.08);
+  --crepe-color-selected: rgba(255, 255, 255, 0.12);
+  --crepe-color-inline-area: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html[data-theme='dark'] .milkdown-crepe-editor {
+  background: var(--ant-color-bg-container, #141414);
 }

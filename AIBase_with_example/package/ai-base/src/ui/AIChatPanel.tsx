@@ -551,7 +551,7 @@ export default function AIChatPanel({ onClose }: AIChatPanelProps) {
                 <div className="aibase-chat-settings-info">
                   <span className="aibase-chat-settings-label">外观</span>
                   <span className="aibase-chat-settings-desc">
-                    仅影响 AI 助手侧栏。选择「自动」时跟随系统浅色 / 深色。
+                    与宿主应用界面主题同步。选择「自动」时跟随系统浅色 / 深色。
                   </span>
                 </div>
                 <Segmented

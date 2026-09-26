@@ -23,6 +23,7 @@ body {
       #e1a9ff 98.65%
     ) border-box !important;
   box-shadow: none !important;
+  color: rgba(0, 0, 0, 0.88) !important;
 
   &:not(:disabled):hover {
     background:
@@ -35,6 +36,30 @@ body {
       ) border-box !important;
     border-color: transparent !important;
     animation: ai-btn-border-rotate 1.8s linear infinite;
+  }
+}
+
+html[data-theme='dark'] .ai-btn.ant-btn {
+  background:
+    linear-gradient(123deg, rgba(36, 52, 78, 0.95) 0%, rgba(52, 40, 78, 0.95) 100%) padding-box,
+    linear-gradient(
+      var(--ai-btn-border-angle),
+      #5a9fd4 -3.23%,
+      #6b8cff 51.11%,
+      #b87fd4 98.65%
+    ) border-box !important;
+  color: rgba(235, 240, 255, 0.92) !important;
+
+  &:not(:disabled):hover {
+    background:
+      linear-gradient(123deg, rgba(44, 64, 96, 0.98) 0%, rgba(64, 48, 96, 0.98) 100%) padding-box,
+      linear-gradient(
+        var(--ai-btn-border-angle),
+        #5a9fd4 -3.23%,
+        #6b8cff 51.11%,
+        #b87fd4 98.65%
+      ) border-box !important;
+    color: #fff !important;
   }
 }
 
@@ -71,6 +96,18 @@ body {
   }
 }
 
+html[data-theme='dark'] .btn-function {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(130, 170, 230, 0.35) !important;
+  color: rgba(200, 220, 255, 0.9) !important;
+
+  &:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+    border-color: rgba(130, 170, 230, 0.55) !important;
+    color: #8cb4ff !important;
+  }
+}
+
 .running-blink{
   background-clip: text;
   -webkit-background-clip: text;
@@ -82,6 +119,10 @@ body {
   background-size: 50%;
   background-repeat: no-repeat;
   animation-name: runningBlinkAni;
+}
+
+html[data-theme='dark'] .running-blink {
+  background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
 }
 
 @keyframes runningBlinkAni{

@@ -26,6 +26,7 @@ import { message } from '@/utils/antdAppApis';
 import { buildEntityReference, buildScopeReference } from '../../ai/chatReferenceUtils';
 import { buildScopeTree, type ScopeTreeItem } from '../../utils/buildScopeTree';
 import { isEntityModelValidated } from '../../utils/entityValidation';
+import './ScopeEntityTree.css';
 
 const { Text } = Typography;
 
@@ -233,7 +234,7 @@ const ScopeEntityTree: React.FC<ScopeEntityTreeProps> = ({
               </Tooltip>
             )}
             {!record.isScopeNode && record.version != null && (
-              <span style={{ backgroundColor: 'rgb(230 242 247)', color: 'rgb(132 152 160)', fontSize: 10, display: 'inline-block', padding: '0px 3px', borderRadius: 4 }}>v{record.version}</span>
+              <span className="entity-version-badge">v{record.version}</span>
             )}
           </div>
         );

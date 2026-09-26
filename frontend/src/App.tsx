@@ -14,6 +14,8 @@ import { setupAIMutationRouter } from '@/ai/toolMutation';
 import { AntdAppApiBridge } from '@/utils/antdAppApis';
 import { setupAiToolDevLogger } from '@/utils/aiToolDevLogger';
 import { setupAiToolInvokeFileLogger } from '@/utils/toolInvokeFileLogger';
+import { SyncUiThemeWithAiBase } from '@/theme/SyncUiThemeWithAiBase';
+import { UiThemeProvider, useUiTheme } from '@/theme/uiTheme';
 
 setupAiToolDevLogger();
 setupAiToolInvokeFileLogger();
@@ -38,12 +40,14 @@ console.error = (...args) => {
 /** AI getToken 高频调用，勿走带 console.log 的 getAuth */
 const aiChatConfig = createAIChatConfig(() => localStorage.getItem('token'));
 
-export default function App() {
+function ThemedApp() {
+  const { resolved } = useUiTheme();
+
   return (
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: resolved === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1890ff',
         },
@@ -55,24 +59,25 @@ export default function App() {
             <BrowserRouter>
               <NuqsAdapter>
                 <ChatSessionGroupProvider>
-                <AIChatProvider config={aiChatConfig} plugins={[eadafHostToolsPlugin]}>
-                  <Suspense
-                    fallback={
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          height: '100vh',
-                        }}
-                      >
-                        <Spin size="large" />
-                      </div>
-                    }
-                  >
-                    <AppRoutes />
-                  </Suspense>
-                </AIChatProvider>
+                  <AIChatProvider config={aiChatConfig} plugins={[eadafHostToolsPlugin]}>
+                    <SyncUiThemeWithAiBase />
+                    <Suspense
+                      fallback={
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            height: '100vh',
+                          }}
+                        >
+                          <Spin size="large" />
+                        </div>
+                      }
+                    >
+                      <AppRoutes />
+                    </Suspense>
+                  </AIChatProvider>
                 </ChatSessionGroupProvider>
               </NuqsAdapter>
             </BrowserRouter>
@@ -80,5 +85,13 @@ export default function App() {
         </AntdAppApiBridge>
       </AntdApp>
     </ConfigProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <UiThemeProvider>
+      <ThemedApp />
+    </UiThemeProvider>
   );
 }

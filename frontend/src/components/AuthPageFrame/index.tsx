@@ -9,6 +9,7 @@ import {
   resolveLoginTheme,
   type SsoLoginPageStyle,
 } from '@/utils/ssoLoginPage';
+import { useUiTheme } from '@/theme/uiTheme';
 
 interface AuthPageFrameProps {
   shortName: string;
@@ -71,20 +72,23 @@ const AuthPageFrame: React.FC<AuthPageFrameProps> = ({
   helmetTitle,
   children,
 }) => {
+  const { resolved: uiResolved } = useUiTheme();
   const [, setSchemeTick] = useState(0);
-  const themeMode = loginPage?.theme || 'light';
+  /** SSO 登录页可单独指定主题；未指定时跟随系统设置「界面主题」 */
+  const ssoTheme = loginPage?.theme;
 
   useEffect(() => {
-    if (themeMode !== 'system' || typeof window === 'undefined' || !window.matchMedia) {
+    // 仅 SSO 显式选「跟随系统」时在此监听；否则用 UiTheme 已解析结果
+    if (ssoTheme !== 'system' || typeof window === 'undefined' || !window.matchMedia) {
       return;
     }
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => setSchemeTick((n) => n + 1);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
-  }, [themeMode]);
+  }, [ssoTheme]);
 
-  const resolvedTheme = resolveLoginTheme(themeMode);
+  const resolvedTheme = ssoTheme ? resolveLoginTheme(ssoTheme) : uiResolved;
   const largeText = Boolean(loginPage?.large_text);
   const asideKind = loginPage?.aside_kind || 'lottie';
   const customLottieUrl =

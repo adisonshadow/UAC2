@@ -65,6 +65,8 @@ export function createAIChatConfig(
     autoNavigate: true,
     toolConcurrency: 10,
     decisionPreference: 'user',
+    // 默认跟随系统；实际以系统设置「界面主题」为准（SyncUiThemeWithAiBase 会写入 chat.theme）
+    theme: 'auto',
     toolDisplayNames: EADAF_TOOL_DISPLAY_NAMES,
     navigate: async ({ path, params }) => {
       const target = resolveSemanticRoutePath(path, params, semanticRoutes);

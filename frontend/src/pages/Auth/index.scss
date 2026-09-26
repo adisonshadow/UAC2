@@ -13,14 +13,20 @@
   color-scheme: light;
 
   &[data-theme='dark'] {
-    --auth-sidebar-bg: #141414;
+    /* 侧栏用更深的藏青，与内容区 #141414 区分，也不同于浅色的 #212747 */
+    --auth-sidebar-bg: #151f20;
     --auth-content-bg: #141414;
     --auth-title-color: rgba(255, 255, 255, 0.88);
     --auth-desc-color: rgba(255, 255, 255, 0.45);
-    --auth-sidebar-title: #ffffff9c;
+    --auth-sidebar-title: rgba(255, 255, 255, 0.55);
     --auth-status-title: rgba(255, 255, 255, 0.88);
     --auth-status-text: rgba(255, 255, 255, 0.45);
     color-scheme: dark;
+
+    .auth-bg .bg-image {
+      opacity: 0.45;
+      filter: brightness(0.75) saturate(0.85);
+    }
   }
 
   &.auth-page--large-text {
