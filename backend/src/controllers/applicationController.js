@@ -792,7 +792,8 @@ class ApplicationController {
         storageResult = await storageService.deleteBucketsForApplication(id);
       }
 
-      await application.destroy();
+      // 物理删除：paranoid 软删会留下同 code tombstone，阻断后续同 code 导入
+      await application.destroy({ force: true });
       ctx.body = {
         code: 200,
         message: 'success',

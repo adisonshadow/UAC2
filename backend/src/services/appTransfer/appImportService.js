@@ -95,8 +95,12 @@ function tempApplicationCode(sourceId) {
 async function assertApplicationIdFree(applicationId, transaction) {
   const owner = await models.Application.findByPk(applicationId, { transaction, paranoid: false });
   if (!owner) return;
-  const state = owner.deleted_at ? '软删' : '';
-  throw new Error(`无法保持原应用 ID ${applicationId}:已被${state}应用「${owner.code}」占用,请先处理该记录后再导入`);
+  // 软删占用视为可回收：物理清掉后允许导入沿用原 ID
+  if (owner.deleted_at) {
+    await owner.destroy({ force: true, transaction });
+    return;
+  }
+  throw new Error(`无法保持原应用 ID ${applicationId}:已被应用「${owner.code}」占用,请先处理该记录后再导入`);
 }
 
 /** 把仍指向旧应用主键的列改到源 ID。applications 自身除外。 */
@@ -443,28 +447,29 @@ class ImportContext {
     const existing = await model.findOne({ where: { [uniqueKey]: sourceRow[uniqueKey] }, transaction, paranoid: false });
     if (existing) {
       if (existing.deleted_at) {
-        this.itemFailed(section, `${label}`, new Error('目标存在同键软删记录,请先恢复或物理删除后再导入'));
-        return null;
-      }
-      if (this.strategy === 'overwrite') {
-        // 第二唯一键守卫:撞到另一条目标记录 → failed,不静默改别人的键
-        if (secondKey && sourceRow[secondKey.field]) {
-          const conflict = await secondKey.model.findOne({
-            where: { [secondKey.field]: sourceRow[secondKey.field], [uniqueKey]: { [Op.ne]: sourceRow[uniqueKey] } },
-            transaction,
-          });
-          if (conflict) {
-            this.itemFailed(section, `${label}`, new Error(`第二唯一键 ${secondKey.field}「${sourceRow[secondKey.field]}」已被 ${conflict[uniqueKey]} 占用`));
-            return null;
-          }
-        }
-        await existing.update(payload, { transaction });
-        section.counts.updated += 1;
+        await existing.destroy({ force: true, transaction });
+        section.notes.push(`${label}: 目标同键软删记录已物理清除后重建`);
       } else {
-        section.counts.skipped += 1;
+        if (this.strategy === 'overwrite') {
+          // 第二唯一键守卫:撞到另一条目标记录 → failed,不静默改别人的键
+          if (secondKey && sourceRow[secondKey.field]) {
+            const conflict = await secondKey.model.findOne({
+              where: { [secondKey.field]: sourceRow[secondKey.field], [uniqueKey]: { [Op.ne]: sourceRow[uniqueKey] } },
+              transaction,
+            });
+            if (conflict) {
+              this.itemFailed(section, `${label}`, new Error(`第二唯一键 ${secondKey.field}「${sourceRow[secondKey.field]}」已被 ${conflict[uniqueKey]} 占用`));
+              return null;
+            }
+          }
+          await existing.update(payload, { transaction });
+          section.counts.updated += 1;
+        } else {
+          section.counts.skipped += 1;
+        }
+        map.set(sourceRow[pk], existing.get(pk));
+        return { row: existing, created: false };
       }
-      map.set(sourceRow[pk], existing.get(pk));
-      return { row: existing, created: false };
     }
 
     // 新建:第二唯一键同样需要守卫
@@ -586,7 +591,16 @@ class ImportContext {
             });
             if (existing) {
               if (existing.deleted_at) {
-                this.itemFailed(section, `部门「${dept.name}」`, new Error('目标存在同名软删部门'));
+                await existing.destroy({ force: true, transaction });
+                section.notes.push(`部门「${dept.name}」: 同名软删记录已物理清除后重建`);
+                const created = await models.Department.create({
+                  name: dept.name,
+                  parent_id: parentTargetId || null,
+                  status: dept.status ?? 'ACTIVE',
+                  description: dept.description ?? null,
+                }, { transaction });
+                resolved.set(dept.department_id, created.department_id);
+                section.counts.created += 1;
               } else {
                 if (this.strategy === 'overwrite') {
                   await existing.update({
@@ -727,13 +741,19 @@ class ImportContext {
     try {
       await this.withSectionTransaction(async (transaction) => {
         const sourceId = normalizeUuid(appRow.application_id);
-        const existing = await models.Application.findOne({
+        let existing = await models.Application.findOne({
           where: { code: appRow.code }, transaction, paranoid: false,
         });
+        // 同 code 软删行视为不存在：物理清除后走新建；避免覆盖/跳过都被 tombstone 挡住
+        if (existing?.deleted_at) {
+          const tombstoneId = existing.application_id;
+          await existing.destroy({ force: true, transaction });
+          section.notes.push(
+            `目标存在同 code 软删应用(${tombstoneId}),已物理清除后继续导入`,
+          );
+          existing = null;
+        }
         if (existing) {
-          if (existing.deleted_at) {
-            throw new Error('目标存在同 code 软删应用,请先恢复或物理删除后再导入');
-          }
           const existingIdNorm = String(existing.application_id || '').toLowerCase();
           const sourceIdNorm = sourceId ? sourceId.toLowerCase() : null;
           const idMismatch = Boolean(sourceIdNorm && existingIdNorm !== sourceIdNorm);
@@ -1274,17 +1294,18 @@ class ImportContext {
     const existing = await model.findOne({ where: { [uniqueKey]: sourceRow[uniqueKey] }, transaction, paranoid: false });
     if (existing) {
       if (existing.deleted_at) {
-        this.itemFailed(section, String(sourceRow[uniqueKey]), new Error('目标存在同键软删记录'));
-        return null;
-      }
-      if (this.strategy === 'overwrite') {
-        await existing.update(cleanPayload, { transaction });
-        section.counts.updated += 1;
+        await existing.destroy({ force: true, transaction });
+        section.notes.push(`${sourceRow[uniqueKey]}: 目标同键软删记录已物理清除后重建`);
       } else {
-        section.counts.skipped += 1;
+        if (this.strategy === 'overwrite') {
+          await existing.update(cleanPayload, { transaction });
+          section.counts.updated += 1;
+        } else {
+          section.counts.skipped += 1;
+        }
+        map.set(sourceRow[pk], existing.get(pk));
+        return { row: existing, created: false };
       }
-      map.set(sourceRow[pk], existing.get(pk));
-      return { row: existing, created: false };
     }
     const created = await model.create(cleanPayload, { transaction });
     section.counts.created += 1;

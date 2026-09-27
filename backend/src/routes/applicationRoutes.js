@@ -424,7 +424,8 @@ router.get(
  *       - Applications
  *     summary: 删除应用 [需要认证]
  *     description: |
- *       删除指定应用。默认同时按与导出相同的 scope 前缀规则级联删除数据模型、API、管道、指标、
+ *       物理删除指定应用（非软删，避免同 code tombstone 阻断再次导入）。
+ *       默认同时按与导出相同的 scope 前缀规则级联删除数据模型、API、管道、指标、
  *       Webhook、Hook、枚举及物化元数据等；可选删除物理物化表、以及归属 Bucket/文件。
  *     security:
  *       - bearerAuth: []
