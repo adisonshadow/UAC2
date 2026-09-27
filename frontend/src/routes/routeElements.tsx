@@ -24,6 +24,9 @@ const ApplicationFormPage = lazy(() => import('@/pages/ServiceProvider/Applicati
 const ApplicationTopLevelSkillPage = lazy(
   () => import('@/pages/ServiceProvider/Applications/TopLevelSkillPage'),
 );
+const ApplicationDeletePage = lazy(
+  () => import('@/pages/ServiceProvider/Applications/DeletePage'),
+);
 const FileStorageBuckets = lazy(() => import('@/pages/FileStorage/Buckets'));
 const FileStorageBrowser = lazy(() => import('@/pages/FileStorage/Browser'));
 const ModelDesigner = lazy(() => import('@/pages/BusinessData/ModelDesigner'));
@@ -94,6 +97,7 @@ export const PAGE_ELEMENTS: Record<string, ReactNode | ((mode: string) => ReactN
   applications: <Applications />,
   applicationForm: (mode) => <ApplicationFormPage mode={mode as 'create' | 'edit'} />,
   applicationTopLevelSkill: <ApplicationTopLevelSkillPage />,
+  applicationDelete: <ApplicationDeletePage />,
 
   /* file_storage */
   fileStorageBuckets: <FileStorageBuckets />,

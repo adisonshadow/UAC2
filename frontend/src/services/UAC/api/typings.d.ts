@@ -92,6 +92,18 @@ declare namespace API {
     deleted_at?: string;
   };
 
+  /** 应用删除预览：归属 Bucket 清单 */
+  type ApplicationDeletePreviewBucket = StorageBucket & {
+    objectCount?: number;
+  };
+
+  type ApplicationDeletePreview = {
+    application?: Application;
+    buckets?: ApplicationDeletePreviewBucket[];
+    bucketCount?: number;
+    objectCount?: number;
+  };
+
   type Captcha = {
     captcha_id?: string;
     target_position?: { x?: number; y?: number };

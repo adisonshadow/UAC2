@@ -384,12 +384,12 @@ router.put(
 
 /**
  * @swagger
- * /api/v1/applications/{id}:
- *   delete:
+ * /api/v1/applications/{id}/delete-preview:
+ *   get:
  *     tags:
  *       - Applications
- *     summary: 删除应用 [需要认证]
- *     description: 删除指定应用 
+ *     summary: 应用删除预览 [需要认证]
+ *     description: 返回应用基本信息及归属该应用（来源应用）的 Bucket 清单与对象数量，供删除确认页展示
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -402,7 +402,50 @@ router.put(
  *         description: 应用ID
  *     responses:
  *       200:
- *         description: 删除成功
+ *         description: 预览成功
+ *       403:
+ *         description: 系统内置应用不可删除
+ *       404:
+ *         description: 应用不存在
+ */
+router.get(
+  '/:id/delete-preview',
+  auth,
+  ApplicationController.deletePreview,
+);
+
+/**
+ * @swagger
+ * /api/v1/applications/{id}:
+ *   delete:
+ *     tags:
+ *       - Applications
+ *     summary: 删除应用 [需要认证]
+ *     description: 删除指定应用。可选同时删除归属该应用的 Bucket 及其下全部文件对象（系统内置 Bucket 会跳过）
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: 应用ID
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               deleteBuckets:
+ *                 type: boolean
+ *                 default: false
+ *                 description: 是否同时删除来源应用归属的 Bucket 及其下文件
+ *     responses:
+ *       200:
+ *         description: 删除成功；若 deleteBuckets=true，data 含 deletedBuckets / deletedObjects / skippedSystemBuckets
  *         content:
  *           application/json:
  *             schema:

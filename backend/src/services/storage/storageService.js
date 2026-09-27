@@ -182,6 +182,54 @@ async function deleteBucket(id) {
   return true;
 }
 
+/** 列出归属某应用的 Bucket（含对象数量），供删除应用页预览 */
+async function listBucketsByApplicationId(applicationId) {
+  if (!applicationId) return [];
+  const rows = await StorageBucket.findAll({
+    where: { application_id: applicationId },
+    include: [{ model: Application, as: 'Application', attributes: ['application_id', 'name', 'code'], required: false }],
+    order: [['created_at', 'DESC']],
+  });
+  const items = [];
+  for (const row of rows) {
+    const objectCount = await StorageObject.count({ where: { bucket_id: row.bucket_id } });
+    items.push({
+      ...formatBucket(row),
+      objectCount,
+      isSystem: isSystemBucket(row),
+    });
+  }
+  return items;
+}
+
+/**
+ * 删除应用归属的 Bucket 及其下全部对象与物理文件（跳过系统 Bucket）。
+ * @returns {{ bucketsDeleted: number, objectsDeleted: number, skippedSystem: number }}
+ */
+async function deleteBucketsForApplication(applicationId) {
+  const result = { bucketsDeleted: 0, objectsDeleted: 0, skippedSystem: 0 };
+  if (!applicationId) return result;
+  const buckets = await StorageBucket.findAll({ where: { application_id: applicationId } });
+  for (const bucket of buckets) {
+    if (isSystemBucket(bucket)) {
+      result.skippedSystem += 1;
+      continue;
+    }
+    const objects = await StorageObject.findAll({
+      where: { bucket_id: bucket.bucket_id },
+      attributes: ['object_id'],
+    });
+    for (const obj of objects) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await deleteObject(obj.object_id);
+      if (ok) result.objectsDeleted += 1;
+    }
+    await bucket.destroy();
+    result.bucketsDeleted += 1;
+  }
+  return result;
+}
+
 async function listObjects({
   page = 1,
   size = 20,
@@ -342,6 +390,8 @@ module.exports = {
   createBucket,
   updateBucket,
   deleteBucket,
+  listBucketsByApplicationId,
+  deleteBucketsForApplication,
   listObjects,
   getObjectById,
   getObjectFilePath,

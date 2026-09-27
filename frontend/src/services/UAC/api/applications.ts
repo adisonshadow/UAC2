@@ -133,17 +133,41 @@ export async function putApplicationsId(
 export async function deleteApplicationsId(
   // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
   params: API.deleteApplicationsIdParams,
+  body?: { deleteBuckets?: boolean },
   options?: { [key: string]: any },
 ) {
   const { id: param0, ...queryParams } = params;
-  return request<{ code?: number; message?: string }>(
-    `/api/v1/applications/${param0}`,
-    {
-      method: 'DELETE',
-      params: { ...queryParams },
-      ...(options || {}),
+  return request<{
+    code?: number;
+    message?: string;
+    data?: {
+      deletedBuckets?: number;
+      deletedObjects?: number;
+      skippedSystemBuckets?: number;
+    } | null;
+  }>(`/api/v1/applications/${param0}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
     },
-  );
+    params: { ...queryParams },
+    data: body || {},
+    ...(options || {}),
+  });
+}
+
+/** 应用删除预览：应用信息 + 归属 Bucket 清单 GET /api/v1/applications/${id}/delete-preview */
+export async function getApplicationsIdDeletePreview(params: { id: string }, options?: { [key: string]: any }) {
+  const { id: param0, ...queryParams } = params;
+  return request<{
+    code?: number;
+    message?: string;
+    data?: API.ApplicationDeletePreview;
+  }>(`/api/v1/applications/${param0}/delete-preview`, {
+    method: 'GET',
+    params: { ...queryParams },
+    ...(options || {}),
+  });
 }
 
 /** 生成应用密钥 [需要认证] 根据应用ID和salt生成app_secret，并保存到应用的api_connect_config中 POST /api/v1/applications/${param0}/generate-secret */

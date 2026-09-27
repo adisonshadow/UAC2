@@ -31,6 +31,7 @@ export type SemanticRouteMode =
   | 'create'
   | 'edit'
   | 'view'
+  | 'delete'
   | 'test'
   | 'dashboard'
   | 'graph'
@@ -247,6 +248,18 @@ export const EADAF_SEMANTIC_ROUTES: AppSemanticEntry[] = [
     scopeGroup: 'service_provider',
     actions: ['view'],
     keywords: ['顶层 skill', 'top-level-skill'],
+    params: { id: { type: 'string', description: '应用 id' } },
+  },
+  {
+    path: '/service_provider/:id/delete',
+    mode: 'delete',
+    pageKey: 'applicationDelete',
+    title: '删除应用',
+    description: '确认删除应用，可选同时删除归属 Bucket 与文件',
+    domain: 'service_provider',
+    scopeGroup: 'service_provider',
+    actions: ['delete'],
+    keywords: ['删除应用'],
     params: { id: { type: 'string', description: '应用 id' } },
   },
 

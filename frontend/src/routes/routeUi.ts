@@ -54,6 +54,7 @@ export const ROUTE_UI_BY_PATH: Record<string, Partial<AppRouteMeta>> = {
   '/service_provider/create': { hideInMenu: true },
   '/service_provider/:id/edit': { hideInMenu: true },
   '/service_provider/:id/top-level-skill': { hideInMenu: true },
+  '/service_provider/:id/delete': { hideInMenu: true },
 
   '/api_services/create': { hideInMenu: true, noContentPadding: true },
   '/api_services/list': { noContentPadding: true },

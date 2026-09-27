@@ -52,7 +52,7 @@ import {
   type ApiServiceListItem,
 } from '@/utils/buildApiServiceDomainTree';
 import { buildApplicationApiDocsUrl } from '@/utils/applicationApiDocsUrl';
-import { getApplications, putApplicationsId, deleteApplicationsId, postApplicationsIdGenerateSecret } from '@/services/UAC/api/applications';
+import { getApplications, putApplicationsId, postApplicationsIdGenerateSecret } from '@/services/UAC/api/applications';
 import { isApiSuccess, parseApiListResponse, getApiData } from '@/utils/apiResponse';
 import { DEFAULT_PRO_TABLE_OPTIONS } from '@/constants/proTable';
 import { useProTableSearchCollapse } from '@/hooks/useProTableSearchCollapse';
@@ -313,28 +313,12 @@ const Page: React.FC = () => {
             icon={<DeleteOutlined />}
             disabled={record.code === SYSTEM_APPLICATION_CODE}
             onClick={() => {
-            if (record.code === SYSTEM_APPLICATION_CODE) {
-              message.warning('系统内置应用不可删除');
-              return;
-            }
-            modal.confirm({
-              title: '确认删除',
-              content: '确定要删除该应用吗？',
-              onOk: async () => {
-                try {
-                  await deleteApplicationsId({
-                    id: record.application_id || '',
-                  });
-                  message.success('删除成功');
-                  if (actionRef.current) {
-                    actionRef.current.reload();
-                  }
-                } catch (error) {
-                  message.error('删除失败');
-                }
-              },
-            });
-          }}
+              if (record.code === SYSTEM_APPLICATION_CODE) {
+                message.warning('系统内置应用不可删除');
+                return;
+              }
+              navigate(`/service_provider/${record.application_id}/delete`);
+            }}
           />
         </TableActions>
       ),

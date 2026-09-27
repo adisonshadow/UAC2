@@ -29,6 +29,22 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+/** Logo 与 SSO 登录页侧栏图/Lottie。这些文件常落在系统桶且 application_id 不是本应用。 */
+function collectReferencedStorageIds(app) {
+  const ids = new Set();
+  const push = (ref) => {
+    const id = extractStorageObjectId(ref);
+    if (id) ids.add(id);
+  };
+  push(app && app.logo_url);
+  const page = app && app.sso_config && app.sso_config.login_page;
+  if (page && typeof page === 'object') {
+    push(page.aside_image);
+    push(page.aside_lottie);
+  }
+  return [...ids];
+}
+
 async function collectAppStorage(app, options, warnings) {
   const storageBuckets = (await models.StorageBucket.findAll({
     where: { application_id: app.application_id },
@@ -39,12 +55,12 @@ async function collectAppStorage(app, options, warnings) {
     return { storageBuckets, storageObjects: [], storageFileEntries: [] };
   }
 
-  const logoId = extractStorageObjectId(app.logo_url);
+  const referencedIds = collectReferencedStorageIds(app);
   const bucketIds = storageBuckets.map((b) => b.bucket_id);
   const or = [];
   if (bucketIds.length) or.push({ bucket_id: { [Op.in]: bucketIds } });
   or.push({ application_id: app.application_id });
-  if (logoId) or.push({ object_id: logoId });
+  if (referencedIds.length) or.push({ object_id: { [Op.in]: referencedIds } });
   if (!or.length) {
     return { storageBuckets, storageObjects: [], storageFileEntries: [] };
   }

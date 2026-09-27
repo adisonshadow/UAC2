@@ -679,10 +679,55 @@ class ApplicationController {
     }
   }
 
+  // 删除应用端预览：应用信息 + 归属 Bucket 清单
+  static async deletePreview(ctx) {
+    try {
+      const { id } = ctx.params;
+      if (!isUuid(id)) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '应用端不存在', data: null };
+        return;
+      }
+      const application = await Application.findByPk(id);
+      if (!application) {
+        ctx.status = 404;
+        ctx.body = { code: 404, message: '应用端不存在', data: null };
+        return;
+      }
+      if (application.code === SYSTEM_APPLICATION_CODE) {
+        ctx.status = 403;
+        ctx.body = { code: 403, message: '系统内置应用不可删除', data: null };
+        return;
+      }
+      const storageService = require('../services/storage/storageService');
+      const buckets = await storageService.listBucketsByApplicationId(id);
+      ctx.body = {
+        code: 200,
+        message: 'success',
+        data: {
+          application: redactApplicationSnapshot(application),
+          buckets,
+          bucketCount: buckets.length,
+          objectCount: buckets.reduce((sum, b) => sum + (b.objectCount || 0), 0),
+        },
+      };
+    } catch (error) {
+      logger.error('获取应用删除预览失败', { error: error.message });
+      ctx.status = 500;
+      ctx.body = {
+        code: 500,
+        message: '获取应用删除预览失败',
+        error: error.message,
+      };
+    }
+  }
+
   // 删除应用端
   static async delete(ctx) {
     try {
       const { id } = ctx.params;
+      const body = ctx.request.body || {};
+      const deleteBuckets = Boolean(body.deleteBuckets);
 
       // UUID 校验
       if (!isUuid(id)) {
@@ -719,21 +764,36 @@ class ApplicationController {
       ctx.state.auditContext = {
         resource_id: id,
         resource_name: application.name,
-        old_data: redactApplicationSnapshot(application),
+        old_data: {
+          ...redactApplicationSnapshot(application),
+          deleteBuckets,
+        },
       };
+
+      let storageResult = null;
+      if (deleteBuckets) {
+        const storageService = require('../services/storage/storageService');
+        storageResult = await storageService.deleteBucketsForApplication(id);
+      }
 
       await application.destroy();
       ctx.body = {
         code: 200,
         message: 'success',
-        data: null
+        data: storageResult
+          ? {
+              deletedBuckets: storageResult.bucketsDeleted,
+              deletedObjects: storageResult.objectsDeleted,
+              skippedSystemBuckets: storageResult.skippedSystem,
+            }
+          : null,
       };
     } catch (error) {
       logger.error('删除应用端失败', { error: error.message });
-      ctx.status = 500;
+      ctx.status = error.status || 500;
       ctx.body = {
-        code: 500,
-        message: '删除应用端失败',
+        code: error.status || 500,
+        message: error.message || '删除应用端失败',
         error: error.message
       };
     }
