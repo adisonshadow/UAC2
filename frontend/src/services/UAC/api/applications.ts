@@ -133,7 +133,11 @@ export async function putApplicationsId(
 export async function deleteApplicationsId(
   // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
   params: API.deleteApplicationsIdParams,
-  body?: { deleteBuckets?: boolean },
+  body?: {
+    deleteBizdata?: boolean;
+    dropPhysicalTables?: boolean;
+    deleteBuckets?: boolean;
+  },
   options?: { [key: string]: any },
 ) {
   const { id: param0, ...queryParams } = params;
@@ -141,6 +145,7 @@ export async function deleteApplicationsId(
     code?: number;
     message?: string;
     data?: {
+      cascade?: Record<string, any> | null;
       deletedBuckets?: number;
       deletedObjects?: number;
       skippedSystemBuckets?: number;

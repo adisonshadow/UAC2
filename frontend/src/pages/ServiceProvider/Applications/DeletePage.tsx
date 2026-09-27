@@ -21,6 +21,8 @@ const ApplicationDeletePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [preview, setPreview] = useState<API.ApplicationDeletePreview | null>(null);
+  const [deleteBizdata, setDeleteBizdata] = useState(true);
+  const [dropPhysicalTables, setDropPhysicalTables] = useState(false);
   const [deleteBuckets, setDeleteBuckets] = useState(false);
 
   const loadPreview = useCallback(async () => {
@@ -57,23 +59,51 @@ const ApplicationDeletePage: React.FC = () => {
     void loadPreview();
   }, [loadPreview]);
 
+  const counts = preview?.cascade?.counts;
+  const scopeCodes = preview?.cascade?.entityScopeCodes || [];
+  const bizdataTotal =
+    (counts?.entities || 0) +
+    (counts?.apiServices || 0) +
+    (counts?.pipelines || 0) +
+    (counts?.metrics || 0) +
+    (counts?.webhooks || 0) +
+    (counts?.hooks || 0) +
+    (counts?.enums || 0);
+
   const handleSubmit = () => {
     if (!id || !preview?.application) return;
     const app = preview.application;
     const bucketCount = preview.bucketCount || 0;
     const objectCount = preview.objectCount || 0;
 
-    const extra = deleteBuckets
-      ? `并将同时删除其归属的 ${bucketCount} 个 Bucket 及其中 ${objectCount} 个文件对象（系统内置 Bucket 会跳过）。`
-      : '不会删除归属该应用的 Bucket 与文件。';
+    const parts: string[] = [];
+    if (deleteBizdata) {
+      parts.push(
+        `将按 scope [${scopeCodes.join(', ') || '未配置'}] 级联删除业务数据` +
+          `（实体 ${counts?.entities ?? 0}、API ${counts?.apiServices ?? 0}、` +
+          `管道 ${counts?.pipelines ?? 0}、指标 ${counts?.metrics ?? 0}、` +
+          `物化记录 ${counts?.materializations ?? 0} 等）` +
+          (dropPhysicalTables ? '，并 DROP 已物化的物理表/集合' : '（不 DROP 物理表）'),
+      );
+    } else {
+      parts.push('仅删除应用记录，保留数据模型 / API / 物化等业务数据。');
+    }
+    if (deleteBuckets) {
+      parts.push(
+        `同时删除归属 Bucket ${bucketCount} 个及文件 ${objectCount} 个（系统内置 Bucket 跳过）。`,
+      );
+    }
 
     modal.confirm({
       title: '最终确认删除',
       content: (
         <div>
           <Paragraph>
-            即将永久删除应用「{app.name}」（{app.code}）。{extra}
+            即将永久删除应用「{app.name}」（{app.code}）。
           </Paragraph>
+          {parts.map((p) => (
+            <Paragraph key={p}>{p}</Paragraph>
+          ))}
           <Paragraph type="danger" style={{ marginBottom: 0 }}>
             此操作不可撤销，请再次确认。
           </Paragraph>
@@ -85,26 +115,35 @@ const ApplicationDeletePage: React.FC = () => {
       onOk: async () => {
         setSubmitting(true);
         try {
-          const res = await deleteApplicationsId({ id }, { deleteBuckets });
+          const res = await deleteApplicationsId(
+            { id },
+            { deleteBizdata, dropPhysicalTables, deleteBuckets },
+          );
           if (!isApiSuccess(res)) {
             message.error(res.message || '删除失败');
             return;
           }
           const data = getApiData<{
+            cascade?: { deletedEntities?: number; deletedApiServices?: number };
             deletedBuckets?: number;
             deletedObjects?: number;
             skippedSystemBuckets?: number;
           }>(res);
+          const bits: string[] = ['应用已删除'];
+          if (deleteBizdata && data?.cascade) {
+            bits.push(
+              `业务数据：实体 ${data.cascade.deletedEntities ?? 0}、API ${data.cascade.deletedApiServices ?? 0}`,
+            );
+          }
           if (deleteBuckets && data) {
-            message.success(
-              `应用已删除；已删 Bucket ${data.deletedBuckets ?? 0} 个、文件 ${data.deletedObjects ?? 0} 个` +
+            bits.push(
+              `Bucket ${data.deletedBuckets ?? 0}、文件 ${data.deletedObjects ?? 0}` +
                 (data.skippedSystemBuckets
-                  ? `（跳过系统 Bucket ${data.skippedSystemBuckets} 个）`
+                  ? `（跳过系统 Bucket ${data.skippedSystemBuckets}）`
                   : ''),
             );
-          } else {
-            message.success('应用已删除');
           }
+          message.success(bits.join('；'));
           navigate(listPath, { replace: true });
         } catch {
           message.error('删除失败');
@@ -117,6 +156,17 @@ const ApplicationDeletePage: React.FC = () => {
 
   const buckets = preview?.buckets || [];
   const app = preview?.application;
+  const cascadeRows = [
+    { key: 'entities', label: '数据模型（实体）', value: counts?.entities ?? 0 },
+    { key: 'materializations', label: '物化记录', value: counts?.materializations ?? 0 },
+    { key: 'apiServices', label: 'API 服务', value: counts?.apiServices ?? 0 },
+    { key: 'pipelines', label: '采集管道', value: counts?.pipelines ?? 0 },
+    { key: 'metrics', label: '指标', value: counts?.metrics ?? 0 },
+    { key: 'webhooks', label: 'Outbound Webhook', value: counts?.webhooks ?? 0 },
+    { key: 'hooks', label: '自动化 Hook', value: counts?.hooks ?? 0 },
+    { key: 'enums', label: '枚举', value: counts?.enums ?? 0 },
+    { key: 'scopeDocs', label: 'Scope 文档', value: counts?.scopeDocs ?? 0 },
+  ];
 
   return (
     <PageContainer
@@ -130,7 +180,7 @@ const ApplicationDeletePage: React.FC = () => {
             type="warning"
             showIcon
             message="删除应用后不可恢复"
-            description="将删除应用记录及其配置。若勾选下方选项，还会删除该应用作为「来源应用」归属的 Bucket，以及这些 Bucket 下的全部文件。"
+            description="默认会按应用配置的 bizdata_scope_codes / api_data_scope 级联删除数据模型、API、管道、指标等（与导出命中规则一致）。Bucket 与物理物化表需单独勾选。"
           />
 
           <Card size="small" title="应用信息" loading={loading && !app}>
@@ -143,8 +193,63 @@ const ApplicationDeletePage: React.FC = () => {
                   编码：<Text code>{app.code}</Text>
                 </Text>
                 <Text type="secondary">ID：{app.application_id}</Text>
+                <Text type="secondary">
+                  Scope：{scopeCodes.length ? scopeCodes.join(', ') : '未配置（将不会命中业务数据）'}
+                </Text>
               </Space>
             ) : null}
+          </Card>
+
+          <Card size="small" title={`Scope 业务数据（合计命中约 ${bizdataTotal} 项）`}>
+            <Table
+              size="small"
+              rowKey="key"
+              pagination={false}
+              dataSource={cascadeRows}
+              columns={[
+                { title: '类型', dataIndex: 'label' },
+                {
+                  title: '数量',
+                  dataIndex: 'value',
+                  width: 100,
+                  render: (v: number) => v,
+                },
+              ]}
+            />
+            {(counts?.lockedEntities || 0) > 0 ? (
+              <Alert
+                style={{ marginTop: 12 }}
+                type="info"
+                showIcon
+                message={`其中 ${counts?.lockedEntities} 个实体当前已锁定；级联删除时会自动解锁后删除。`}
+              />
+            ) : null}
+            <div style={{ marginTop: 16 }}>
+              <Checkbox
+                checked={deleteBizdata}
+                onChange={(e) => {
+                  setDeleteBizdata(e.target.checked);
+                  if (!e.target.checked) setDropPhysicalTables(false);
+                }}
+              >
+                同时删除 Scope 命中的数据模型、API、管道、指标、Webhook、Hook 等
+              </Checkbox>
+              <div style={{ color: '#888', fontSize: 12, marginTop: 4, marginLeft: 24 }}>
+                匹配规则与「应用导出」一致：优先 bizdata_scope_codes，否则回退 api_data_scope.domainCodes。
+              </div>
+              <div style={{ marginTop: 12, marginLeft: 24 }}>
+                <Checkbox
+                  checked={dropPhysicalTables}
+                  disabled={!deleteBizdata || !(counts?.materializations)}
+                  onChange={(e) => setDropPhysicalTables(e.target.checked)}
+                >
+                  同时 DROP 已物化的物理表 / 集合（不可恢复）
+                </Checkbox>
+                <div style={{ color: '#888', fontSize: 12, marginTop: 4, marginLeft: 24 }}>
+                  仅删除元数据时，外部库中的物理表仍会保留；勾选此项才会真正 DROP。
+                </div>
+              </div>
+            </div>
           </Card>
 
           <Card
@@ -182,8 +287,7 @@ const ApplicationDeletePage: React.FC = () => {
                 同时删除来源应用的 Bucket 及 Bucket 下的文件
               </Checkbox>
               <div style={{ color: '#888', fontSize: 12, marginTop: 4, marginLeft: 24 }}>
-                仅影响上表中归属本应用的 Bucket；系统内置 Bucket 即使勾选也会跳过。共享 Bucket
-                中仅「对象 application_id」指向本应用的文件不会因本选项被删除。
+                仅影响上表中归属本应用的 Bucket；系统内置 Bucket 即使勾选也会跳过。
               </div>
             </div>
           </Card>

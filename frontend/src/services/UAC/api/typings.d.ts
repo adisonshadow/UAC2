@@ -102,6 +102,31 @@ declare namespace API {
     buckets?: ApplicationDeletePreviewBucket[];
     bucketCount?: number;
     objectCount?: number;
+    cascade?: ApplicationDeleteCascadePreview;
+  };
+
+  type ApplicationDeleteCascadeCounts = {
+    entities?: number;
+    lockedEntities?: number;
+    apiServices?: number;
+    pipelines?: number;
+    webhooks?: number;
+    metrics?: number;
+    hooks?: number;
+    enums?: number;
+    scopeDocs?: number;
+    materializations?: number;
+    skillLinks?: number;
+    pipelineAppLinks?: number;
+  };
+
+  type ApplicationDeleteCascadePreview = {
+    entityScopeCodes?: string[];
+    counts?: ApplicationDeleteCascadeCounts;
+    samples?: {
+      entities?: { code?: string; label?: string; is_locked?: boolean }[];
+      apiServices?: { code?: string; name?: string }[];
+    };
   };
 
   type Captcha = {

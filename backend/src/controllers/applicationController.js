@@ -679,7 +679,7 @@ class ApplicationController {
     }
   }
 
-  // 删除应用端预览：应用信息 + 归属 Bucket 清单
+  // 删除应用端预览：应用信息 + scope 业务数据计数 + 归属 Bucket 清单
   static async deletePreview(ctx) {
     try {
       const { id } = ctx.params;
@@ -700,7 +700,9 @@ class ApplicationController {
         return;
       }
       const storageService = require('../services/storage/storageService');
+      const cascadeService = require('../services/applicationCascadeDeleteService');
       const buckets = await storageService.listBucketsByApplicationId(id);
+      const cascade = await cascadeService.previewCascade(application);
       ctx.body = {
         code: 200,
         message: 'success',
@@ -709,6 +711,7 @@ class ApplicationController {
           buckets,
           bucketCount: buckets.length,
           objectCount: buckets.reduce((sum, b) => sum + (b.objectCount || 0), 0),
+          cascade,
         },
       };
     } catch (error) {
@@ -728,6 +731,9 @@ class ApplicationController {
       const { id } = ctx.params;
       const body = ctx.request.body || {};
       const deleteBuckets = Boolean(body.deleteBuckets);
+      // 默认级联删除 scope 业务数据（与导出命中规则一致）；显式传 false 可仅删应用行
+      const deleteBizdata = body.deleteBizdata !== false && body.deleteBizdata !== 'false';
+      const dropPhysicalTables = Boolean(body.dropPhysicalTables);
 
       // UUID 校验
       if (!isUuid(id)) {
@@ -767,8 +773,18 @@ class ApplicationController {
         old_data: {
           ...redactApplicationSnapshot(application),
           deleteBuckets,
+          deleteBizdata,
+          dropPhysicalTables,
         },
       };
+
+      let cascadeResult = null;
+      if (deleteBizdata) {
+        const cascadeService = require('../services/applicationCascadeDeleteService');
+        cascadeResult = await cascadeService.executeCascade(application, {
+          dropPhysicalTables,
+        });
+      }
 
       let storageResult = null;
       if (deleteBuckets) {
@@ -780,13 +796,12 @@ class ApplicationController {
       ctx.body = {
         code: 200,
         message: 'success',
-        data: storageResult
-          ? {
-              deletedBuckets: storageResult.bucketsDeleted,
-              deletedObjects: storageResult.objectsDeleted,
-              skippedSystemBuckets: storageResult.skippedSystem,
-            }
-          : null,
+        data: {
+          cascade: cascadeResult,
+          deletedBuckets: storageResult ? storageResult.bucketsDeleted : undefined,
+          deletedObjects: storageResult ? storageResult.objectsDeleted : undefined,
+          skippedSystemBuckets: storageResult ? storageResult.skippedSystem : undefined,
+        },
       };
     } catch (error) {
       logger.error('删除应用端失败', { error: error.message });

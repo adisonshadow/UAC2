@@ -389,7 +389,9 @@ router.put(
  *     tags:
  *       - Applications
  *     summary: 应用删除预览 [需要认证]
- *     description: 返回应用基本信息及归属该应用（来源应用）的 Bucket 清单与对象数量，供删除确认页展示
+ *     description: |
+ *       返回应用基本信息、按 bizdata_scope_codes / api_data_scope 命中的业务数据计数，
+ *       以及归属该应用（来源应用）的 Bucket 清单与对象数量，供删除确认页展示。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -402,7 +404,7 @@ router.put(
  *         description: 应用ID
  *     responses:
  *       200:
- *         description: 预览成功
+ *         description: 预览成功；data.cascade.counts 含 entities/apiServices/pipelines/metrics/materializations 等
  *       403:
  *         description: 系统内置应用不可删除
  *       404:
@@ -421,7 +423,9 @@ router.get(
  *     tags:
  *       - Applications
  *     summary: 删除应用 [需要认证]
- *     description: 删除指定应用。可选同时删除归属该应用的 Bucket 及其下全部文件对象（系统内置 Bucket 会跳过）
+ *     description: |
+ *       删除指定应用。默认同时按与导出相同的 scope 前缀规则级联删除数据模型、API、管道、指标、
+ *       Webhook、Hook、枚举及物化元数据等；可选删除物理物化表、以及归属 Bucket/文件。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -439,13 +443,21 @@ router.get(
  *           schema:
  *             type: object
  *             properties:
+ *               deleteBizdata:
+ *                 type: boolean
+ *                 default: true
+ *                 description: 是否按应用 scope 级联删除业务数据（实体/API/管道/指标/Webhook/Hook 等）
+ *               dropPhysicalTables:
+ *                 type: boolean
+ *                 default: false
+ *                 description: 级联删实体时是否同时 DROP 已物化的物理表/集合（需 deleteBizdata=true）
  *               deleteBuckets:
  *                 type: boolean
  *                 default: false
  *                 description: 是否同时删除来源应用归属的 Bucket 及其下文件
  *     responses:
  *       200:
- *         description: 删除成功；若 deleteBuckets=true，data 含 deletedBuckets / deletedObjects / skippedSystemBuckets
+ *         description: 删除成功；data 含 cascade 摘要，以及可选的 deletedBuckets / deletedObjects / skippedSystemBuckets
  *         content:
  *           application/json:
  *             schema:

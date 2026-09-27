@@ -1,0 +1,334 @@
+/**
+ * 删除应用时的业务数据级联：按与应用导出相同的 scope 前缀规则匹配
+ * 实体 / API / 管道 / 指标 / Webhook / Hook 等，可选再删物理物化表。
+ */
+const { Op } = require('sequelize');
+const models = require('../models');
+const {
+  prefixHit,
+  parseApiDataScope,
+  matchApiServiceByScope,
+  matchWebhookByScope,
+  isWebhookScopeEmpty,
+  buildScopeAncestorCodes,
+  hookEventFilterHits,
+} = require('./appTransfer/scopePrefix');
+const { executeEntityDeletion } = require('./businessData/entityDeletionService');
+const logger = require('../utils/logger');
+
+/**
+ * @param {object} app Application instance or plain
+ * @returns {{
+ *   entityScopeCodes: string[],
+ *   entities: object[],
+ *   apiServices: object[],
+ *   pipelines: object[],
+ *   webhooks: object[],
+ *   metrics: object[],
+ *   hooks: object[],
+ *   enums: object[],
+ *   scopeDocs: object[],
+ *   materializationCount: number,
+ *   skillLinkCount: number,
+ *   pipelineAppLinkCount: number,
+ * }}
+ */
+async function collectCascadeTargets(app) {
+  const scopeCodes = Array.isArray(app.bizdata_scope_codes) ? app.bizdata_scope_codes : [];
+  const apiDataScope = parseApiDataScope(app.api_data_scope);
+  const trimmedBizScopes = scopeCodes.map((s) => String(s || '').trim()).filter(Boolean);
+  const trimmedDomainCodes = (apiDataScope.domainCodes || []).map((s) => String(s || '').trim()).filter(Boolean);
+  const entityScopeCodes = trimmedBizScopes.length
+    ? [...new Set(trimmedBizScopes)]
+    : [...new Set(trimmedDomainCodes)];
+  const webhookScope = app.outbound_webhook_scope && typeof app.outbound_webhook_scope === 'object'
+    ? app.outbound_webhook_scope
+    : {};
+
+  const allEntities = await models.BizdataEntity.findAll({ raw: true });
+  const entities = allEntities.filter((e) => prefixHit(e.code, entityScopeCodes));
+  const entityIds = entities.map((e) => e.id);
+  const entityCodeSet = new Set(entities.map((e) => e.code));
+
+  const allApiServices = await models.BizdataApiService.findAll({ raw: true });
+  const apiServices = allApiServices.filter((s) =>
+    matchApiServiceByScope(s.code, apiDataScope, scopeCodes),
+  );
+  const apiServiceCodeSet = new Set(apiServices.map((s) => s.code));
+
+  const allPipelines = await models.BizdataCollectionPipeline.findAll({
+    where: { status: { [Op.ne]: 'deleted' } },
+    raw: true,
+  });
+  const pipelines = allPipelines.filter((p) => prefixHit(p.code, entityScopeCodes));
+
+  const allWebhooks = await models.OutboundWebhook.findAll({
+    where: { status: { [Op.ne]: 'deleted' } },
+    raw: true,
+  });
+  let webhooks;
+  if (isWebhookScopeEmpty(webhookScope)) {
+    webhooks = allWebhooks.filter(
+      (w) => w.trigger_api_service_code && apiServiceCodeSet.has(w.trigger_api_service_code),
+    );
+  } else {
+    webhooks = allWebhooks.filter((w) => matchWebhookByScope(w.code, webhookScope));
+  }
+
+  const allMetrics = await models.BizdataMetric.findAll({ raw: true });
+  const metrics = allMetrics.filter((m) => prefixHit(m.code, entityScopeCodes));
+
+  const exportedCodes = new Set([...entityCodeSet, ...apiServiceCodeSet]);
+  const allHooks = await models.AutomationHook.findAll({
+    where: { status: { [Op.ne]: 'deleted' } },
+    raw: true,
+  });
+  const hooks = allHooks.filter((h) => hookEventFilterHits(h.event_filter, exportedCodes));
+
+  const allEnums = await models.BizdataEnum.findAll({ raw: true });
+  const enums = entityScopeCodes.length
+    ? allEnums.filter((en) => prefixHit(en.code, entityScopeCodes))
+    : [];
+
+  const ancestorCodes = new Set();
+  for (const code of entityCodeSet) {
+    for (const a of buildScopeAncestorCodes(code)) ancestorCodes.add(a);
+  }
+  for (const s of entityScopeCodes) ancestorCodes.add(s);
+  const scopeDocs = ancestorCodes.size
+    ? await models.BizdataScopeDoc.findAll({
+      where: { code: { [Op.in]: [...ancestorCodes] } },
+      raw: true,
+    })
+    : [];
+
+  const materializationCount = entityIds.length
+    ? await models.BizdataMaterializationEntity.count({
+      where: { entity_id: { [Op.in]: entityIds } },
+    })
+    : 0;
+
+  const appId = app.application_id || app.id;
+  const skillLinkCount = appId
+    ? await models.SkillApplication.count({ where: { application_id: appId } })
+    : 0;
+  const pipelineAppLinkCount = appId
+    ? await models.BizdataCollectionPipelineApplication.count({
+      where: { application_id: appId },
+    })
+    : 0;
+
+  return {
+    entityScopeCodes,
+    entities,
+    apiServices,
+    pipelines,
+    webhooks,
+    metrics,
+    hooks,
+    enums,
+    scopeDocs,
+    materializationCount,
+    skillLinkCount,
+    pipelineAppLinkCount,
+  };
+}
+
+/**
+ * 预览计数（供删除确认页）
+ * @param {object} app
+ */
+async function previewCascade(app) {
+  const t = await collectCascadeTargets(app);
+  const lockedEntities = t.entities.filter((e) => e.is_locked);
+  return {
+    entityScopeCodes: t.entityScopeCodes,
+    counts: {
+      entities: t.entities.length,
+      lockedEntities: lockedEntities.length,
+      apiServices: t.apiServices.length,
+      pipelines: t.pipelines.length,
+      webhooks: t.webhooks.length,
+      metrics: t.metrics.length,
+      hooks: t.hooks.length,
+      enums: t.enums.length,
+      scopeDocs: t.scopeDocs.length,
+      materializations: t.materializationCount,
+      skillLinks: t.skillLinkCount,
+      pipelineAppLinks: t.pipelineAppLinkCount,
+    },
+    samples: {
+      entities: t.entities.slice(0, 8).map((e) => ({ code: e.code, label: e.label, is_locked: e.is_locked })),
+      apiServices: t.apiServices.slice(0, 8).map((s) => ({ code: s.code, name: s.name })),
+    },
+  };
+}
+
+async function softDeleteByIds(Model, ids, extra = {}) {
+  if (!ids.length) return 0;
+  const [n] = await Model.update(
+    { status: 'deleted', ...extra },
+    { where: { id: { [Op.in]: ids } } },
+  );
+  return n;
+}
+
+async function hardDeleteApiServices(services) {
+  let deleted = 0;
+  for (const s of services) {
+    const id = s.id;
+    // eslint-disable-next-line no-await-in-loop
+    await models.BizdataApiServiceOperation.destroy({ where: { api_service_id: id } });
+    // eslint-disable-next-line no-await-in-loop
+    await models.BizdataApiServicePermission.destroy({ where: { api_service_id: id } });
+    // eslint-disable-next-line no-await-in-loop
+    await models.BizdataApiService.destroy({ where: { id } });
+    deleted += 1;
+  }
+  return deleted;
+}
+
+/**
+ * 执行业务数据级联删除
+ * @param {object} app
+ * @param {{ dropPhysicalTables?: boolean }} options
+ */
+async function executeCascade(app, options = {}) {
+  const dropPhysicalTables = Boolean(options.dropPhysicalTables);
+  const t = await collectCascadeTargets(app);
+  const summary = {
+    deletedEntities: 0,
+    deletedApiServices: 0,
+    deletedPipelines: 0,
+    deletedWebhooks: 0,
+    deletedMetrics: 0,
+    deletedHooks: 0,
+    deletedEnums: 0,
+    deletedScopeDocs: 0,
+    deletedSkillLinks: 0,
+    deletedPipelineAppLinks: 0,
+    unlockedEntities: 0,
+    physicalTableDrops: [],
+    entityDeletion: null,
+  };
+
+  const appId = app.application_id || app.id;
+
+  // 1) 实体域：复用实体删除（含关联 API/管道/指标强关联 + 可选物理表）
+  const entityIds = t.entities.map((e) => e.id);
+  if (entityIds.length) {
+    const lockedIds = t.entities.filter((e) => e.is_locked).map((e) => e.id);
+    if (lockedIds.length) {
+      await models.BizdataEntity.update(
+        { is_locked: false },
+        { where: { id: { [Op.in]: lockedIds } } },
+      );
+      summary.unlockedEntities = lockedIds.length;
+    }
+    try {
+      const entityResult = await executeEntityDeletion({
+        deleteEntityIds: entityIds,
+        dropPhysicalTables,
+      });
+      summary.entityDeletion = entityResult?.summary || null;
+      summary.deletedEntities = entityResult?.summary?.deletedEntities || entityIds.length;
+      summary.deletedApiServices += entityResult?.summary?.deletedApiServices || 0;
+      summary.deletedPipelines += entityResult?.summary?.deletedCollectionPipelines || 0;
+      summary.deletedMetrics += entityResult?.summary?.deletedMetrics || 0;
+      summary.physicalTableDrops = entityResult?.summary?.physicalTableDrops || [];
+    } catch (err) {
+      logger.error('应用级联删除实体失败', { error: err.message, entityIds });
+      throw err;
+    }
+  }
+
+  // 2) 仍存活的 scope 命中 API（无 entity_id 或未随实体删掉）
+  const remainingApiIds = new Set(
+    (await models.BizdataApiService.findAll({
+      where: { id: { [Op.in]: t.apiServices.map((s) => s.id) } },
+      attributes: ['id'],
+      raw: true,
+    })).map((r) => r.id),
+  );
+  const leftoverApis = t.apiServices.filter((s) => remainingApiIds.has(s.id));
+  if (leftoverApis.length) {
+    summary.deletedApiServices += await hardDeleteApiServices(leftoverApis);
+  }
+
+  // 3) 仍存活的管道 → 软删
+  const remainingPipelineIds = (
+    await models.BizdataCollectionPipeline.findAll({
+      where: {
+        id: { [Op.in]: t.pipelines.map((p) => p.id) },
+        status: { [Op.ne]: 'deleted' },
+      },
+      attributes: ['id'],
+      raw: true,
+    })
+  ).map((r) => r.id);
+  if (remainingPipelineIds.length) {
+    await models.BizdataCollectionPipeline.update(
+      { entity_id: null, entity_code: null, status: 'deleted' },
+      { where: { id: { [Op.in]: remainingPipelineIds } } },
+    );
+    summary.deletedPipelines += remainingPipelineIds.length;
+  }
+
+  // 4) 指标（按 code 前缀，实体删除未覆盖的弱关联）
+  const remainingMetricIds = (
+    await models.BizdataMetric.findAll({
+      where: { id: { [Op.in]: t.metrics.map((m) => m.id) } },
+      attributes: ['id'],
+      raw: true,
+    })
+  ).map((r) => r.id);
+  if (remainingMetricIds.length) {
+    await models.BizdataMetricCard.destroy({
+      where: { metric_id: { [Op.in]: remainingMetricIds } },
+    });
+    await models.BizdataMetric.destroy({
+      where: { id: { [Op.in]: remainingMetricIds } },
+    });
+    summary.deletedMetrics += remainingMetricIds.length;
+  }
+
+  // 5) Webhooks / Hooks 软删
+  summary.deletedWebhooks = await softDeleteByIds(
+    models.OutboundWebhook,
+    t.webhooks.map((w) => w.id),
+  );
+  summary.deletedHooks = await softDeleteByIds(
+    models.AutomationHook,
+    t.hooks.map((h) => h.id),
+  );
+
+  // 6) 枚举 / Scope 文档
+  if (t.enums.length) {
+    summary.deletedEnums = await models.BizdataEnum.destroy({
+      where: { id: { [Op.in]: t.enums.map((e) => e.id) } },
+    });
+  }
+  if (t.scopeDocs.length) {
+    summary.deletedScopeDocs = await models.BizdataScopeDoc.destroy({
+      where: { id: { [Op.in]: t.scopeDocs.map((d) => d.id) } },
+    });
+  }
+
+  // 7) 本应用的 Skill / 管道绑定
+  if (appId) {
+    summary.deletedSkillLinks = await models.SkillApplication.destroy({
+      where: { application_id: appId },
+    });
+    summary.deletedPipelineAppLinks = await models.BizdataCollectionPipelineApplication.destroy({
+      where: { application_id: appId },
+    });
+  }
+
+  return summary;
+}
+
+module.exports = {
+  collectCascadeTargets,
+  previewCascade,
+  executeCascade,
+};
