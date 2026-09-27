@@ -112,6 +112,7 @@ async function collectCascadeTargets(app) {
   const skillLinkCount = appId
     ? await models.SkillApplication.count({ where: { application_id: appId } })
     : 0;
+  const dedicated = await collectExclusiveDedicatedSkills(appId);
   const pipelineAppLinkCount = appId
     ? await models.BizdataCollectionPipelineApplication.count({
       where: { application_id: appId },
@@ -131,6 +132,8 @@ async function collectCascadeTargets(app) {
     materializationCount,
     skillLinkCount,
     pipelineAppLinkCount,
+    dedicatedSkills: dedicated.skills,
+    exclusiveTools: dedicated.tools,
   };
 }
 
@@ -155,6 +158,8 @@ async function previewCascade(app) {
       scopeDocs: t.scopeDocs.length,
       materializations: t.materializationCount,
       skillLinks: t.skillLinkCount,
+      dedicatedSkills: t.dedicatedSkills.length,
+      exclusiveTools: t.exclusiveTools.length,
       pipelineAppLinks: t.pipelineAppLinkCount,
     },
     samples: {
@@ -206,6 +211,8 @@ async function executeCascade(app, options = {}) {
     deletedEnums: 0,
     deletedScopeDocs: 0,
     deletedSkillLinks: 0,
+    deletedSkills: 0,
+    deletedTools: 0,
     deletedPipelineAppLinks: 0,
     unlockedEntities: 0,
     physicalTableDrops: [],
@@ -309,12 +316,27 @@ async function executeCascade(app, options = {}) {
     });
   }
   if (t.scopeDocs.length) {
-    summary.deletedScopeDocs = await models.BizdataScopeDoc.destroy({
-      where: { id: { [Op.in]: t.scopeDocs.map((d) => d.id) } },
-    });
+    // scope_docs 主键是 code，没有 id 列
+    const codes = t.scopeDocs.map((d) => d.code).filter(Boolean);
+    summary.deletedScopeDocs = codes.length
+      ? await models.BizdataScopeDoc.destroy({
+        where: { code: { [Op.in]: codes } },
+      })
+      : 0;
   }
 
-  // 7) 本应用的 Skill / 管道绑定
+  // 7) 仅绑定本应用的专用 Skill，以及只被这些 Skill 使用的 Tool。
+  // 全局 Skill、以及仍被其他 Skill 使用的 Tool（如 http-request）只解除绑定，不删本体。
+  if (t.exclusiveTools.length) {
+    summary.deletedTools = await models.Tool.destroy({
+      where: { id: { [Op.in]: t.exclusiveTools.map((tool) => tool.id) } },
+    });
+  }
+  if (t.dedicatedSkills.length) {
+    summary.deletedSkills = await models.Skill.destroy({
+      where: { id: { [Op.in]: t.dedicatedSkills.map((skill) => skill.id) } },
+    });
+  }
   if (appId) {
     summary.deletedSkillLinks = await models.SkillApplication.destroy({
       where: { application_id: appId },
@@ -327,8 +349,120 @@ async function executeCascade(app, options = {}) {
   return summary;
 }
 
+/**
+ * 找出「只挂在该应用上」的专用 Skill，以及只被这些 Skill 引用的 Tool。
+ * 仍被其他应用绑定的专用 Skill、仍被其他 Skill 使用的 Tool 不在删除范围内。
+ */
+async function collectExclusiveDedicatedSkills(appId) {
+  const empty = { skills: [], tools: [] };
+  if (!appId) return empty;
+  const links = await models.SkillApplication.findAll({
+    where: { application_id: appId },
+    attributes: ['skill_id'],
+    raw: true,
+  });
+  const linkedIds = [...new Set(links.map((link) => link.skill_id))];
+  if (!linkedIds.length) return empty;
+  const skills = await models.Skill.findAll({
+    where: { id: { [Op.in]: linkedIds }, is_dedicated: true },
+    attributes: ['id', 'slug', 'name'],
+    raw: true,
+  });
+  if (!skills.length) return empty;
+  const skillIds = skills.map((skill) => skill.id);
+  const otherLinks = await models.SkillApplication.findAll({
+    where: {
+      skill_id: { [Op.in]: skillIds },
+      application_id: { [Op.ne]: appId },
+    },
+    attributes: ['skill_id'],
+    raw: true,
+  });
+  const sharedSkillIds = new Set(otherLinks.map((link) => link.skill_id));
+  const exclusiveSkills = skills.filter((skill) => !sharedSkillIds.has(skill.id));
+  const exclusiveSkillIds = exclusiveSkills.map((skill) => skill.id);
+  if (!exclusiveSkillIds.length) return empty;
+  const skillTools = await models.SkillTool.findAll({
+    where: { skill_id: { [Op.in]: exclusiveSkillIds } },
+    attributes: ['tool_id'],
+    raw: true,
+  });
+  const toolIds = [...new Set(skillTools.map((row) => row.tool_id))];
+  if (!toolIds.length) return { skills: exclusiveSkills, tools: [] };
+  const otherUses = await models.SkillTool.findAll({
+    where: {
+      tool_id: { [Op.in]: toolIds },
+      skill_id: { [Op.notIn]: exclusiveSkillIds },
+    },
+    attributes: ['tool_id'],
+    raw: true,
+  });
+  const sharedToolIds = new Set(otherUses.map((row) => row.tool_id));
+  const exclusiveToolIds = toolIds.filter((id) => !sharedToolIds.has(id));
+  const tools = exclusiveToolIds.length
+    ? await models.Tool.findAll({
+      where: { id: { [Op.in]: exclusiveToolIds } },
+      attributes: ['id', 'slug', 'name'],
+      raw: true,
+    })
+    : [];
+  return { skills: exclusiveSkills, tools };
+}
+
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function quotePgIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
+/**
+ * 物理删除应用前，把仍指向它的可空外键置空。
+ * 系统 Bucket 里的文件不会随应用删除，但 application_id 必须先摘掉，否则外键拒绝删除。
+ * @returns {Promise<number>} 改写的行数
+ */
+async function releaseApplicationReferences(applicationId) {
+  if (!applicationId) return 0;
+  const [rows] = await models.sequelize.query(`
+    SELECT
+      n.nspname AS table_schema,
+      c.relname AS table_name,
+      a.attname AS column_name,
+      a.attnotnull AS is_required
+    FROM pg_constraint con
+    JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = con.conkey[1] AND a.attnum > 0
+    JOIN pg_class pc ON pc.oid = con.confrelid
+    JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+    WHERE con.contype = 'f'
+      AND pn.nspname = 'uac'
+      AND pc.relname = 'applications'
+      AND array_length(con.conkey, 1) = 1
+  `);
+  let count = 0;
+  for (const fk of rows) {
+    if (!IDENT_RE.test(fk.table_schema) || !IDENT_RE.test(fk.table_name) || !IDENT_RE.test(fk.column_name)) {
+      continue;
+    }
+    if (fk.is_required) {
+      throw new Error(
+        `无法删除应用:${fk.table_schema}.${fk.table_name}.${fk.column_name} 外键非空`,
+      );
+    }
+    const [, meta] = await models.sequelize.query(
+      `UPDATE ${quotePgIdentifier(fk.table_schema)}.${quotePgIdentifier(fk.table_name)}
+       SET ${quotePgIdentifier(fk.column_name)} = NULL
+       WHERE ${quotePgIdentifier(fk.column_name)} = :applicationId`,
+      { replacements: { applicationId } },
+    );
+    count += Number(meta?.rowCount || 0);
+  }
+  return count;
+}
+
 module.exports = {
   collectCascadeTargets,
   previewCascade,
   executeCascade,
+  releaseApplicationReferences,
 };

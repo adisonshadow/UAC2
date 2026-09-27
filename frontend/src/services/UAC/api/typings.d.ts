@@ -117,6 +117,8 @@ declare namespace API {
     scopeDocs?: number;
     materializations?: number;
     skillLinks?: number;
+    dedicatedSkills?: number;
+    exclusiveTools?: number;
     pipelineAppLinks?: number;
   };
 

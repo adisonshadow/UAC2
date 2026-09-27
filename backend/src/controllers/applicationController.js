@@ -778,9 +778,9 @@ class ApplicationController {
         },
       };
 
+      const cascadeService = require('../services/applicationCascadeDeleteService');
       let cascadeResult = null;
       if (deleteBizdata) {
-        const cascadeService = require('../services/applicationCascadeDeleteService');
         cascadeResult = await cascadeService.executeCascade(application, {
           dropPhysicalTables,
         });
@@ -792,6 +792,8 @@ class ApplicationController {
         storageResult = await storageService.deleteBucketsForApplication(id);
       }
 
+      const releasedReferences = await cascadeService.releaseApplicationReferences(id);
+
       // 物理删除：paranoid 软删会留下同 code tombstone，阻断后续同 code 导入
       await application.destroy({ force: true });
       ctx.body = {
@@ -802,6 +804,7 @@ class ApplicationController {
           deletedBuckets: storageResult ? storageResult.bucketsDeleted : undefined,
           deletedObjects: storageResult ? storageResult.objectsDeleted : undefined,
           skippedSystemBuckets: storageResult ? storageResult.skippedSystem : undefined,
+          releasedReferences,
         },
       };
     } catch (error) {

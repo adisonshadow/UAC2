@@ -426,7 +426,9 @@ router.get(
  *     description: |
  *       物理删除指定应用（非软删，避免同 code tombstone 阻断再次导入）。
  *       默认同时按与导出相同的 scope 前缀规则级联删除数据模型、API、管道、指标、
- *       Webhook、Hook、枚举及物化元数据等；可选删除物理物化表、以及归属 Bucket/文件。
+ *       Webhook、Hook、枚举、Scope 文档、仅绑定本应用的专用 Skill 及其独占 Tool、物化元数据等；
+ *       全局 Skill 与仍被其他 Skill 使用的 Tool 只解除绑定。可选删除物理物化表、以及归属 Bucket/文件。
+ *       系统 Bucket 中仍归属该应用的文件记录不会删除，但会先摘掉 application_id，避免外键拦住删除。
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -447,7 +449,7 @@ router.get(
  *               deleteBizdata:
  *                 type: boolean
  *                 default: true
- *                 description: 是否按应用 scope 级联删除业务数据（实体/API/管道/指标/Webhook/Hook 等）
+ *                 description: 是否按应用 scope 级联删除业务数据（实体/API/管道/指标/Webhook/Hook/专用 Skill 及其独占 Tool 等）
  *               dropPhysicalTables:
  *                 type: boolean
  *                 default: false

@@ -120,7 +120,7 @@ const ApplicationDeletePage: React.FC = () => {
             { deleteBizdata, dropPhysicalTables, deleteBuckets },
           );
           if (!isApiSuccess(res)) {
-            message.error(res.message || '删除失败');
+            message.error({ content: res.message || '删除失败', duration: 30 });
             return;
           }
           const data = getApiData<{
@@ -146,7 +146,7 @@ const ApplicationDeletePage: React.FC = () => {
           message.success(bits.join('；'));
           navigate(listPath, { replace: true });
         } catch {
-          message.error('删除失败');
+          message.error({ content: '删除失败', duration: 30 });
         } finally {
           setSubmitting(false);
         }
@@ -166,6 +166,8 @@ const ApplicationDeletePage: React.FC = () => {
     { key: 'hooks', label: '自动化 Hook', value: counts?.hooks ?? 0 },
     { key: 'enums', label: '枚举', value: counts?.enums ?? 0 },
     { key: 'scopeDocs', label: 'Scope 文档', value: counts?.scopeDocs ?? 0 },
+    { key: 'dedicatedSkills', label: '仅本应用的专用 Skill', value: counts?.dedicatedSkills ?? 0 },
+    { key: 'exclusiveTools', label: '仅被这些 Skill 使用的 Tool', value: counts?.exclusiveTools ?? 0 },
   ];
 
   return (
@@ -232,7 +234,7 @@ const ApplicationDeletePage: React.FC = () => {
                   if (!e.target.checked) setDropPhysicalTables(false);
                 }}
               >
-                同时删除 Scope 命中的数据模型、API、管道、指标、Webhook、Hook 等
+                同时删除 Scope 命中的数据模型、API、管道、指标、Webhook、Hook，以及仅绑定本应用的专用 Skill 和只被它们使用的 Tool
               </Checkbox>
               <div style={{ color: '#888', fontSize: 12, marginTop: 4, marginLeft: 24 }}>
                 匹配规则与「应用导出」一致：优先 bizdata_scope_codes，否则回退 api_data_scope.domainCodes。

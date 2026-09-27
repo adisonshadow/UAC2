@@ -19,6 +19,8 @@
  * - data_only 模式:不落结构,目标无同 code 实体或版本不符 → 跳过写数。
  * - 应用主键沿用源 application_id(手工指定的 ID 不能在目标换成新 UUID);
  *   仅 overwrite 才对「同 code 不同 ID」做主键对齐,skip 沿用目标 ID。
+ *   同 code 软删行若主键与源 ID 相同则直接恢复,避免 storage_objects 等外键挡住物理删除;
+ *   主键不同时先摘掉外键再物理清除,新应用落库后把文件引用改挂回去。
  * - 安全模式:导入请求 options.safeMode 可覆盖包内设置;未传时默认 true,
  *   覆盖导入把已发布 API/管道/Webhook 退回 draft。显式传 false 才保持源发布状态。
  */
@@ -92,13 +94,108 @@ function tempApplicationCode(sourceId) {
   return `~${String(sourceId).replace(/-/g, '').slice(0, 48)}`;
 }
 
+/**
+ * 指向 uac.applications(application_id) 的单列外键。
+ * 物理删除应用前必须先摘掉,否则 storage_objects 等会直接把导入事务打回。
+ */
+async function listIncomingApplicationFks(transaction) {
+  const [rows] = await models.sequelize.query(`
+    SELECT
+      n.nspname AS table_schema,
+      c.relname AS table_name,
+      a.attname AS column_name,
+      a.attnotnull AS is_required,
+      pk.attname AS pk_column
+    FROM pg_constraint con
+    JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = con.conkey[1] AND a.attnum > 0
+    JOIN pg_class pc ON pc.oid = con.confrelid
+    JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+    LEFT JOIN LATERAL (
+      SELECT ia.attname
+      FROM pg_index i
+      JOIN pg_attribute ia ON ia.attrelid = c.oid AND ia.attnum = i.indkey[0] AND ia.attnum > 0
+      WHERE i.indrelid = c.oid AND i.indisprimary AND i.indnkeyatts = 1
+      LIMIT 1
+    ) pk ON true
+    WHERE con.contype = 'f'
+      AND pn.nspname = 'uac'
+      AND pc.relname = 'applications'
+      AND array_length(con.conkey, 1) = 1
+  `, { transaction });
+  return rows;
+}
+
+/** 把仍指向该应用的外键暂存为 NULL,返回可改挂回去的主键列表。 */
+async function detachApplicationFks(applicationId, transaction) {
+  const fks = await listIncomingApplicationFks(transaction);
+  const parked = [];
+  for (const fk of fks) {
+    if (!IDENT_RE.test(fk.table_schema) || !IDENT_RE.test(fk.table_name) || !IDENT_RE.test(fk.column_name)) {
+      continue;
+    }
+    if (fk.is_required) {
+      throw new Error(
+        `无法清除应用 ${applicationId}:${fk.table_schema}.${fk.table_name}.${fk.column_name} 外键非空`,
+      );
+    }
+    if (!fk.pk_column || !IDENT_RE.test(fk.pk_column)) {
+      throw new Error(`无法暂存应用引用:${fk.table_schema}.${fk.table_name} 没有单列主键`);
+    }
+    const [hits] = await models.sequelize.query(
+      `SELECT ${quotePgIdentifier(fk.pk_column)} AS id
+       FROM ${quotePgIdentifier(fk.table_schema)}.${quotePgIdentifier(fk.table_name)}
+       WHERE ${quotePgIdentifier(fk.column_name)} = :applicationId`,
+      { replacements: { applicationId }, transaction },
+    );
+    if (!hits.length) continue;
+    await models.sequelize.query(
+      `UPDATE ${quotePgIdentifier(fk.table_schema)}.${quotePgIdentifier(fk.table_name)}
+       SET ${quotePgIdentifier(fk.column_name)} = NULL
+       WHERE ${quotePgIdentifier(fk.column_name)} = :applicationId`,
+      { replacements: { applicationId }, transaction },
+    );
+    parked.push({
+      table_schema: fk.table_schema,
+      table_name: fk.table_name,
+      column_name: fk.column_name,
+      pk_column: fk.pk_column,
+      ids: hits.map((hit) => hit.id),
+    });
+  }
+  return parked;
+}
+
+/** 把 detachApplicationFks 摘掉的行改挂到新应用。应用行必须已经存在。 */
+async function reattachApplicationFks(parked, applicationId, transaction) {
+  if (!parked?.length || !applicationId) return 0;
+  let count = 0;
+  for (const item of parked) {
+    const ids = item.ids || [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      if (!chunk.length) continue;
+      await models.sequelize.query(
+        `UPDATE ${quotePgIdentifier(item.table_schema)}.${quotePgIdentifier(item.table_name)}
+         SET ${quotePgIdentifier(item.column_name)} = :applicationId
+         WHERE ${quotePgIdentifier(item.pk_column)} IN (:ids)`,
+        { replacements: { applicationId, ids: chunk }, transaction },
+      );
+      count += chunk.length;
+    }
+  }
+  return count;
+}
+
 async function assertApplicationIdFree(applicationId, transaction) {
   const owner = await models.Application.findByPk(applicationId, { transaction, paranoid: false });
-  if (!owner) return;
-  // 软删占用视为可回收：物理清掉后允许导入沿用原 ID
+  if (!owner) return [];
+  // 软删占用视为可回收：先摘掉仍指向它的外键,物理清掉后允许导入沿用原 ID
   if (owner.deleted_at) {
+    const parked = await detachApplicationFks(applicationId, transaction);
     await owner.destroy({ force: true, transaction });
-    return;
+    return parked;
   }
   throw new Error(`无法保持原应用 ID ${applicationId}:已被应用「${owner.code}」占用,请先处理该记录后再导入`);
 }
@@ -148,12 +245,15 @@ async function repointApplicationReferences(oldId, newId, transaction) {
 async function adoptSourceApplicationId(existing, sourceId, transaction) {
   const oldId = existing.application_id;
   const originalCode = existing.code;
-  await assertApplicationIdFree(sourceId, transaction);
+  const parked = await assertApplicationIdFree(sourceId, transaction);
   await existing.update({ code: tempApplicationCode(sourceId) }, { transaction });
   const payload = pickModelFields(models.Application, existing.get({ plain: true }));
   payload.application_id = sourceId;
   payload.code = originalCode;
   await models.Application.create(payload, { transaction });
+  if (parked.length) {
+    await reattachApplicationFks(parked, sourceId, transaction);
+  }
   await repointApplicationReferences(oldId, sourceId, transaction);
   await models.Application.destroy({
     where: { application_id: oldId },
@@ -741,21 +841,41 @@ class ImportContext {
     try {
       await this.withSectionTransaction(async (transaction) => {
         const sourceId = normalizeUuid(appRow.application_id);
+        const sourceIdNorm = sourceId ? sourceId.toLowerCase() : null;
         let existing = await models.Application.findOne({
           where: { code: appRow.code }, transaction, paranoid: false,
         });
-        // 同 code 软删行视为不存在：物理清除后走新建；避免覆盖/跳过都被 tombstone 挡住
+        let parkedRefs = [];
+        let revivedTombstone = false;
+        // 同 code 软删行视为不存在。主键与源 ID 相同时直接恢复,保留 storage_objects 等外键;
+        // 主键不同则先摘掉外键再物理清除,新行落库后再改挂。
         if (existing?.deleted_at) {
           const tombstoneId = existing.application_id;
-          await existing.destroy({ force: true, transaction });
-          section.notes.push(
-            `目标存在同 code 软删应用(${tombstoneId}),已物理清除后继续导入`,
-          );
-          existing = null;
+          const tombstoneNorm = String(tombstoneId || '').toLowerCase();
+          if (sourceIdNorm && tombstoneNorm === sourceIdNorm) {
+            await existing.restore({ transaction });
+            revivedTombstone = true;
+            section.notes.push(
+              `目标存在同 code 软删应用(${tombstoneId}),已恢复后继续导入,文件引用保持不变`,
+            );
+          } else {
+            parkedRefs = await detachApplicationFks(tombstoneId, transaction);
+            await existing.destroy({ force: true, transaction });
+            section.notes.push(
+              `目标存在同 code 软删应用(${tombstoneId}),已解除文件引用并物理清除后继续导入`,
+            );
+            existing = null;
+          }
         }
-        if (existing) {
+        if (revivedTombstone) {
+          this.targetAppId = existing.application_id;
+          const payload = pickModelFields(models.Application, appRow);
+          delete payload.application_id;
+          await existing.update(payload, { transaction });
+          section.counts.created += 1;
+          section.notes.push(`已按源应用 ID 恢复: ${sourceId}`);
+        } else if (existing) {
           const existingIdNorm = String(existing.application_id || '').toLowerCase();
-          const sourceIdNorm = sourceId ? sourceId.toLowerCase() : null;
           const idMismatch = Boolean(sourceIdNorm && existingIdNorm !== sourceIdNorm);
           if (this.strategy === 'overwrite') {
             if (idMismatch) {
@@ -788,7 +908,8 @@ class ImportContext {
         } else {
           const payload = pickModelFields(models.Application, appRow);
           if (sourceId) {
-            await assertApplicationIdFree(sourceId, transaction);
+            const parkedId = await assertApplicationIdFree(sourceId, transaction);
+            parkedRefs = parkedRefs.concat(parkedId);
             payload.application_id = sourceId;
           } else {
             delete payload.application_id;
@@ -799,6 +920,12 @@ class ImportContext {
           section.counts.created += 1;
           if (sourceId && created.application_id === sourceId) {
             section.notes.push(`已按源应用 ID 创建: ${sourceId}`);
+          }
+        }
+        if (parkedRefs.length && this.targetAppId) {
+          const moved = await reattachApplicationFks(parkedRefs, this.targetAppId, transaction);
+          if (moved) {
+            section.notes.push(`已将 ${moved} 条文件/存储引用改挂到应用 ${this.targetAppId}`);
           }
         }
         if (this.sourceAppId) {
