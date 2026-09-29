@@ -43,6 +43,8 @@ HTTPS 克隆或后续 `git pull` 失败时，见文末 [Git 改为 SSH](#8-git-�
 curl -o- https://githubproxy.cc/https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 ```
 
+**如果还不行，看下面的下面（git clone官方）**
+
 装完后先加载 nvm（不必重开 SSH）：
 
 ```bash
@@ -65,6 +67,45 @@ npm -v
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 ```
+
+#### Git clone 官网 方式
+
+安装nvm
+```bash
+# 切换到家目录操作
+cd ~
+# 从gitee镜像拉nvm仓库
+git clone https://gitee.com/mirrors/nvm.git .nvm
+cd .nvm
+# 切到 v0.40.3 版本（和你刚才想用的版本一致）
+git checkout v0.40.3
+```
+
+环境
+```bash
+echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
+echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
+echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.bashrc
+source ~/.bashrc
+nvm --version
+
+```
+安装node
+```bash
+# 列出可安装版本
+nvm list-remote
+
+# 选一个LTS，例如22
+nvm install 22
+
+# 如果怕麻烦，建议直接安装编译好的版本
+nvm install 22 --no-compile
+
+# 安装完自动激活，验证
+node -v
+which node
+```
+
 
 ### 3.2 pnpm
 
@@ -199,6 +240,23 @@ cd /var/www/UAC2
 pnpm install
 ```
 
+### 6.1 编译 `@eadaf/ai-base`（必做）
+
+`AIBase_with_example/package/ai-base` 的 `dist/` **不进 Git**（被 `AIBase_with_example/.gitignore` 忽略）。`pnpm install` 只链上 workspace 包，**不会**自动产出 `dist`。不编译的话，前端依赖 `@eadaf/ai-base` 的入口（`main` / `exports` 指向 `./dist/...`）会缺失，后续 `frontend build` / 预览 / AI 侧栏都容易挂。
+
+```bash
+cd /var/www/UAC2/AIBase_with_example/package/ai-base
+pnpm run build
+```
+
+校验：
+
+```bash
+ls dist/index.js dist/index.d.ts dist/style.css
+```
+
+日后若只更新了 ai-base 源码、前端行为却对不上，也可在 frontend 目录执行 `pnpm refresh:ai-base`（清缓存 → 再 build → 再 `pnpm install`）。
+
 初始化数据库并**短时**试跑后端（确认能起来就立刻停，不要挂着）：
 
 ```bash
@@ -249,18 +307,22 @@ npm install pm2 -g
 - 热重载开发建议 **4 核 8GB 及以上**
 - 低配云主机用下面的 **`pnpm pm2prod`**（先 build 前端，再 preview 静态资源，内存大约只要 1.5–2.5GB）
 
-低配推荐启动方式：
+低配推荐启动方式（**务必先有 ai-base 的 `dist`**，见 [§6.1](#61-编译-eadafai-base必做)）：
 
 ```bash
 cd /var/www/UAC2
+pnpm --filter ./AIBase_with_example/package/ai-base build
+# 或：cd AIBase_with_example/package/ai-base && pnpm run build
+
 pnpm --filter ./frontend build
 pnpm pm2prod
 ```
 
-高配开发机才用：
+高配开发机才用（同样建议先编译过一次 ai-base；Vite 虽有源码 alias，但 workspace 包入口仍依赖 `dist`）：
 
 ```bash
 cd /var/www/UAC2
+pnpm --filter ./AIBase_with_example/package/ai-base build
 pnpm pm2dev
 ```
 
@@ -268,8 +330,8 @@ pnpm pm2dev
 
 | 命令 | 进程名 | 说明 |
 |------|--------|------|
-| `pnpm pm2dev` | `uac-api-dev` + `eadaf-web-dev` | 仅高配开发机：API watch 热重启；前端 Vite `--host`（9527） |
-| `pnpm pm2prod` | `uac-api` + `eadaf-web` | 低配 / 长期托管：API 读 `.env.production`；需先 `pnpm --filter ./frontend build`，再 `vite preview` |
+| `pnpm pm2dev` | `uac-api-dev` + `eadaf-web-dev` | 仅高配开发机：API watch 热重启；前端 Vite `--host`（9527）；依赖已编译的 `@eadaf/ai-base` |
+| `pnpm pm2prod` | `uac-api` + `eadaf-web` | 低配 / 长期托管：API 读 `.env.production`；需先编译 ai-base，再 `pnpm --filter ./frontend build`，再 `vite preview` |
 
 ```bash
 pm2 list
@@ -322,3 +384,5 @@ git remote -v
 | `pnpm init-db` 连接失败 | `docker ps` 看 Postgres 是否 `healthy`；核对 `.env.development` 端口 `35432` |
 | 前端能开、接口 CORS 失败 | 确认 `.env.*` 里 `CORS_ORIGIN=*`（或包含当前页面 Origin），并已重启 API |
 | `pm2dev` 找不到命令 | 先在仓库根目录执行过 `pnpm install`；全局 CLI 再 `npm i -g pm2` |
+| 前端报找不到 `@eadaf/ai-base` / `dist/index.js` | `dist` 未进仓库；按 [§6.1](#61-编译-eadafai-base必做) 执行 `pnpm run build`，或 `pnpm --filter ./AIBase_with_example/package/ai-base build` |
+| AI Chat 行为与源码不一致 | 在 frontend 执行 `pnpm refresh:ai-base` 后重启前端进程 |

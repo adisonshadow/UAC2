@@ -1,0 +1,51 @@
+server {
+    listen ${LISTEN_PORT};
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 256m;
+
+    location = /runtime-config.js {
+        default_type application/javascript;
+        alias /usr/share/nginx/html/runtime-config.js;
+        add_header Cache-Control "no-store";
+    }
+
+    location /api/ {
+        proxy_pass http://${FPCU2_BFF_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://${FPCU2_BFF_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /auth/login {
+        try_files $uri /index.html;
+    }
+
+    location = /auth/callback {
+        try_files $uri /index.html;
+    }
+
+    location /auth/ {
+        proxy_pass http://${FPCU2_BFF_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

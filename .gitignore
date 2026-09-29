@@ -29,6 +29,9 @@ dist/
 dist-ssr/
 build/
 out/
+deploy/
+deploy-offline/
+deploy-offline-*.tar.gz
 *.tsbuildinfo
 
 # --- Test & coverage ---
@@ -55,6 +58,7 @@ coverage/
 
 # --- Cursor (local plans / agent state) ---
 .cursor/
+.offline-fpcu2-staging/
 
 # --- EADAF_frontend ---
 frontend/tmp/

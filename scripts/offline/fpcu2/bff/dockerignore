@@ -1,0 +1,9 @@
+node_modules
+.git
+.DS_Store
+EADAF-Deploy
+**/dist
+**/*.log
+.env
+.env.*
+!.env.example

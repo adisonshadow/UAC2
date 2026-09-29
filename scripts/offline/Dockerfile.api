@@ -1,0 +1,28 @@
+# EADAF API production image (linux/amd64)
+# Build context: repository root
+FROM node:22-bookworm
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+
+# 拷贝 workspace 清单（与 lockfile 一致），只安装 backend 生产依赖
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+COPY AIBase_with_example/package.json ./AIBase_with_example/
+COPY AIBase_with_example/package/ai-base/package.json ./AIBase_with_example/package/ai-base/
+
+RUN pnpm --filter ./backend install --prod --frozen-lockfile
+
+COPY backend/ ./backend/
+
+WORKDIR /app/backend
+
+ENV NODE_ENV=production
+ENV API_HOST=0.0.0.0
+ENV API_PORT=9526
+
+EXPOSE 9526
+
+CMD ["node", "src/app.js"]

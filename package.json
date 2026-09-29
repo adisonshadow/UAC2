@@ -7,7 +7,8 @@
     "killdev": "bash scripts/killdev.sh",
     "start": "bash scripts/preview.sh",
     "pm2dev": "pnpm --filter ./backend pm2dev && pnpm --filter ./frontend pm2dev",
-    "pm2prod": "pnpm --filter ./backend pm2prod && pnpm --filter ./frontend pm2prod"
+    "pm2prod": "pnpm --filter ./backend pm2prod && pnpm --filter ./frontend pm2prod",
+    "offline:deploy": "bash scripts/offline-deploy.sh"
   },
   "devDependencies": {
     "tsx": "^4.23.12"
