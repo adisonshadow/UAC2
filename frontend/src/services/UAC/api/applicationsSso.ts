@@ -25,6 +25,8 @@ export async function getApplicationsSsoId(
         secret?: string;
         protocol?: 'OIDC';
         redirect_uri?: string;
+        /** 是否跟随本系统访问域名/IP（登录响应中 redirect_uri 已解析为完整 URL） */
+        redirect_uri_use_system_host?: boolean;
         redirect_mode?: 'POST_REDIRECT' | 'HEADER_REDIRECT';
         base_url?: string;
         client_id?: string;

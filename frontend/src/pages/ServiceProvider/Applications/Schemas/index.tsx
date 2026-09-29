@@ -27,6 +27,7 @@ interface FormValues {
   api_enabled?: boolean;
   sso_config?: {
     redirect_uri: string;
+    redirect_uri_use_system_host?: boolean;
     redirect_mode?: 'POST_REDIRECT' | 'HEADER_REDIRECT';
     salt?: string;
     base_url?: string;

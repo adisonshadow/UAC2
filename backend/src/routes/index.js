@@ -50,9 +50,18 @@ const router = new Router();
  *           example: "OIDC"
  *         redirect_uri:
  *           type: string
- *           format: uri
- *           description: SSO回调地址（应为业务 BFF，勿填纯前端页）
+ *           description: |
+ *             SSO回调地址（应为业务 BFF，勿填纯前端页）。
+ *             当 redirect_uri_use_system_host=true 时，存端口路径（如 :13303/auth/callback）或本机路径（如 /auth/callback），
+ *             登录/跳转时按当前访问 Host 拼出完整 URL。
  *           example: "https://hrms.example.com/auth/callback"
+ *         redirect_uri_use_system_host:
+ *           type: boolean
+ *           default: false
+ *           description: |
+ *             是否跟随本系统访问域名/IP。
+ *             为 true 时 redirect_uri 仅填后缀，运行时用当前请求的 Host 拼完整回调地址（便于客户 IP 常变）。
+ *           example: false
  *         salt:
  *           type: string
  *           description: 旧版SSO签名盐（仅兼容历史数据；新接入使用密钥管理生成的统一密钥）

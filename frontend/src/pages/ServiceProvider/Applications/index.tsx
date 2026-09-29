@@ -25,7 +25,7 @@ import {
 } from '@ant-design/pro-components';
 import { UrlSyncedProTable } from '@/components/UrlSyncedProTable';
 import { useSetState } from "ahooks";
-import { Button, Modal, Space, Form, Typography, Tabs, Checkbox } from 'antd';
+import { Button, Modal, Space, Form, Typography, Tabs, Checkbox, Col, Input } from 'antd';
 import { message, modal } from '@/utils/antdAppApis';
 import { LinkOutlined } from '@ant-design/icons';
 import React, { useRef, useState, useMemo, useEffect } from "react";
@@ -98,16 +98,110 @@ function buildOutboundWebhookScopePayload(
   };
 }
 
+/** 预览「跟随本系统域名/IP」时拼出的完整重定向 URI */
+function previewSystemHostRedirectUri(suffix: string): string {
+  const uri = String(suffix || '').trim();
+  if (!uri) return '';
+  const { protocol, hostname, host } = window.location;
+  if (uri.startsWith(':')) return `${protocol}//${hostname}${uri}`;
+  if (uri.startsWith('/')) return `${protocol}//${host}${uri}`;
+  return `${protocol}//${hostname}/${uri.replace(/^\//, '')}`;
+}
+
+const SsoRedirectUriFields: React.FC = () => {
+  const useSystemHost = !!Form.useWatch(['sso_config', 'redirect_uri_use_system_host']);
+  const redirectUri = Form.useWatch(['sso_config', 'redirect_uri']);
+  const preview = useSystemHost ? previewSystemHostRedirectUri(redirectUri) : '';
+
+  return (
+    <Col span={24}>
+      <Form.Item
+        label="重定向 URI"
+        required
+        tooltip={
+          useSystemHost
+            ? '只填端口与路径（或本机路径）。登录/跳转时按当前访问本系统的域名或 IP 自动拼完整地址，适配客户环境 IP 常变。'
+            : 'SSO 登录成功后，将携带 Token 跳转到此地址（POST 或 302 方式由跳转模式决定）'
+        }
+        style={{ marginBottom: 24 }}
+      >
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Form.Item
+            name={['sso_config', 'redirect_uri_use_system_host']}
+            valuePropName="checked"
+            style={{ marginBottom: 0 }}
+          >
+            <Checkbox>自动跟随本系统域名/IP</Checkbox>
+          </Form.Item>
+          <Form.Item
+            name={['sso_config', 'redirect_uri']}
+            rules={[
+              { required: true, message: '请输入重定向 URI' },
+              {
+                validator: async (_: unknown, value: string) => {
+                  const v = String(value || '').trim();
+                  if (!v) return;
+                  if (useSystemHost) {
+                    if (/^https?:\/\//i.test(v)) {
+                      throw new Error('已勾选「自动跟随本系统域名/IP」时，请只填端口路径或本机路径，不要填完整域名');
+                    }
+                    if (v.startsWith(':')) {
+                      if (!/^:\d{1,5}(\/[^\s]*)?$/.test(v)) {
+                        throw new Error('格式应为 :端口/路径，例如 :13303/auth/callback');
+                      }
+                      return;
+                    }
+                    if (v.startsWith('/')) return;
+                    throw new Error('请填写以 :端口 或 / 开头的路径后缀');
+                  }
+                  try {
+                    const u = new URL(v);
+                    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+                      throw new Error('invalid');
+                    }
+                  } catch {
+                    throw new Error('请输入完整的 http(s) 回调地址');
+                  }
+                },
+              },
+            ]}
+            style={{ marginBottom: 0 }}
+          >
+            <Input
+              allowClear
+              placeholder={
+                useSystemHost
+                  ? ':13303/auth/callback 或 /auth/callback'
+                  : 'https://your-app.com/auth/callback'
+              }
+            />
+          </Form.Item>
+          {useSystemHost && preview ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              预览（当前访问）：{' '}
+              <Typography.Text code copyable={{ text: preview }} style={{ fontSize: 12 }}>
+                {preview}
+              </Typography.Text>
+            </Typography.Text>
+          ) : null}
+        </Space>
+      </Form.Item>
+    </Col>
+  );
+};
+
 const SsoAsideAssetField: React.FC = () => {
   const kind = Form.useWatch(['sso_config', 'login_page', 'aside_kind']) === 'image' ? 'image' : 'lottie';
   return (
-    <ProForm.Item
-      name={['sso_config', 'login_page', kind === 'image' ? 'aside_image' : 'aside_lottie']}
-      label={kind === 'image' ? '侧边栏图片' : '侧边栏 Lottie 动画'}
-      colProps={{ span: 24 }}
-    >
-      <SsoLoginAsideUpload kind={kind} />
-    </ProForm.Item>
+    <Col span={24}>
+      <Form.Item
+        name={['sso_config', 'login_page', kind === 'image' ? 'aside_image' : 'aside_lottie']}
+        label={kind === 'image' ? '侧边栏图片' : '侧边栏 Lottie 动画'}
+        style={{ marginBottom: 24 }}
+      >
+        <SsoLoginAsideUpload kind={kind} />
+      </Form.Item>
+    </Col>
   );
 };
 
@@ -291,6 +385,7 @@ const Page: React.FC = () => {
           sso_config: {
             ...record.sso_config,
             redirect_mode: record.sso_config?.redirect_mode ?? 'POST_REDIRECT',
+            redirect_uri_use_system_host: !!record.sso_config?.redirect_uri_use_system_host,
             base_url: window.location.origin,
             client_id: record.code,
             issuer: window.location.origin,
@@ -431,6 +526,7 @@ const Page: React.FC = () => {
         issuer: window.location.origin,
         client_secret: currentApplication.sso_config?.client_secret
           || currentApplication.api_connect_config?.app_secret,
+        redirect_uri_use_system_host: !!values.sso_config?.redirect_uri_use_system_host,
       };
       
       const response = await putApplicationsId(
@@ -649,16 +745,11 @@ const Page: React.FC = () => {
               return (
                 <>
                   {/* 基础配置 */}
-                  <ProFormText
-                    name={['sso_config', 'redirect_uri']}
-                    label="重定向 URI"
-                    rules={[{ required: true, message: '请输入重定向 URI' }]}
-                    placeholder="https://your-app.com/auth/callback"
-                    tooltip="SSO 登录成功后，将携带 Token 跳转到此地址（POST 或 302 方式由跳转模式决定）"
-                  />
+                  <SsoRedirectUriFields />
                   <ProFormSelect
                     name={['sso_config', 'redirect_mode']}
                     label="跳转模式"
+                    colProps={{ span: 24 }}
                     valueEnum={{
                       'POST_REDIRECT': 'POST 跳转',
                       'HEADER_REDIRECT': '302 重定向 + URL参数',
@@ -667,9 +758,11 @@ const Page: React.FC = () => {
                     tooltip="POST跳转模式：JWT信息在请求体中传递；302重定向模式：JWT信息在URL参数中传递"
                   />
 
-                  <ProForm.Item colProps={{ span: 24 }} style={{ marginBottom: 0 }}>
-                    <Typography.Text strong>登录页样式</Typography.Text>
-                  </ProForm.Item>
+                  <Col span={24}>
+                    <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+                      登录页样式
+                    </Typography.Text>
+                  </Col>
                   <ProFormText
                     name={['sso_config', 'login_page', 'subtitle']}
                     label="登录页副标题"
@@ -696,19 +789,21 @@ const Page: React.FC = () => {
                     radioType="button"
                     options={[
                       { label: 'Lottie 动画', value: 'lottie' },
-                      { label: '图片（含 SVG）', value: 'image' },
+                      { label: '图片', value: 'image' },
                     ]}
                     tooltip="选择上传 Lottie JSON 动画，或静态图片（支持 SVG）"
                     colProps={{ span: 24 }}
                   />
                   <SsoAsideAssetField />
-                  <ProForm.Item
-                    name={['sso_config', 'login_page', 'large_text']}
-                    valuePropName="checked"
-                    colProps={{ span: 24 }}
-                  >
-                    <Checkbox>使用更大的文字（适合 Pad 显示，文字放大一号）</Checkbox>
-                  </ProForm.Item>
+                  <Col span={24}>
+                    <Form.Item
+                      name={['sso_config', 'login_page', 'large_text']}
+                      valuePropName="checked"
+                      style={{ marginBottom: 24 }}
+                    >
+                      <Checkbox>使用更大的文字（适合 Pad 显示，文字放大一号）</Checkbox>
+                    </Form.Item>
+                  </Col>
 
                   {/* 额外参数 */}
                   <ProFormTextArea
@@ -723,28 +818,24 @@ const Page: React.FC = () => {
                   />
                   
                   {/* OIDC配置 - 移到额外参数下面 */}
-                  <div style={{ marginBottom: 16, marginRight: 20 }}>
-                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>
-                      客户端ID
-                    </label>
-                    <Text 
-                      copyable
-                      style={{ fontSize: 14 }}
-                    >
-                      {currentApplication?.code}
-                    </Text>
-                  </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>
-                      发行者URL
-                    </label>
-                    <Text 
-                      copyable
-                      style={{ fontSize: 14 }}
-                    >
-                      {window.location.origin}
-                    </Text>
-                  </div>
+                  <Col span={24}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>
+                        客户端ID
+                      </label>
+                      <Text copyable style={{ fontSize: 14 }}>
+                        {currentApplication?.code}
+                      </Text>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>
+                        发行者URL
+                      </label>
+                      <Text copyable style={{ fontSize: 14 }}>
+                        {window.location.origin}
+                      </Text>
+                    </div>
+                  </Col>
                 </>
               );
             }}

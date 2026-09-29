@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 const config = require('../config');
 const { resolveSsoSigningSecret, hasSsoSigningSecret } = require('../utils/ssoSecret');
+const { resolveSsoRedirectUri, requestHostInfo } = require('../utils/ssoRedirectUri');
 const logger = require('../utils/logger');
 const User = require('../models/user');
 const Role = require('../models/role');
@@ -282,6 +283,10 @@ class AuthController {
         const redirectMode = application.sso_config.redirect_mode !== undefined
           ? application.sso_config.redirect_mode
           : config.api.sso.redirectMode.default;
+        const resolvedRedirectUri = resolveSsoRedirectUri(
+          application.sso_config,
+          requestHostInfo(ctx),
+        );
 
         responseData.sso = {
           application_id: application.application_id,
@@ -289,14 +294,15 @@ class AuthController {
           application_code: application.code,
           sso_config: {
             ...application.sso_config,
-            redirect_mode: redirectMode
+            redirect_mode: redirectMode,
+            redirect_uri: resolvedRedirectUri,
           }
         };
 
         // 如果是HEADER_REDIRECT模式，在响应中标记需要302重定向
         if (redirectMode === 'HEADER_REDIRECT') {
           responseData.sso.redirect_mode = 'HEADER_REDIRECT';
-          responseData.sso.redirect_uri = application.sso_config.redirect_uri;
+          responseData.sso.redirect_uri = resolvedRedirectUri;
           // 注意：JWT信息已经在token和refresh_token字段中返回，前端可以直接使用
         }
       }

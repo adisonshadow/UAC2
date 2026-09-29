@@ -7,6 +7,11 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const { hasSsoSigningSecret, resolveSsoSigningSecret } = require('../utils/ssoSecret');
 const { mergeSsoLoginPage, normalizeSsoLoginPage } = require('../utils/ssoLoginPage');
+const {
+  validateSsoRedirectUriConfig,
+  resolveSsoRedirectUri,
+  requestHostInfo,
+} = require('../utils/ssoRedirectUri');
 const { getPublicApiCatalog } = require('../services/applicationApiCatalogService');
 const { getPublicApiOpenApi } = require('../services/applicationApiOpenApiService');
 const { existsBuiltinApiCode } = require('../services/builtinApi/catalog');
@@ -188,24 +193,12 @@ class ApplicationController {
         }
 
         // 验证回调地址
-        if (!sso_config.redirect_uri) {
+        const redirectCheck = validateSsoRedirectUriConfig(sso_config);
+        if (!redirectCheck.ok) {
           ctx.status = 400;
           ctx.body = {
             code: 400,
-            message: 'SSO回调地址不能为空',
-            data: null
-          };
-          return;
-        }
-
-        // 验证回调地址格式
-        try {
-          new URL(sso_config.redirect_uri);
-        } catch {
-          ctx.status = 400;
-          ctx.body = {
-            code: 400,
-            message: 'SSO回调地址格式不正确',
+            message: redirectCheck.message,
             data: null
           };
           return;
@@ -558,13 +551,12 @@ class ApplicationController {
           return;
         }
 
-        try {
-          new URL(mergedSsoConfig.redirect_uri);
-        } catch {
+        const redirectCheck = validateSsoRedirectUriConfig(mergedSsoConfig);
+        if (!redirectCheck.ok) {
           ctx.status = 400;
           ctx.body = {
             code: 400,
-            message: 'SSO回调地址格式不正确',
+            message: redirectCheck.message,
             data: null
           };
           return;
@@ -1036,7 +1028,8 @@ class ApplicationController {
         currentTimestamp,
         secret,
         protocol: application.sso_config.protocol || "OIDC",
-        redirect_uri: application.sso_config.redirect_uri,
+        redirect_uri: resolveSsoRedirectUri(application.sso_config, requestHostInfo(ctx)),
+        redirect_uri_use_system_host: !!application.sso_config.redirect_uri_use_system_host,
         redirect_mode: redirectMode,
         ...(loginPage ? { login_page: loginPage } : {}),
       };
