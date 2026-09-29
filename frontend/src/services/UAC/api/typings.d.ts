@@ -601,6 +601,11 @@ declare namespace API {
     protocol: 'OIDC';
     /** SSO回调地址 */
     redirect_uri: string;
+    /**
+     * 是否跟随本系统访问域名/IP。
+     * 为 true 时 redirect_uri 存端口路径（如 :13303/auth/callback）或本机路径，运行时按请求 Host 拼完整 URL。
+     */
+    redirect_uri_use_system_host?: boolean;
     /** SSO签名盐值，用于JWT签名（旧版兼容） */
     salt?: string;
     /** 基于currenttime、salt，使用 bcrypt 生成的Hash值 */

@@ -129,8 +129,14 @@ const router = new Router({ prefix: '/api/v1/auth' });
  *                           properties:
  *                             redirect_uri:
  *                               type: string
- *                               description: SSO回调地址（应为业务 BFF）
+ *                               description: |
+ *                                 SSO回调地址（应为业务 BFF）。
+ *                                 若配置了跟随本系统域名/IP，此处已按当前请求 Host 解析为完整 URL。
  *                               example: "https://app.example.com/auth/callback"
+ *                             redirect_uri_use_system_host:
+ *                               type: boolean
+ *                               description: 是否跟随本系统访问域名/IP（管理端配置；登录响应中 redirect_uri 已解析）
+ *                               example: false
  *                             client_secret:
  *                               type: string
  *                               description: 历史字段；验签请使用应用统一密钥（密钥管理生成的 app_secret / client_secret）

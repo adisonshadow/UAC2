@@ -131,9 +131,13 @@ router.get('/system-branding', ApplicationController.getSystemBranding);
  *                           example: "OIDC"
  *                         redirect_uri:
  *                           type: string
- *                           format: uri
- *                           description: SSO回调地址
+ *                           description: |
+ *                             SSO回调地址。若启用跟随本系统域名/IP，此处已按当前请求 Host 解析为完整 URL。
  *                           example: "http://localhost:3300/sso-callback"
+ *                         redirect_uri_use_system_host:
+ *                           type: boolean
+ *                           description: 是否跟随本系统访问域名/IP
+ *                           example: false
        *                         redirect_mode:
        *                           type: string
        *                           enum: [POST_REDIRECT, HEADER_REDIRECT]
