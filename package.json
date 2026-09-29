@@ -8,7 +8,8 @@
     "start": "bash scripts/preview.sh",
     "pm2dev": "pnpm --filter ./backend pm2dev && pnpm --filter ./frontend pm2dev",
     "pm2prod": "pnpm --filter ./backend pm2prod && pnpm --filter ./frontend pm2prod",
-    "offline:deploy": "bash scripts/offline-deploy.sh"
+    "offline:deploy": "bash scripts/offline-deploy.sh",
+    "offline:patch": "bash scripts/offline-patch.sh"
   },
   "devDependencies": {
     "tsx": "^4.23.12"

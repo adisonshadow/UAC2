@@ -10,7 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEMPLATE_DIR="$SCRIPT_DIR/offline"
 OUT_DIR="$REPO_ROOT/deploy-offline"
+RELEASES_DIR="$OUT_DIR/releases"
 ARCHIVE_NAME="deploy-offline-v1.0.tar.gz"
+ARCHIVE_PATH="$RELEASES_DIR/$ARCHIVE_NAME"
 API_IMAGE="eadaf-api:v1"
 FPCU2_BFF_IMAGE="fpcu2-bff:v1"
 FPCU2_WEB_IMAGE="fpcu2-web:v1"
@@ -95,9 +97,8 @@ pull_amd64_image() {
 }
 
 # ---------------------------------------------------------------------------
-log "1/7 清理并准备 deploy-offline"
+log "1/7 清理并准备 deploy-offline（保留 Git 跟踪的脚本骨架，只清大产物）"
 # ---------------------------------------------------------------------------
-rm -rf "$OUT_DIR"
 mkdir -p \
   "$OUT_DIR/docker-images" \
   "$OUT_DIR/frontend" \
@@ -108,8 +109,26 @@ mkdir -p \
   "$OUT_DIR/logs/api" \
   "$OUT_DIR/logs/nginx" \
   "$OUT_DIR/logs/fpcu2-nginx" \
-  "$OUT_DIR/data"
+  "$OUT_DIR/data" \
+  "$RELEASES_DIR"
 
+# 只清理可再生的大产物，不整目录 rm（避免误删已跟踪脚本）
+rm -rf "$OUT_DIR/docker-images"/*
+rm -rf "$OUT_DIR/frontend/dist"
+rm -rf "$OUT_DIR/init-sql"
+rm -rf "$OUT_DIR/init/fpcu-seed"
+mkdir -p "$OUT_DIR/docker-images" "$OUT_DIR/init-sql" "$OUT_DIR/init/fpcu-seed"
+rm -f \
+  "$OUT_DIR/centos-docker-static/docker-24.0.9.tgz" \
+  "$OUT_DIR/centos-docker-static/docker-compose"
+rm -rf "$OUT_DIR/centos-docker-static/docker"
+# 旧版曾放在仓库根的整包，若存在则移到 releases/
+if [[ -f "$REPO_ROOT/$ARCHIVE_NAME" ]]; then
+  mv -f "$REPO_ROOT/$ARCHIVE_NAME" "$ARCHIVE_PATH"
+fi
+rm -f "$ARCHIVE_PATH"
+
+touch "$OUT_DIR/docker-images/.gitkeep" "$RELEASES_DIR/.gitkeep"
 cp "$TEMPLATE_DIR/logs/api/.gitkeep" "$OUT_DIR/logs/api/.gitkeep"
 cp "$TEMPLATE_DIR/logs/nginx/.gitkeep" "$OUT_DIR/logs/nginx/.gitkeep"
 cp "$TEMPLATE_DIR/logs/fpcu2-nginx/.gitkeep" "$OUT_DIR/logs/fpcu2-nginx/.gitkeep"
@@ -254,14 +273,31 @@ chmod +x "$STATIC_DIR/install-docker-static.sh"
 
 cp "$TEMPLATE_DIR/docker-compose.yml" "$OUT_DIR/docker-compose.yml"
 cp "$TEMPLATE_DIR/nginx/conf/default.conf" "$OUT_DIR/nginx/conf/default.conf"
-cp "$TEMPLATE_DIR/env.template" "$OUT_DIR/.env"
+cp "$TEMPLATE_DIR/env.template" "$OUT_DIR/env.template"
+# 现场仍可用 .env；打包机用模板生成一份可编辑副本（不入库）
+if [[ ! -f "$OUT_DIR/.env" ]]; then
+  cp "$TEMPLATE_DIR/env.template" "$OUT_DIR/.env"
+else
+  # 保持现场已有 .env，同时刷新模板文件
+  :
+fi
+cp "$TEMPLATE_DIR/lib.sh" "$OUT_DIR/lib.sh"
 cp "$TEMPLATE_DIR/init-db.sh" "$OUT_DIR/init-db.sh"
 cp "$TEMPLATE_DIR/seed-fpcu.sh" "$OUT_DIR/seed-fpcu.sh"
+cp "$TEMPLATE_DIR/status.sh" "$OUT_DIR/status.sh"
+cp "$TEMPLATE_DIR/ctl.sh" "$OUT_DIR/ctl.sh"
 cp "$TEMPLATE_DIR/up.sh" "$OUT_DIR/up.sh"
 cp "$TEMPLATE_DIR/README-offline.md" "$OUT_DIR/README-offline.md"
 cp "$TEMPLATE_DIR/init/fpcu-application.sql.template" "$OUT_DIR/init/fpcu-application.sql.template"
 cp "$TEMPLATE_DIR/init/fix-db-connection.js" "$OUT_DIR/init/fix-db-connection.js"
-chmod +x "$OUT_DIR/init-db.sh" "$OUT_DIR/seed-fpcu.sh" "$OUT_DIR/up.sh"
+chmod +x \
+  "$OUT_DIR/lib.sh" \
+  "$OUT_DIR/init-db.sh" \
+  "$OUT_DIR/seed-fpcu.sh" \
+  "$OUT_DIR/status.sh" \
+  "$OUT_DIR/ctl.sh" \
+  "$OUT_DIR/up.sh" \
+  "$OUT_DIR/centos-docker-static/install-docker-static.sh"
 
 # FPCU seed 脚本（来自 FPCU2 仓库）
 for seed in seed-fpcu-bizdata.mjs seed-fpcu-api-services.mjs seed-fpcu-device-mock.mjs; do
@@ -340,16 +376,24 @@ fi
 rm -rf "$REPO_ROOT/.offline-fpcu2-staging"
 
 # ---------------------------------------------------------------------------
-log "6/7 打包 ${ARCHIVE_NAME}"
+log "6/7 打包到 deploy-offline/releases/${ARCHIVE_NAME}"
 # ---------------------------------------------------------------------------
-rm -f "$REPO_ROOT/$ARCHIVE_NAME"
-tar -C "$REPO_ROOT" -zcvf "$REPO_ROOT/$ARCHIVE_NAME" deploy-offline
+# 压缩包不包含 releases/ 自身，避免套娃
+rm -f "$ARCHIVE_PATH"
+tar -C "$REPO_ROOT" \
+  --exclude='deploy-offline/releases' \
+  --exclude='deploy-offline/.env' \
+  --exclude='deploy-offline/**/.DS_Store' \
+  -zcvf "$ARCHIVE_PATH" \
+  deploy-offline
 
 log "完成"
 echo "目录: $OUT_DIR"
-echo "压缩包: $REPO_ROOT/$ARCHIVE_NAME"
+echo "压缩包: $ARCHIVE_PATH"
 echo "含 FPCU2: $FPCU2_ROOT"
 echo "镜像:"
 ls -lh "$OUT_DIR/docker-images"
 echo "静态 Docker:"
 ls -lh "$OUT_DIR/centos-docker-static"
+echo "releases:"
+ls -lh "$RELEASES_DIR"
