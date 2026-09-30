@@ -71,7 +71,51 @@ chmod +x up.sh status.sh ctl.sh init-db.sh seed-fpcu.sh
 6. FPCU seed
 7. **`./status.sh` 巡检失败则整体失败**（不会假报「启动完成」）
 
-## 4. 状态查看（必用）
+## 4. 中途失败 / 只有数据库在跑时如何继续
+
+典型现象：`docker ps` 里只有 **EADAF-postgres / EADAF-redis / EADAF-mysql**，没有 **EADAF-api、EADAF-web、FPCU2-bff、FPCU2-web**（端口 9526 / 9527 / 13303 / 13308 都起不来）。说明上次 `./up.sh` 在应用阶段失败或中断了。
+
+**不要**卸 Docker，也**不要**执行 `docker compose down -v`（会清掉已初始化的库数据）。
+
+### 推荐：直接再跑一遍 `./up.sh`
+
+现场目录须是带 `docker-images/*.tar` 与 `frontend/dist` 的完整包（可用新整包覆盖脚本与资源，保留已有 `.env` 与数据卷）：
+
+```bash
+cd /path/to/deploy-offline
+
+# 确认 .env 中 PUBLIC_HOST、JWT_SECRET、ENCRYPTION_KEY、数据库口令等正确
+vi .env
+
+chmod +x up.sh status.sh ctl.sh init-db.sh seed-fpcu.sh
+./up.sh
+```
+
+`up.sh` 可重复执行：数据库已在跑会直接过；`init-db.sh` 发现已有表会跳过 DROP；随后补起 **eadaf-api → eadaf-web / fpcu2-bff / fpcu2-web**，再 seed 并以 `./status.sh` 判定是否成功。
+
+### 备选：只补四个应用服务（库不动）
+
+```bash
+cd /path/to/deploy-offline
+./ctl.sh load-images eadaf-api eadaf-web fpcu2-bff fpcu2-web
+./ctl.sh reinstall eadaf-api eadaf-web fpcu2-bff fpcu2-web
+./ctl.sh seed --force   # 上次若未 seed 成功再跑
+./status.sh
+```
+
+### 仍失败时排查
+
+```bash
+./ctl.sh status
+./ctl.sh logs eadaf-api --tail 100
+./ctl.sh logs eadaf-web --tail 100
+ls frontend/dist/index.html   # 缺这个 EADAF-web 起不来
+ls docker-images/*.tar        # 确认镜像 tar 在包内
+```
+
+注意：新编排容器名是 **EADAF-web**，不是旧包的 `EADAF-nginx`。仅拷贝脚本骨架、没有镜像 tar / `frontend/dist` 时无法补装应用。
+
+## 5. 状态查看（必用）
 
 ```bash
 ./status.sh
@@ -86,7 +130,7 @@ chmod +x up.sh status.sh ctl.sh init-db.sh seed-fpcu.sh
 - `http://127.0.0.1:13308/`（FPCU2 web）
 - `http://127.0.0.1:13303/health`
 
-## 5. 分模块运维 / 覆盖重装
+## 6. 分模块运维 / 覆盖重装
 
 ```bash
 ./ctl.sh ps
@@ -110,7 +154,7 @@ chmod +x up.sh status.sh ctl.sh init-db.sh seed-fpcu.sh
 # 危险：docker compose down -v
 ```
 
-## 6. 「看不到 web」排查
+## 7. 「看不到 web」排查
 
 1. `./ctl.sh status` — 看 **EADAF-web** / **FPCU2-web** 是否 running + healthy
 2. `docker ps -a | grep -E 'EADAF-web|FPCU2-web'`
@@ -121,18 +165,18 @@ chmod +x up.sh status.sh ctl.sh init-db.sh seed-fpcu.sh
 
 旧包里容器名可能是 `EADAF-nginx`；新编排已改为 **`EADAF-web`**。请用新版 `docker-compose.yml` + 运维脚本覆盖现场后再 `./ctl.sh reinstall eadaf-web`。
 
-## 7. 运行日志（宿主机保留）
+## 8. 运行日志（宿主机保留）
 
 - EADAF API：`./logs/api/`
 - EADAF Nginx：`./logs/nginx/`
 - FPCU2 Nginx：`./logs/fpcu2-nginx/`
 
-## 8. 验证账号
+## 9. 验证账号
 
 - EADAF：`http://<PUBLIC_HOST>:9527`（默认超管见 seed，尽快改密）
 - FPCU2：`http://<PUBLIC_HOST>:13308`（SSO 登录跳转 EADAF）
 
-## 9. 单模块升级小包（发给客户）
+## 10. 单模块升级小包（发给客户）
 
 在开发机构建独立补丁（不必整包 `offline:deploy`）：
 
