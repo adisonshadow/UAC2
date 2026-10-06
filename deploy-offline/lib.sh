@@ -31,7 +31,7 @@ die() {
 }
 
 require_docker() {
-  command -v docker >/dev/null 2>&1 || die "未找到 docker。请先进入 centos-docker-static 执行 ./install-docker-static.sh"
+  command -v docker >/dev/null 2>&1 || die "未找到 docker。请先执行 ./start.sh 选择 OS/架构后安装静态 Docker"
   docker info >/dev/null 2>&1 || die "Docker 未运行或当前用户无权限"
 }
 

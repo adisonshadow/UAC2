@@ -2,7 +2,9 @@
 # scripts/offline-deploy.sh
 #
 # 在本机（需 Docker + pnpm + 可访问镜像仓库）一键生成 deploy-offline 生产离线包。
-# 用法：pnpm offline:deploy
+# 用法：
+#   pnpm offline:deploy
+#   OFFLINE_OS=ubuntu OFFLINE_ARCH=amd64 pnpm offline:deploy   # 可选；默认示例 centos + amd64
 #
 set -euo pipefail
 
@@ -57,17 +59,18 @@ download_with_fallback() {
   return 1
 }
 
-# 拉取 linux/amd64 镜像；官方源失败时走国内 library 镜像并 tag 回标准名
-pull_amd64_image() {
+# 按 PLATFORM 拉取镜像；官方源失败时走国内 library 镜像并 tag 回标准名
+pull_platform_image() {
   local name="$1"
+  local want_arch="${OFFLINE_ARCH:-amd64}"
   if docker image inspect "$name" >/dev/null 2>&1; then
     local existing
     existing="$(docker image inspect "$name" --format '{{.Architecture}}')"
-    if [[ "$existing" == "amd64" ]]; then
-      echo "本地已有 amd64: $name"
+    if [[ "$existing" == "$want_arch" ]]; then
+      echo "本地已有 ${want_arch}: $name"
       return 0
     fi
-    echo "本地 $name 为 $existing，需重新拉取 amd64"
+    echo "本地 $name 为 $existing，需重新拉取 ${want_arch}"
   fi
   local mirrors=(
     "$name"
@@ -84,21 +87,35 @@ pull_amd64_image() {
       fi
       local arch
       arch="$(docker image inspect "$name" --format '{{.Architecture}}')"
-      if [[ "$arch" != "amd64" ]]; then
-        echo "架构不是 amd64: $name ($arch)，继续尝试下一源"
+      if [[ "$arch" != "$want_arch" ]]; then
+        echo "架构不是 ${want_arch}: $name ($arch)，继续尝试下一源"
         continue
       fi
       echo "OK $name arch=$arch"
       return 0
     fi
   done
-  echo "无法拉取 amd64 镜像: $name"
+  echo "无法拉取 ${want_arch} 镜像: $name"
   return 1
 }
 
 # ---------------------------------------------------------------------------
 log "1/7 清理并准备 deploy-offline（保留 Git 跟踪的脚本骨架，只清大产物）"
 # ---------------------------------------------------------------------------
+# 默认示例平台（可用 OFFLINE_OS / OFFLINE_ARCH 覆盖，如 ubuntu + arm64）
+OFFLINE_OS="$(printf '%s' "${OFFLINE_OS:-centos}" | tr '[:upper:]' '[:lower:]')"
+OFFLINE_ARCH="$(printf '%s' "${OFFLINE_ARCH:-amd64}" | tr '[:upper:]' '[:lower:]')"
+case "$OFFLINE_ARCH" in
+  amd64|x86_64) OFFLINE_ARCH=amd64; DOCKER_STATIC_ARCH=x86_64; COMPOSE_ARCH=x86_64; PLATFORM="linux/amd64" ;;
+  arm64|aarch64) OFFLINE_ARCH=arm64; DOCKER_STATIC_ARCH=aarch64; COMPOSE_ARCH=aarch64; PLATFORM="linux/arm64" ;;
+  *) echo "不支持的 OFFLINE_ARCH=$OFFLINE_ARCH（amd64|arm64）"; exit 1 ;;
+esac
+case "$OFFLINE_OS" in
+  centos|ubuntu|debian) ;;
+  *) echo "不支持的 OFFLINE_OS=$OFFLINE_OS（centos|ubuntu|debian）"; exit 1 ;;
+esac
+STATIC_BUNDLE="docker-static/${OFFLINE_OS}-${OFFLINE_ARCH}"
+
 mkdir -p \
   "$OUT_DIR/docker-images" \
   "$OUT_DIR/frontend" \
@@ -106,6 +123,12 @@ mkdir -p \
   "$OUT_DIR/init-sql" \
   "$OUT_DIR/init/fpcu-seed" \
   "$OUT_DIR/centos-docker-static" \
+  "$OUT_DIR/docker-static/centos-amd64" \
+  "$OUT_DIR/docker-static/centos-arm64" \
+  "$OUT_DIR/docker-static/ubuntu-amd64" \
+  "$OUT_DIR/docker-static/ubuntu-arm64" \
+  "$OUT_DIR/docker-static/debian-amd64" \
+  "$OUT_DIR/docker-static/debian-arm64" \
   "$OUT_DIR/logs/api" \
   "$OUT_DIR/logs/nginx" \
   "$OUT_DIR/logs/fpcu2-nginx" \
@@ -121,8 +144,10 @@ rm -rf "$OUT_DIR/init/fpcu-seed"
 mkdir -p "$OUT_DIR/docker-images" "$OUT_DIR/init-sql" "$OUT_DIR/init/fpcu-seed"
 rm -f \
   "$OUT_DIR/centos-docker-static/docker-24.0.9.tgz" \
-  "$OUT_DIR/centos-docker-static/docker-compose"
-rm -rf "$OUT_DIR/centos-docker-static/docker"
+  "$OUT_DIR/centos-docker-static/docker-compose" \
+  "$OUT_DIR/$STATIC_BUNDLE/docker-24.0.9.tgz" \
+  "$OUT_DIR/$STATIC_BUNDLE/docker-compose"
+rm -rf "$OUT_DIR/centos-docker-static/docker" "$OUT_DIR/$STATIC_BUNDLE/docker"
 # 旧版曾放在仓库根的整包，若存在则移到 releases/
 if [[ -f "$REPO_ROOT/$ARCHIVE_NAME" ]]; then
   mv -f "$REPO_ROOT/$ARCHIVE_NAME" "$ARCHIVE_PATH"
@@ -167,10 +192,10 @@ BASE_IMAGES=(
   "mysql:8.0"
   "redis:7-alpine"
 )
-# API Dockerfile 的 FROM 依赖，必须先有 amd64 node
-pull_amd64_image "node:22-bookworm"
+# API Dockerfile 的 FROM 依赖，必须先有对应架构的 node
+pull_platform_image "node:22-bookworm"
 for img in "${BASE_IMAGES[@]}"; do
-  pull_amd64_image "$img"
+  pull_platform_image "$img"
 done
 
 # dockerignore 必须放在 build context 根目录名为 .dockerignore
@@ -251,28 +276,49 @@ for img in "${SAVE_IMAGES[@]}"; do
   docker save -o "$OUT_DIR/docker-images/$filename" "$img"
 
   arch="$(docker image inspect "$img" --format '{{.Architecture}}')"
-  if [[ "$arch" != "amd64" ]]; then
-    echo "错误: $img 架构为 $arch，期望 amd64"
+  if [[ "$arch" != "$OFFLINE_ARCH" ]]; then
+    echo "错误: $img 架构为 $arch，期望 $OFFLINE_ARCH"
     exit 1
   fi
   echo "OK $img arch=$arch"
 done
 
 # ---------------------------------------------------------------------------
-log "5/7 下载静态 Docker + 组装配置"
+log "5/7 下载静态 Docker + 组装配置（示例平台: ${OFFLINE_OS}-${OFFLINE_ARCH}）"
 # ---------------------------------------------------------------------------
-STATIC_DIR="$OUT_DIR/centos-docker-static"
-download_with_fallback "$STATIC_DIR/docker-24.0.9.tgz" \
-  "https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-24.0.9.tgz" \
-  "https://download.docker.com/linux/static/stable/x86_64/docker-24.0.9.tgz"
+# Docker 静态包按 CPU 架构区分；同一 arch 下 CentOS/Ubuntu/Debian 共用二进制
+STATIC_CACHE="$OUT_DIR/.docker-static-cache-${OFFLINE_ARCH}"
+mkdir -p "$STATIC_CACHE"
+download_with_fallback "$STATIC_CACHE/docker-24.0.9.tgz" \
+  "https://mirrors.aliyun.com/docker-ce/linux/static/stable/${DOCKER_STATIC_ARCH}/docker-24.0.9.tgz" \
+  "https://download.docker.com/linux/static/stable/${DOCKER_STATIC_ARCH}/docker-24.0.9.tgz"
 
-download_with_fallback "$STATIC_DIR/docker-compose" \
-  "https://mirror.ghproxy.com/https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64" \
-  "https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64"
-chmod +x "$STATIC_DIR/docker-compose"
+download_with_fallback "$STATIC_CACHE/docker-compose" \
+  "https://mirror.ghproxy.com/https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-${COMPOSE_ARCH}" \
+  "https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-${COMPOSE_ARCH}"
+chmod +x "$STATIC_CACHE/docker-compose"
 
-cp "$TEMPLATE_DIR/centos-docker-static/install-docker-static.sh" "$STATIC_DIR/install-docker-static.sh"
-chmod +x "$STATIC_DIR/install-docker-static.sh"
+for os in centos ubuntu debian; do
+  dest="$OUT_DIR/docker-static/${os}-${OFFLINE_ARCH}"
+  mkdir -p "$dest"
+  cp -f "$STATIC_CACHE/docker-24.0.9.tgz" "$dest/docker-24.0.9.tgz"
+  cp -f "$STATIC_CACHE/docker-compose" "$dest/docker-compose"
+  chmod +x "$dest/docker-compose"
+done
+rm -rf "$STATIC_CACHE"
+
+# 兼容旧路径 centos-docker-static（仅当默认示例 arch=amd64）
+mkdir -p "$OUT_DIR/centos-docker-static"
+if [[ "$OFFLINE_ARCH" == "amd64" ]]; then
+  cp -f "$OUT_DIR/docker-static/centos-amd64/docker-24.0.9.tgz" "$OUT_DIR/centos-docker-static/docker-24.0.9.tgz"
+  cp -f "$OUT_DIR/docker-static/centos-amd64/docker-compose" "$OUT_DIR/centos-docker-static/docker-compose"
+  chmod +x "$OUT_DIR/centos-docker-static/docker-compose"
+fi
+cp "$TEMPLATE_DIR/centos-docker-static/install-docker-static.sh" "$OUT_DIR/centos-docker-static/install-docker-static.sh"
+cp "$TEMPLATE_DIR/docker-static/install-docker-static.sh" "$OUT_DIR/docker-static/install-docker-static.sh"
+chmod +x \
+  "$OUT_DIR/centos-docker-static/install-docker-static.sh" \
+  "$OUT_DIR/docker-static/install-docker-static.sh"
 
 cp "$TEMPLATE_DIR/docker-compose.yml" "$OUT_DIR/docker-compose.yml"
 cp "$TEMPLATE_DIR/nginx/conf/default.conf" "$OUT_DIR/nginx/conf/default.conf"
@@ -290,9 +336,16 @@ cp "$TEMPLATE_DIR/seed-fpcu.sh" "$OUT_DIR/seed-fpcu.sh"
 cp "$TEMPLATE_DIR/status.sh" "$OUT_DIR/status.sh"
 cp "$TEMPLATE_DIR/ctl.sh" "$OUT_DIR/ctl.sh"
 cp "$TEMPLATE_DIR/up.sh" "$OUT_DIR/up.sh"
+cp "$TEMPLATE_DIR/start.sh" "$OUT_DIR/start.sh"
 cp "$TEMPLATE_DIR/README-offline.md" "$OUT_DIR/README-offline.md"
 cp "$TEMPLATE_DIR/init/fpcu-application.sql.template" "$OUT_DIR/init/fpcu-application.sql.template"
 cp "$TEMPLATE_DIR/init/fix-db-connection.js" "$OUT_DIR/init/fix-db-connection.js"
+# 预写打包时的示例平台，客户仍可用 ./start.sh 重选
+cat >"$OUT_DIR/.deploy-platform" <<EOF
+# 打包默认示例平台；客户可用 ./start.sh 重新选择
+DEPLOY_OS=${OFFLINE_OS}
+DEPLOY_ARCH=${OFFLINE_ARCH}
+EOF
 chmod +x \
   "$OUT_DIR/lib.sh" \
   "$OUT_DIR/init-db.sh" \
@@ -300,7 +353,9 @@ chmod +x \
   "$OUT_DIR/status.sh" \
   "$OUT_DIR/ctl.sh" \
   "$OUT_DIR/up.sh" \
-  "$OUT_DIR/centos-docker-static/install-docker-static.sh"
+  "$OUT_DIR/start.sh" \
+  "$OUT_DIR/centos-docker-static/install-docker-static.sh" \
+  "$OUT_DIR/docker-static/install-docker-static.sh"
 
 # FPCU seed 脚本（来自 FPCU2 仓库）
 for seed in seed-fpcu-bizdata.mjs seed-fpcu-api-services.mjs seed-fpcu-device-mock.mjs; do
@@ -393,10 +448,11 @@ tar -C "$REPO_ROOT" \
 log "完成"
 echo "目录: $OUT_DIR"
 echo "压缩包: $ARCHIVE_PATH"
-echo "含 FPCU2: $FPCU2_ROOT"
+echo "含示例业务应用 FPCU2: $FPCU2_ROOT"
+echo "平台示例: ${OFFLINE_OS}-${OFFLINE_ARCH} (PLATFORM=$PLATFORM)"
 echo "镜像:"
 ls -lh "$OUT_DIR/docker-images"
-echo "静态 Docker:"
-ls -lh "$OUT_DIR/centos-docker-static"
+echo "静态 Docker (${OFFLINE_ARCH}，已写入 centos/ubuntu/debian):"
+ls -lh "$OUT_DIR/docker-static/centos-${OFFLINE_ARCH}"
 echo "releases:"
 ls -lh "$RELEASES_DIR"
