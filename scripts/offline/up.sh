@@ -34,7 +34,7 @@ if docker inspect EADAF-nginx >/dev/null 2>&1; then
 fi
 
 apply_public_host_urls
-mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx" "$ROOT/logs/fpcu2-nginx"
+mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx" "$ROOT/logs/fpcu2-nginx" "$ROOT/logs/fpcu2-bff"
 
 log_step "2/8 加载全部镜像"
 load_module_images all

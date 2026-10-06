@@ -76,6 +76,10 @@ services:
       SSO_CALLBACK_URL: ${SSO_CALLBACK_URL:-http://localhost:13303/auth/callback}
       BFF_CORS_ORIGIN: ${FPCU2_PUBLIC_URL:-http://localhost:13308}
       FRONTEND_URL: ${FPCU2_PUBLIC_URL:-http://localhost:13308}
+      # 非本地 Mock 比对接口调试流水（单文件按时间追加）
+      JZ_COMPARE_FLOW_LOG: /data/logs/jz-compare-flow.log
+    volumes:
+      - ./logs/fpcu2-bff:/data/logs
     depends_on:
       eadaf-api:
         condition: service_healthy

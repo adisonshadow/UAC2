@@ -109,6 +109,7 @@ mkdir -p \
   "$OUT_DIR/logs/api" \
   "$OUT_DIR/logs/nginx" \
   "$OUT_DIR/logs/fpcu2-nginx" \
+  "$OUT_DIR/logs/fpcu2-bff" \
   "$OUT_DIR/data" \
   "$RELEASES_DIR"
 
@@ -132,6 +133,8 @@ touch "$OUT_DIR/docker-images/.gitkeep" "$RELEASES_DIR/.gitkeep"
 cp "$TEMPLATE_DIR/logs/api/.gitkeep" "$OUT_DIR/logs/api/.gitkeep"
 cp "$TEMPLATE_DIR/logs/nginx/.gitkeep" "$OUT_DIR/logs/nginx/.gitkeep"
 cp "$TEMPLATE_DIR/logs/fpcu2-nginx/.gitkeep" "$OUT_DIR/logs/fpcu2-nginx/.gitkeep"
+mkdir -p "$OUT_DIR/logs/fpcu2-bff"
+cp "$TEMPLATE_DIR/logs/fpcu2-bff/.gitkeep" "$OUT_DIR/logs/fpcu2-bff/.gitkeep"
 cp "$TEMPLATE_DIR/data/.gitkeep" "$OUT_DIR/data/.gitkeep"
 
 if [[ ! -d "$FPCU2_ROOT" ]]; then

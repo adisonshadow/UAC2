@@ -129,6 +129,25 @@ dump_container_logs() {
   log_err "---- docker logs --tail ${lines} ${cname} ----"
   docker logs --tail "$lines" "$cname" 2>&1 || true
   log_err "---- end logs ${cname} ----"
+  # eadaf-api 生产环境 winston 只写文件，docker logs 往往只有 DB 连接成功；补充文件日志
+  if [[ "$cname" == "EADAF-api" ]]; then
+    local api_log_dir="$OFFLINE_ROOT/logs/api"
+    if [[ -d "$api_log_dir" ]]; then
+      log_err "---- files in ${api_log_dir} ----"
+      ls -la "$api_log_dir" 2>&1 || true
+      local f
+      for f in \
+        "$api_log_dir"/rejections-*.log \
+        "$api_log_dir"/exceptions-*.log \
+        "$api_log_dir"/error-*.log \
+        "$api_log_dir"/app-*.log; do
+        [[ -f "$f" ]] || continue
+        log_err "---- tail ${lines} $(basename "$f") ----"
+        tail -n "$lines" "$f" 2>&1 || true
+      done
+      log_err "---- end file logs EADAF-api ----"
+    fi
+  fi
 }
 
 container_running() {
@@ -197,7 +216,9 @@ http_check() {
   local url="$1" expect="${2:-}"
   local code body tmp
   tmp="$(mktemp)"
-  code="$(curl -sS -o "$tmp" -w '%{http_code}' --connect-timeout 3 --max-time 10 "$url" 2>/dev/null || echo 000)"
+  # curl 连不上时会同时写出 http_code=000 并以非 0 退出；不要再用 || echo 000，否则会变成 000000 并误判为成功
+  code="$(curl -sS -o "$tmp" -w '%{http_code}' --connect-timeout 3 --max-time 10 "$url" 2>/dev/null || true)"
+  [[ -n "$code" ]] || code="000"
   body="$(cat "$tmp" 2>/dev/null || true)"
   rm -f "$tmp"
   if [[ "$code" == "000" ]]; then
@@ -244,5 +265,5 @@ print_access_urls() {
   echo "  EADAF API:    http://${host}:9526/api/v1/health"
   echo "  FPCU2 管理端: http://${host}:13308"
   echo "  FPCU2 BFF:    http://${host}:13303/health"
-  echo "  日志目录:     ./logs/api  ./logs/nginx  ./logs/fpcu2-nginx"
+  echo "  日志目录:     ./logs/api  ./logs/nginx  ./logs/fpcu2-nginx  ./logs/fpcu2-bff"
 }

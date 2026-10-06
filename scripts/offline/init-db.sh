@@ -77,9 +77,77 @@ register_fpcu_app() {
   echo "FPCU 应用注册完成"
 }
 
+# 跳过全量初始化时，仍要保证有可登录的 admin（中途失败的现场常见：表在但无用户）
+ensure_superadmin() {
+  local n
+  if ! psql_exec -tAc "SELECT to_regclass('${DB_SCHEMA}.users')" | grep -q users; then
+    echo "尚无 ${DB_SCHEMA}.users 表，跳过 admin 补种"
+    return 0
+  fi
+  n="$(psql_exec -tAc "SELECT COUNT(*) FROM ${DB_SCHEMA}.users WHERE username = 'admin' AND deleted_at IS NULL;" | tr -d '[:space:]')"
+  if [[ "${n:-0}" != "0" ]]; then
+    echo "admin 用户已存在，跳过超级管理员补种"
+    return 0
+  fi
+  echo "未找到 admin 用户，补种超级管理员（admin / 123456）..."
+  psql_exec -v ON_ERROR_STOP=1 <<'SQL'
+INSERT INTO uac.roles (role_id, role_name, code, description, status)
+VALUES (
+    '10000000-0000-0000-0000-000000000001',
+    '超级管理员',
+    'SUPER_ADMIN',
+    '系统最高权限角色',
+    'ACTIVE'
+)
+ON CONFLICT (role_id) DO NOTHING;
+
+INSERT INTO uac.users (user_id, username, password_hash, email, avatar, phone, gender, status)
+VALUES (
+    '10000000-0000-0000-0000-000000000001',
+    'admin',
+    '$2a$10$8c90r1pL61cViUzyWnGb.OesyqAoTSuWf6pfWVhSBVvaNFnuJko9.',
+    'admin@test.com',
+    '1fa0a3de-d1d2-406f-89f0-a9522e0c0c3a',
+    '13800138000',
+    'MALE',
+    'ACTIVE'
+)
+ON CONFLICT (user_id) DO NOTHING;
+
+INSERT INTO uac.role_permissions (role_id, permission_id)
+SELECT
+    '10000000-0000-0000-0000-000000000001',
+    permission_id
+FROM uac.permissions
+ON CONFLICT DO NOTHING;
+
+INSERT INTO uac.user_roles (user_id, role_id)
+VALUES (
+    '10000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001'
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO uac.data_permission_rules (role_id, resource_type, conditions, status)
+SELECT
+    '10000000-0000-0000-0000-000000000001',
+    '*',
+    '{"operator": "ALL"}'::jsonb,
+    'ACTIVE'
+WHERE NOT EXISTS (
+    SELECT 1 FROM uac.data_permission_rules
+    WHERE role_id = '10000000-0000-0000-0000-000000000001'
+      AND resource_type = '*'
+      AND deleted_at IS NULL
+);
+SQL
+  echo "超级管理员补种完成（admin / 123456）"
+}
+
 if [[ "$SKIP_FULL_INIT" -eq 1 ]]; then
+  ensure_superadmin
   register_fpcu_app
-  echo "数据库初始化完成（仅确保 FPCU 应用）"
+  echo "数据库初始化完成（跳过全量；已确保 admin / FPCU 应用）"
   exit 0
 fi
 

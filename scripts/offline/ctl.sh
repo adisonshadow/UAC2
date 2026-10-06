@@ -104,7 +104,7 @@ case "$cmd" in
   reinstall)
     [[ $# -ge 1 ]] || die "用法: ./ctl.sh reinstall <module|all>"
     apply_public_host_urls
-    mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx" "$ROOT/logs/fpcu2-nginx"
+    mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx" "$ROOT/logs/fpcu2-nginx" "$ROOT/logs/fpcu2-bff"
     if docker inspect EADAF-nginx >/dev/null 2>&1; then
       log_warn "检测到旧容器 EADAF-nginx，将移除"
       docker rm -f EADAF-nginx >/dev/null || true

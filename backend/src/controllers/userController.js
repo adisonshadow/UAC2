@@ -526,18 +526,15 @@ class UserController {
         }
       }
 
-      // 记录登录尝试
-      const loginAttempt = {
-        ip_address: ctx.ip,
-        user_agent: ctx.headers['user-agent'],
-        success: false
-      };
-
+      // 仅在用户存在时记录登录尝试（user_id 非空约束；未知用户名不落库）
       if (user) {
-        loginAttempt.user_id = user.user_id;
+        await LoginAttempt.create({
+          user_id: user.user_id,
+          ip_address: ctx.ip,
+          user_agent: ctx.headers['user-agent'],
+          success: false
+        });
       }
-
-      await LoginAttempt.create(loginAttempt);
 
       if (!user) {
         const error = new UnauthorizedError('用户名或密码错误');

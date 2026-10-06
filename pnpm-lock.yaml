@@ -201,6 +201,9 @@ importers:
       node-cron:
         specifier: ^3.0.3
         version: 3.0.3
+      path-to-regexp:
+        specifier: 6.3.0
+        version: 6.3.0
       pg:
         specifier: ^8.15.6
         version: 8.22.0

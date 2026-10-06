@@ -18,7 +18,14 @@ module.exports = {
       ...common,
       name: 'uac-api-dev',
       watch: true,
-      ignore_watch: ['node_modules', 'logs', '**/*.log'],
+      ignore_watch: [
+        'node_modules',
+        'logs',
+        'upload_test',
+        'upload',
+        '**/*.log',
+        'swagger.json',
+      ],
       env: {
         NODE_ENV: 'development',
       },
