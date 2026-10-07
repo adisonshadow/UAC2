@@ -168,86 +168,113 @@ pm2 kill                       # 关闭 pm2 守护进程
 
 应用包不分模式。现场 `apply.sh` 读取平台目录里的 `.deploy-mode`，再走 Compose 或 `kubectl`。
 
-### 5.2 打包命令
+导出在开发机完成，得到 `.tar.gz`。导入在目标 Linux 上完成：先导入 EADAF 包，平台起来之后再导入应用包。
+
+### 5.2 导出 EADAF 包
+
+在本仓库根目录执行。交互顺序：模式 → 默认发行版 → CPU 架构 → 安装 / 升级 / 补丁 →（仅安装包）前后端端口 → 版本 → 输出目录。
 
 ```bash
 pnpm pack:eadaf
-# 交互顺序：模式 → 默认发行版 → CPU 架构 → 安装/升级/补丁 →（仅安装）前后端端口 → 版本 → 输出目录
-
-pnpm pack:app
-# 交互顺序：应用目录 → CPU 架构（须与平台包一致）→ 安装/升级/补丁 →（仅安装）应用前后端端口 → 版本 → 输出目录
 ```
 
-应用仓库根目录需要 `eadaf.app.yaml`。FPCU2 使用 `preset: fpcu2`，示例见 `scripts/deploy/app-presets/fpcu2/eadaf.app.yaml.example`。
+默认写到 `deploy/EADAF/`。文件名：
 
-仍可用的兼容入口：
+| 种类 | 文件名 |
+|------|--------|
+| 安装、升级 | `eadaf-<模式>-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
+| 补丁 | `eadaf-<模式>-patch-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
+
+补丁种类是 `web`（前端）、`api`（后端）、`bizdata`（数据），多选用 `web+api`。只有数据补丁时文件名不带架构。
+
+| 种类 | 包里有什么 |
+|------|------------|
+| 安装 | 运行时引导 + 全部程序镜像 + 前端 dist + 初始化 SQL。端口只写入宿主机映射，容器内仍是 API `9526`、Web `9527` |
+| 升级 | 程序镜像 + 前端 dist + 尚未执行的表结构 SQL |
+| 补丁 | 只含所选种类。数据补丁只含系统应用 `EADAF` 的 BizData 模型 upsert |
+
+数据补丁从开发库读取 `EADAF` 的 `bizdata_scope_codes`。没有 scope、或 scope 下没有实体时，导出失败，不会打出空包或整库。
+
+兼容入口（只出离线包）：
 
 ```bash
 pnpm offline:deploy                              # 离线安装包，默认 centos + amd64
 OFFLINE_OS=ubuntu OFFLINE_ARCH=arm64 pnpm offline:deploy
-pnpm offline:patch eadaf-api                     # 平台后端补丁
-pnpm offline:patch eadaf-web                     # 平台前端补丁
+pnpm offline:patch eadaf-api                     # 后端补丁
+pnpm offline:patch eadaf-web                     # 前端补丁
 pnpm offline:patch all                           # web + api
 ```
 
-`offline:patch` 不再打包 FPCU2。业务应用用 `pnpm pack:app`。
+### 5.3 导出应用包
 
-### 5.3 产物与包名
-
-| 包 | 默认目录 | 文件名 |
-|----|----------|--------|
-| 平台安装 / 升级 | `deploy/EADAF/` | `eadaf-<模式>-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
-| 平台补丁 | `deploy/EADAF/` | `eadaf-<模式>-patch-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
-| 应用安装 / 升级 / 程序补丁 | `deploy/APP/` | `<应用名>-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
-
-补丁种类是 `web`、`api`、`bizdata`，多选用 `web+api`。只有数据、没有程序时，文件名不带 CPU 架构。应用包文件名不含离线 / 普通 / K8s。
-
-解压后的平台目录名仍是 `deploy-offline`。
-
-### 5.4 安装、升级与补丁
-
-| 种类 | 包含 | 现场效果 |
-|------|------|----------|
-| 安装 | 运行时引导 + 全部程序 + 初始化 SQL | 第一次部署。安装包里写的端口只改宿主机映射，容器内仍是 API `9526`、Web `9527` |
-| 升级 | 程序镜像 + 前端 dist + 尚未执行的表结构 SQL | 保留 `.env` 和数据卷，不重装 Docker / 集群 |
-| 补丁 | 只含所选的一种或多种 | 不重装运行时，不跑表结构迁移 |
-
-补丁三种：
-
-1. **前端 `web`**：替换静态资源并重建 Web 容器。
-2. **后端 `api`**：替换 API 镜像并重建 API 容器。新代码若依赖新表或新列，改打升级包。
-3. **数据 `bizdata`**：只 upsert 该应用自己的 BizData 模型（Scope、实体、字段、枚举、关系、API 服务、指标与管道）。不改表结构，不覆盖物化后的业务行，也不导出其他应用的模型。
-
-平台数据补丁读取开发库里系统应用 `EADAF` 的 scope。该应用没有 `bizdata_scope_codes`、也没有对应实体时，打包会失败，避免打出空包或整库。
-
-升级用 `uac.schema_migrations` 记账。旧库第一次升级只把 `schema-baseline.txt` 里已发布过的 SQL 记为已执行，不重放。
-
-### 5.5 现场安装
-
-平台（离线或普通）：
+在本仓库根目录执行，源码指向应用仓库。交互顺序：应用目录 → CPU 架构（与 EADAF 包一致）→ 安装 / 升级 / 补丁 →（仅安装包）应用前后端端口 → 版本 → 输出目录。
 
 ```bash
+pnpm pack:app
+```
+
+应用仓库根目录需要 `eadaf.app.yaml`。FPCU2 使用 `preset: fpcu2`，示例见 `scripts/deploy/app-presets/fpcu2/eadaf.app.yaml.example`。
+
+默认写到 `deploy/APP/`。文件名不含离线 / 普通 / K8s：
+
+| 种类 | 文件名 |
+|------|--------|
+| 安装、升级 | `<应用名>-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
+| 补丁 | `<应用名>-patch-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
+
+应用数据补丁写入的是该应用在 EADAF 里的 BizData，不是应用自带的另一套库。
+
+### 5.4 导入 EADAF 包
+
+把对应 `.tar.gz` 拷到目标机后解压。安装包解压出来的目录名是 `deploy-offline`。升级包和补丁包的目录名与压缩包文件名相同，不要直接盖到正在运行的目录上。
+
+#### 5.4.1 导入安装包
+
+离线或普通：
+
+```bash
+tar -zxf eadaf-offline-install-amd64-v1.2.0-20261007.tar.gz
 cd deploy-offline
 # 编辑 .env：PUBLIC_HOST、JWT_SECRET、ENCRYPTION_KEY、数据库口令
-chmod +x start.sh
+chmod +x start.sh up.sh status.sh ctl.sh init-db.sh
 ./start.sh
 ```
 
-K8s 平台包在同一目录执行 `./k8s/install.sh`。
+K8s 安装包在同一目录执行 `./k8s/install.sh`。
 
-应用包在平台已经启动之后：
+非交互示例：`./start.sh --os ubuntu --arch amd64 --action up`。
+
+#### 5.4.2 导入升级包或补丁包
+
+`DEPLOY_ROOT` 指向已经在跑的平台目录。升级保留 `.env` 和数据卷，不重装 Docker / 集群。补丁不跑表结构迁移。
 
 ```bash
+tar -zxf eadaf-offline-upgrade-amd64-v1.2.0-20261007.tar.gz
+cd eadaf-offline-upgrade-amd64-v1.2.0-20261007
 DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh
 ```
 
-升级包和补丁包同样用 `DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh`。若现场还留着旧整包里的 FPCU 容器，平台升级不会删除它们，之后改由应用包接管。
+补丁包同样是解压后执行 `./apply.sh`。升级用 `uac.schema_migrations` 记账；旧库第一次升级只把 `schema-baseline.txt` 里已发布过的 SQL 记为已执行，不重放。
+
+若现场还留着旧整包里的 FPCU 容器，这次升级不会删除它们。之后用应用包接管。
+
+### 5.5 导入应用包
+
+先完成第 5.4 节，确认 EADAF 已经启动，再导入应用包。`apply.sh` 读取平台目录里的 `.deploy-mode`，离线 / 普通走 Compose，K8s 走 `kubectl apply`。
+
+```bash
+tar -zxf fpcu2-install-amd64-v0.1.3-20261007.tar.gz
+cd fpcu2-install-amd64-v0.1.3-20261007
+DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh
+```
+
+应用的升级包、补丁包用同一条命令。应用包不负责安装 Docker 或创建集群。
 
 ## 6. 注意事项
 
 ### 6.1 不要对已有数据的库执行 init-db
 
-`pnpm init-db` 会 DROP 并重建 `uac` schema。已有库只执行对应的 `migrate-*.sql`，或走第 5.4 节的升级包。
+`pnpm init-db` 会 DROP 并重建 `uac` schema。已有库只执行对应的 `migrate-*.sql`，或按第 5.4.2 节导入升级包。
 
 ### 6.2 端口
 
@@ -269,7 +296,7 @@ DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh
 
 ## 7. 相关文档
 
-1. [deploy-offline/README-offline.md](./deploy-offline/README-offline.md) — 平台包现场安装（离线 / 普通 / K8s，安装 / 升级 / 补丁）
+1. [deploy-offline/README-offline.md](./deploy-offline/README-offline.md) — 导出与导入 EADAF 包、应用包
 2. [docs/dev-server-deploy.md](./docs/dev-server-deploy.md) — 服务器 DEV 部署（目录、Docker、nvm、init-db、pm2）
 3. [backend/README.md](./backend/README.md) — API 服务
 4. [frontend/README.md](./frontend/README.md) — 管理端前端
