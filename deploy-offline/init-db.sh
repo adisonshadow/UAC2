@@ -28,15 +28,30 @@ if [[ ! -d "$SQL_DIR" ]]; then
   exit 1
 fi
 
-if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
-  echo "Postgres 容器未运行: $CONTAINER"
-  exit 1
-fi
+k8s_postgres_pod() {
+  kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres \
+    -o jsonpath='{.items[0].metadata.name}'
+}
 
 psql_exec() {
-  docker exec -e PGPASSWORD="$DB_PASS" "$CONTAINER" \
+  if [[ "${DEPLOY_MODE:-}" == "k8s" ]]; then
+    local pod
+    pod="$(k8s_postgres_pod)"
+    [[ -n "$pod" ]] || { echo "未找到 eadaf-postgres Pod"; exit 1; }
+    kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
+      env PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" "$@"
+    return
+  fi
+  docker exec -i -e PGPASSWORD="$DB_PASS" "$CONTAINER" \
     psql -U "$DB_USER" -d "$DB_NAME" "$@"
 }
+
+if [[ "${DEPLOY_MODE:-}" != "k8s" ]]; then
+  if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+    echo "Postgres 容器未运行: $CONTAINER"
+    exit 1
+  fi
+fi
 
 echo "测试数据库连接..."
 psql_exec -c "SELECT 1;" >/dev/null
@@ -48,33 +63,35 @@ if [[ "${TABLE_COUNT:-0}" != "0" ]]; then
   SKIP_FULL_INIT=1
 fi
 
-register_fpcu_app() {
-  local tpl="$ROOT/init/fpcu-application.sql.template"
-  local tmp
-  if [[ ! -f "$tpl" ]]; then
-    echo "缺少 $tpl，跳过 FPCU 应用注册"
-    return 0
+load_sql_manifest() {
+  local manifest="$ROOT/init-sql.manifest"
+  SQL_FILES=()
+  if [[ ! -f "$manifest" ]]; then
+    echo "缺少 $manifest"
+    exit 1
   fi
-  local app_id="${FPCU2_APPLICATION_ID:-10000000-0001-4000-8000-000000006666}"
-  local app_secret="${FPCU2_APP_SECRET:-}"
-  local sso_cb="${SSO_CALLBACK_URL:-http://localhost:13303/auth/callback}"
-  local fpcu_pub="${FPCU2_PUBLIC_URL:-http://localhost:13308}"
-  if [[ -z "$app_secret" ]]; then
-    echo "缺少 FPCU2_APP_SECRET，跳过 FPCU 应用注册"
-    return 0
-  fi
-  echo "注册 FPCU 应用与存储桶..."
-  tmp="$(mktemp)"
-  sed \
-    -e "s|\${FPCU2_APPLICATION_ID}|${app_id}|g" \
-    -e "s|\${FPCU2_APP_SECRET}|${app_secret}|g" \
-    -e "s|\${SSO_CALLBACK_URL}|${sso_cb}|g" \
-    -e "s|\${FPCU2_PUBLIC_URL}|${fpcu_pub}|g" \
-    "$tpl" >"$tmp"
-  docker exec -i -e PGPASSWORD="$DB_PASS" "$CONTAINER" \
-    psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <"$tmp"
-  rm -f "$tmp"
-  echo "FPCU 应用注册完成"
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr -d '[:space:]')"
+    [[ -n "$line" ]] || continue
+    SQL_FILES+=("$line")
+  done <"$manifest"
+  [[ ${#SQL_FILES[@]} -gt 0 ]] || { echo "init-sql.manifest 为空"; exit 1; }
+}
+
+record_schema_migrations() {
+  echo "记录 schema_migrations ..."
+  psql_exec -v ON_ERROR_STOP=1 <<SQL
+CREATE TABLE IF NOT EXISTS ${DB_SCHEMA}.schema_migrations (
+  filename TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+SQL
+  local name
+  for name in "${SQL_FILES[@]}"; do
+    psql_exec -c "INSERT INTO ${DB_SCHEMA}.schema_migrations (filename) VALUES ('${name}') ON CONFLICT (filename) DO NOTHING;"
+  done
 }
 
 # 跳过全量初始化时，仍要保证有可登录的 admin（中途失败的现场常见：表在但无用户）
@@ -144,10 +161,11 @@ SQL
   echo "超级管理员补种完成（admin / 123456）"
 }
 
+load_sql_manifest
+
 if [[ "$SKIP_FULL_INIT" -eq 1 ]]; then
   ensure_superadmin
-  register_fpcu_app
-  echo "数据库初始化完成（跳过全量；已确保 admin / FPCU 应用）"
+  echo "数据库初始化完成（跳过全量；已确保 admin）。表结构增量请用升级包。"
   exit 0
 fi
 
@@ -160,8 +178,15 @@ run_sql_file() {
     exit 1
   fi
   echo "执行 $base ..."
-  docker exec -i -e PGPASSWORD="$DB_PASS" "$CONTAINER" \
-    psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <"$file"
+  if [[ "${DEPLOY_MODE:-}" == "k8s" ]]; then
+    local pod
+    pod="$(k8s_postgres_pod)"
+    kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
+      env PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <"$file"
+  else
+    docker exec -i -e PGPASSWORD="$DB_PASS" "$CONTAINER" \
+      psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <"$file"
+  fi
 }
 
 echo "开始重置 schema ${DB_SCHEMA}..."
@@ -169,48 +194,10 @@ psql_exec -c "DROP SCHEMA IF EXISTS ${DB_SCHEMA} CASCADE; CREATE SCHEMA ${DB_SCH
 echo "安装 pgcrypto..."
 psql_exec -c "CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public;"
 
-# 顺序与 backend/scripts/initdb.sh 默认路径一致（不含 mock / aibase-seed）
-SQL_FILES=(
-  schemas.sql
-  seed-eadaf-application.sql
-  aibase-schema.sql
-  aibase-skill-tool-schema.sql
-  bizdata-schema.sql
-  migrate-bizdata-api-services.sql
-  migrate-bizdata-api-exception-responses.sql
-  migrate-bizdata-collection-pipelines.sql
-  migrate-outbound-webhooks.sql
-  migrate-builtin-api-system.sql
-  migrate-operation-log-audit.sql
-  migrate-department-roles.sql
-  migrate-permission-access-restriction.sql
-  migrate-bizdata-api-services-optional-entity.sql
-  migrate-bizdata-api-services-form-v2.sql
-  migrate-bizdata-metrics.sql
-  migrate-bizdata-metrics-cron.sql
-  migrate-bizdata-metric-cards.sql
-  migrate-bizdata-scope-docs.sql
-  migrate-bizdata-data-standards.sql
-  migrate-bizdata-metadata-catalog.sql
-  migrate-apiservice-transport-protocols.sql
-  migrate-outbound-webhooks-contract.sql
-  migrate-skill-completion-strategy.sql
-  migrate-api-request-log-tool-audit.sql
-  migrate-hook-center.sql
-  migrate-application-outbound-webhook-scope.sql
-  migrate-system-storage-bucket.sql
-  migrate-eadaf-ai-skills.sql
-  20260710_add_model_rate_limit.sql
-  migrate-app-transfer-permissions.sql
-  migrate-platform-transfer-permissions.sql
-  uac-permissions-catalog-seed.sql
-  superadmin.sql
-)
-
 for name in "${SQL_FILES[@]}"; do
   run_sql_file "$SQL_DIR/$name"
 done
 
+record_schema_migrations
 echo "数据库结构初始化完成"
-register_fpcu_app
 echo "数据库初始化完成"

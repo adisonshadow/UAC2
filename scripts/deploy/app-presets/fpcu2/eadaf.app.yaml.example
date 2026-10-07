@@ -1,0 +1,7 @@
+# 放到应用仓库根目录，文件名 eadaf.app.yaml
+name: fpcu2
+version: 1.0.0
+preset: fpcu2
+applicationCode: FPCU
+webPort: 13308
+apiPort: 13303

@@ -12,13 +12,11 @@ OFFLINE_MODULES=(
   "mysql|mysql|EADAF-mysql|mysql:8.0|mysql_8.0.tar"
   "eadaf-api|eadaf-api|EADAF-api|eadaf-api:v1|eadaf-api_v1.tar"
   "eadaf-web|eadaf-web|EADAF-web|nginx:1.25-alpine|nginx_1.25-alpine.tar"
-  "fpcu2-bff|fpcu2-bff|FPCU2-bff|fpcu2-bff:v1|fpcu2-bff_v1.tar"
-  "fpcu2-web|fpcu2-web|FPCU2-web|fpcu2-web:v1|fpcu2-web_v1.tar"
 )
 
-OFFLINE_APP_MODULES=(eadaf-api eadaf-web fpcu2-bff fpcu2-web)
+OFFLINE_APP_MODULES=(eadaf-api eadaf-web)
 OFFLINE_DB_MODULES=(postgres redis mysql)
-OFFLINE_ALL_MODULES=(postgres redis mysql eadaf-api eadaf-web fpcu2-bff fpcu2-web)
+OFFLINE_ALL_MODULES=(postgres redis mysql eadaf-api eadaf-web)
 
 log_step() { printf '\n==== %s ====\n' "$*"; }
 log_ok() { printf '[OK] %s\n' "$*"; }
@@ -63,24 +61,19 @@ apply_public_host_urls() {
   load_dotenv
   local host="${PUBLIC_HOST:-localhost}"
   local scheme="${PUBLIC_SCHEME:-http}"
+  local web_port="${EADAF_WEB_HOST_PORT:-9527}"
   [[ -n "$host" ]] || return 0
 
-  EADAF_PUBLIC_URL="${scheme}://${host}:9527"
-  FPCU2_PUBLIC_URL="${scheme}://${host}:13308"
-  SSO_CALLBACK_URL="${scheme}://${host}:13303/auth/callback"
-  export EADAF_PUBLIC_URL FPCU2_PUBLIC_URL SSO_CALLBACK_URL PUBLIC_HOST="$host" PUBLIC_SCHEME="$scheme"
+  EADAF_PUBLIC_URL="${scheme}://${host}:${web_port}"
+  export EADAF_PUBLIC_URL PUBLIC_HOST="$host" PUBLIC_SCHEME="$scheme" EADAF_WEB_HOST_PORT="$web_port"
 
   if [[ "$(uname -s)" == "Darwin" ]]; then
     sed -i '' \
       -e "s|^EADAF_PUBLIC_URL=.*|EADAF_PUBLIC_URL=${EADAF_PUBLIC_URL}|" \
-      -e "s|^FPCU2_PUBLIC_URL=.*|FPCU2_PUBLIC_URL=${FPCU2_PUBLIC_URL}|" \
-      -e "s|^SSO_CALLBACK_URL=.*|SSO_CALLBACK_URL=${SSO_CALLBACK_URL}|" \
       "$env_file"
   else
     sed -i \
       -e "s|^EADAF_PUBLIC_URL=.*|EADAF_PUBLIC_URL=${EADAF_PUBLIC_URL}|" \
-      -e "s|^FPCU2_PUBLIC_URL=.*|FPCU2_PUBLIC_URL=${FPCU2_PUBLIC_URL}|" \
-      -e "s|^SSO_CALLBACK_URL=.*|SSO_CALLBACK_URL=${SSO_CALLBACK_URL}|" \
       "$env_file"
   fi
   log_ok "已按 PUBLIC_HOST=${host} 写入对外 URL"
@@ -260,10 +253,11 @@ load_module_images() {
 print_access_urls() {
   local host="${PUBLIC_HOST:-<服务器IP>}"
   echo ""
+  local web_port="${EADAF_WEB_HOST_PORT:-9527}"
+  local api_port="${EADAF_API_HOST_PORT:-9526}"
   echo "访问地址:"
-  echo "  EADAF 管理端: http://${host}:9527"
-  echo "  EADAF API:    http://${host}:9526/api/v1/health"
-  echo "  FPCU2 管理端: http://${host}:13308"
-  echo "  FPCU2 BFF:    http://${host}:13303/health"
-  echo "  日志目录:     ./logs/api  ./logs/nginx  ./logs/fpcu2-nginx  ./logs/fpcu2-bff"
+  echo "  EADAF 管理端: http://${host}:${web_port}"
+  echo "  EADAF API:    http://${host}:${api_port}/api/v1/health"
+  echo "  日志目录:     ./logs/api  ./logs/nginx"
+  echo "  业务应用由单独的应用包安装，不在本底座内。"
 }

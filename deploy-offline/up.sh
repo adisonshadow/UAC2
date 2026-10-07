@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot first boot: load images, start stack, init DB, seed FPCU, force status check.
+# One-shot first boot: load images, start platform stack, init DB, force status check.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +10,7 @@ OFFLINE_ROOT="$ROOT"
 require_docker
 init_compose
 
-log_step "1/8 预检"
+log_step "1/6 预检"
 if [[ ! -f "$ROOT/.env" ]]; then
   if [[ -f "$ROOT/env.template" ]]; then
     cp "$ROOT/env.template" "$ROOT/.env"
@@ -34,34 +34,27 @@ if docker inspect EADAF-nginx >/dev/null 2>&1; then
 fi
 
 apply_public_host_urls
-mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx" "$ROOT/logs/fpcu2-nginx" "$ROOT/logs/fpcu2-bff"
+mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx"
 
-log_step "2/8 加载全部镜像"
+log_step "2/6 加载全部镜像"
 load_module_images all
 
-log_step "3/8 启动数据库依赖"
+log_step "3/6 启动数据库依赖"
 compose up -d postgres redis mysql
 wait_container_healthy EADAF-postgres 120
 wait_container_healthy EADAF-redis 60
 wait_container_healthy EADAF-mysql 180
 
-log_step "4/8 初始化 EADAF 数据库 + 注册 FPCU 应用"
+log_step "4/6 初始化 EADAF 数据库"
 bash "$ROOT/init-db.sh"
 
-log_step "5/8 启动 eadaf-api"
+log_step "5/6 启动 eadaf-api / eadaf-web"
 compose up -d eadaf-api
 wait_container_healthy EADAF-api 240
-
-log_step "6/8 启动 eadaf-web / fpcu2-bff / fpcu2-web"
-compose up -d eadaf-web fpcu2-bff fpcu2-web
+compose up -d eadaf-web
 wait_container_healthy EADAF-web 90
-wait_container_healthy FPCU2-bff 180
-wait_container_healthy FPCU2-web 90
 
-log_step "7/8 FPCU 业务 seed"
-bash "$ROOT/seed-fpcu.sh"
-
-log_step "8/8 状态巡检（失败即判定部署未成功）"
+log_step "6/6 状态巡检（失败即判定部署未成功）"
 bash "$ROOT/status.sh"
 
 echo ""

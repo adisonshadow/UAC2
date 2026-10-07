@@ -4,7 +4,7 @@ services:
     container_name: EADAF-web
     restart: unless-stopped
     ports:
-      - "9527:9527"
+      - "${EADAF_WEB_HOST_PORT:-9527}:9527"
     volumes:
       - ./frontend/dist:/usr/share/nginx/html:ro
       - ./nginx/conf:/etc/nginx/conf.d:ro
@@ -24,7 +24,7 @@ services:
     container_name: EADAF-api
     restart: unless-stopped
     ports:
-      - "9526:9526"
+      - "${EADAF_API_HOST_PORT:-9526}:9526"
     env_file:
       - .env
     environment:
@@ -57,61 +57,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 40s
-
-  fpcu2-bff:
-    image: fpcu2-bff:v1
-    container_name: FPCU2-bff
-    restart: unless-stopped
-    ports:
-      - "13303:13303"
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      EADAF_API_BASE_URL: http://eadaf-api:9526
-      EADAF_FRONTEND_URL: ${EADAF_PUBLIC_URL:-http://localhost:9527}
-      FPCU2_DATA_STORE: eadaf
-      EADAF_CONTRACT_CHECK: "false"
-      BFF_PORT: "13303"
-      SSO_CALLBACK_URL: ${SSO_CALLBACK_URL:-http://localhost:13303/auth/callback}
-      BFF_CORS_ORIGIN: ${FPCU2_PUBLIC_URL:-http://localhost:13308}
-      FRONTEND_URL: ${FPCU2_PUBLIC_URL:-http://localhost:13308}
-      # 非本地 Mock 比对接口调试流水（单文件按时间追加）
-      JZ_COMPARE_FLOW_LOG: /data/logs/jz-compare-flow.log
-    volumes:
-      - ./logs/fpcu2-bff:/data/logs
-    depends_on:
-      eadaf-api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:13303/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 10s
-      timeout: 5s
-      retries: 18
-      start_period: 20s
-
-  fpcu2-web:
-    image: fpcu2-web:v1
-    container_name: FPCU2-web
-    restart: unless-stopped
-    ports:
-      - "13308:13308"
-    environment:
-      LISTEN_PORT: "13308"
-      FPCU2_BFF_UPSTREAM: fpcu2-bff:13303
-      EADAF_PUBLIC_URL: ${EADAF_PUBLIC_URL:-http://localhost:9527}
-      FPCU2_SSO_APPLICATION_ID: ${FPCU2_APPLICATION_ID:-10000000-0001-4000-8000-000000006666}
-    volumes:
-      - ./logs/fpcu2-nginx:/var/log/nginx
-    depends_on:
-      fpcu2-bff:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:13308/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
 
   postgres:
     image: postgres:16-alpine

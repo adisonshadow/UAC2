@@ -59,17 +59,16 @@ fi
 
 echo ""
 log_step "HTTP 巡检"
-http_check "http://127.0.0.1:9527/" || FAIL=1
-http_check "http://127.0.0.1:9526/api/v1/health" || FAIL=1
-http_check "http://127.0.0.1:13308/" || FAIL=1
-http_check "http://127.0.0.1:13303/health" || FAIL=1
+web_port="${EADAF_WEB_HOST_PORT:-9527}"
+api_port="${EADAF_API_HOST_PORT:-9526}"
+http_check "http://127.0.0.1:${web_port}/" || FAIL=1
+http_check "http://127.0.0.1:${api_port}/api/v1/health" || FAIL=1
 
 echo ""
 if [[ "$FAIL" -ne 0 ]]; then
   log_err "状态巡检失败。常用排查:"
   echo "  ./ctl.sh logs eadaf-web --tail 100"
   echo "  ./ctl.sh logs eadaf-api --tail 100"
-  echo "  ./ctl.sh logs fpcu2-web --tail 100"
   echo "  ./ctl.sh reinstall eadaf-web"
   echo "  ls -la frontend/dist logs/nginx"
   exit 1

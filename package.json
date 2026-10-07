@@ -1,6 +1,6 @@
 {
   "name": "EADAF-monorepo",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev.sh",
@@ -9,7 +9,9 @@
     "pm2dev": "pnpm --filter ./backend pm2dev && pnpm --filter ./frontend pm2dev",
     "pm2prod": "pnpm --filter ./backend pm2prod && pnpm --filter ./frontend pm2prod",
     "offline:deploy": "bash scripts/offline-deploy.sh",
-    "offline:patch": "bash scripts/offline-patch.sh"
+    "offline:patch": "bash scripts/offline-patch.sh",
+    "pack:eadaf": "bash scripts/deploy/pack-eadaf.sh",
+    "pack:app": "bash scripts/deploy/pack-app.sh"
   },
   "devDependencies": {
     "tsx": "^4.23.12"

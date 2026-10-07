@@ -7,7 +7,7 @@
 | `backend` | Koa + Sequelize REST API |
 | `frontend` | React + Vite 管理端 |
 | `AIBase_with_example` | AI Base 演示与 `@eadaf/ai-base` 源码包 |
-| `deploy-offline` | CentOS 离线生产部署（Docker Compose + 运维脚本） |
+| `deploy-offline` | 平台运行时骨架（离线 / 普通 / K8s 共用，不含业务应用） |
 
 ---
 
@@ -105,34 +105,33 @@ cd frontend && pnpm dev
 
 ---
 
-## 离线生产部署（deploy-offline）
+## 平台包与应用包
 
-面向无外网 Linux，用 Docker Compose 跑起 **EADAF**（9526/9527）。文档与默认打包以 **CentOS + amd64**、业务应用 **FPCU2**（13303/13308）为例；现场可通过 `./start.sh` 选择 CentOS / Ubuntu / Debian 与 amd64 / arm64。仓库内只跟踪脚本与配置；镜像 tar、前端 dist、发给客户的整包/补丁由构建命令生成。
+开发机用两个交互脚本打包。平台包不含业务应用。三种模式共用同一套程序镜像，差别只在怎么把 Docker / K8s 准备好：
 
-### 开发机打包
-
-```bash
-pnpm offline:deploy              # 整包 → deploy-offline/releases/deploy-offline-v*.tar.gz（默认示例 centos+amd64）
-# OFFLINE_OS=ubuntu OFFLINE_ARCH=arm64 pnpm offline:deploy   # 可选：指定打包平台
-pnpm offline:patch eadaf-api     # 单模块补丁（也支持 eadaf-web / fpcu2-bff / fpcu2-web / all）
-```
-
-### 客户侧启动（摘要）
+| 模式 | 现场怎么装运行时 | 程序镜像 |
+|------|------------------|----------|
+| 离线 | 包内静态 Docker | 包内 `docker load` |
+| 普通 | 能上网时用 yum/apt 装 Docker（已有则跳过） | 包内 `docker load` |
+| K8s | 最小清单，`hostPort`，不用 Helm | 包内导入到节点 |
 
 ```bash
-cd deploy-offline
-chmod +x start.sh
-./start.sh       # 交互选择 OS + CPU 架构 → 安装静态 Docker / 启动整栈 / 查看状态
-# 编辑 .env：PUBLIC_HOST、JWT_SECRET、ENCRYPTION_KEY、数据库口令等
-./status.sh      # 查看容器 / 端口 / HTTP 探测
-./ctl.sh reinstall eadaf-web   # 分模块覆盖重装（不删数据卷）
+pnpm pack:eadaf     # 交互：模式、发行版、架构、安装/升级/补丁、端口、输出目录
+pnpm pack:app       # 交互：应用目录、安装/升级/补丁、端口、输出目录
 ```
 
-非交互示例：`./start.sh --os ubuntu --arch amd64 --action up`。
+默认输出：
 
-补丁包解压后在客户机执行 `DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh`。
+- 平台包 `deploy/EADAF/eadaf-<模式>-<种类>-<架构>-v<版本>-<日期>.tar.gz`
+- 应用包 `deploy/APP/<应用名>-<种类>-<架构>-v<版本>-<日期>.tar.gz`（文件名不含模式）
 
-完整步骤（静态 Docker、中途失败续跑、日志路径、验证账号等）见 **[deploy-offline/README-offline.md](./deploy-offline/README-offline.md)**。
+补丁只有三种：前端程序 `web`、后端程序 `api`、数据 `bizdata`。数据补丁只 upsert 该应用自己的 bizdata 模型定义，不改表结构、不覆盖物化后的业务行。表结构增量在升级包里，用 `schema_migrations` 记账。
+
+兼容入口仍在：`pnpm offline:deploy` 打离线安装包，`pnpm offline:patch eadaf-api|eadaf-web|all` 打平台程序补丁。整包不再包含 FPCU2。
+
+现场解压后的目录名仍是 `deploy-offline`。编辑 `.env` 后执行 `./start.sh`（离线 / 普通）或 `./k8s/install.sh`（K8s）。应用包在平台装好后执行 `DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh`。应用仓库根目录需要 `eadaf.app.yaml`，FPCU2 示例见 `scripts/deploy/app-presets/fpcu2/eadaf.app.yaml.example`。
+
+步骤见 **[deploy-offline/README-offline.md](./deploy-offline/README-offline.md)**。
 
 ---
 
@@ -185,7 +184,7 @@ pm2 kill                       # 关闭 pm2 守护进程
 
 ## 子项目文档
 
-- [deploy-offline/README-offline.md](./deploy-offline/README-offline.md) — CentOS 离线生产部署（整包 / 补丁 / `up.sh` / `ctl.sh`）
+- [deploy-offline/README-offline.md](./deploy-offline/README-offline.md) — 平台包现场安装（离线 / 普通 / K8s，安装 / 升级 / 补丁）
 - [docs/dev-server-deploy.md](./docs/dev-server-deploy.md) — 服务器 DEV 部署（目录、Docker、nvm、init-db、pm2）
 - [backend/README.md](./backend/README.md) — API 服务
 - [frontend/README.md](./frontend/README.md) — 管理端前端

@@ -20,10 +20,11 @@ usage() {
   logs <module> [-f] [--tail N]  查看日志（默认 --tail 100）
   load-images [module|all]       从 docker-images/*.tar 加载镜像
   reinstall <module|all>         覆盖重装：load 镜像 + force-recreate + 等待 + status
-  seed [--force]                 运行 FPCU seed（--force 删除 data/.fpcu-seeded）
 
 模块名:
-  postgres redis mysql eadaf-api eadaf-web fpcu2-bff fpcu2-web
+  postgres redis mysql eadaf-api eadaf-web
+
+业务应用不在本底座内，请使用应用包的 apply.sh。
 
 示例:
   ./ctl.sh status
@@ -104,7 +105,7 @@ case "$cmd" in
   reinstall)
     [[ $# -ge 1 ]] || die "用法: ./ctl.sh reinstall <module|all>"
     apply_public_host_urls
-    mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx" "$ROOT/logs/fpcu2-nginx" "$ROOT/logs/fpcu2-bff"
+    mkdir -p "$ROOT/data" "$ROOT/logs/api" "$ROOT/logs/nginx"
     if docker inspect EADAF-nginx >/dev/null 2>&1; then
       log_warn "检测到旧容器 EADAF-nginx，将移除"
       docker rm -f EADAF-nginx >/dev/null || true
@@ -122,15 +123,7 @@ case "$cmd" in
     bash "$ROOT/status.sh"
     ;;
   seed)
-    force=0
-    if [[ "${1:-}" == "--force" ]]; then
-      force=1
-    fi
-    if [[ "$force" -eq 1 ]]; then
-      rm -f "$ROOT/data/.fpcu-seeded"
-      log_ok "已清除 data/.fpcu-seeded，将重新 seed"
-    fi
-    bash "$ROOT/seed-fpcu.sh"
+    die "底座不再内置业务 seed。请对应用包执行 apply.sh"
     ;;
   -h|--help|help)
     usage

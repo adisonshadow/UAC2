@@ -33,7 +33,14 @@ dist/
 dist-ssr/
 build/
 out/
-deploy/
+/deploy/*
+!/deploy/EADAF/
+!/deploy/APP/
+/deploy/EADAF/**
+!/deploy/EADAF/.gitkeep
+/deploy/APP/**
+!/deploy/APP/.gitkeep
+/deploy/.staging*/
 *.tsbuildinfo
 
 # --- Offline deploy: 跟踪脚本/配置，忽略大产物 ---

@@ -18,7 +18,7 @@ usage() {
 用法: ./start.sh [--os centos|ubuntu|debian] [--arch amd64|arm64] [--action install-docker|up|status]
 
 无参数时进入交互菜单（推荐）。
-文档中的 CentOS + amd64、业务应用 FPCU2 仅为示例组合。
+文档中的 CentOS + amd64 只是示例。业务应用请另用应用包。
 EOF
 }
 
@@ -152,7 +152,11 @@ prompt_arch() {
 prompt_action() {
   echo ""
   echo "请选择下一步："
-  echo "  1) 安装静态 Docker（首次，需包内有对应平台二进制）"
+  if [[ "$DEPLOY_MODE" == "normal" ]]; then
+    echo "  1) 用系统包管理器安装 Docker（已安装则跳过）"
+  else
+    echo "  1) 安装静态 Docker（首次，需包内有对应平台二进制）"
+  fi
   echo "  2) 启动整栈（./up.sh）"
   echo "  3) 查看状态（./status.sh）"
   echo "  4) 退出"
@@ -174,6 +178,11 @@ static_bundle_dir() {
 }
 
 run_install_docker() {
+  if [[ "$DEPLOY_MODE" == "normal" ]]; then
+    [[ -f "$ROOT/install-docker.sh" ]] || die "缺少 install-docker.sh"
+    bash "$ROOT/install-docker.sh"
+    return 0
+  fi
   local dir installer
   dir="$(static_bundle_dir)"
   installer="$STATIC_ROOT/install-docker-static.sh"
@@ -193,7 +202,7 @@ run_install_docker() {
 }
 
 run_up() {
-  chmod +x "$ROOT/up.sh" "$ROOT/status.sh" "$ROOT/ctl.sh" "$ROOT/init-db.sh" "$ROOT/seed-fpcu.sh" 2>/dev/null || true
+  chmod +x "$ROOT/up.sh" "$ROOT/status.sh" "$ROOT/ctl.sh" "$ROOT/init-db.sh" 2>/dev/null || true
   bash "$ROOT/up.sh"
 }
 
@@ -204,8 +213,19 @@ run_status() {
 
 # --- 解析 / 交互 ---
 echo "========================================"
-echo "  EADAF 离线部署（示例业务应用：FPCU2）"
+echo "  EADAF 平台部署（不含业务应用）"
 echo "========================================"
+
+if [[ -f "$ROOT/.deploy-mode" ]]; then
+  # shellcheck disable=SC1091
+  source "$ROOT/.deploy-mode"
+fi
+DEPLOY_MODE="${DEPLOY_MODE:-offline}"
+echo "部署模式: ${DEPLOY_MODE}"
+if [[ "$DEPLOY_MODE" == "k8s" ]]; then
+  echo "这是 K8s 包。请在本目录执行: ./k8s/install.sh"
+  exit 0
+fi
 
 load_saved_platform
 
