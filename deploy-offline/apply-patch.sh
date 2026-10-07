@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 应用平台补丁：web / api / bizdata，可组合。不重装 Docker，不跑表结构迁移。
+# 应用平台补丁：web / api，可组合。不重装 Docker，不跑表结构迁移。
+# 数据补丁 bizdata 已暂时停用，配置与业务数据改走管理端「系统设置」。
 set -euo pipefail
 
 PATCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,13 +19,15 @@ DEPLOY_ROOT="$(cd "$DEPLOY_ROOT" && pwd)"
 echo "DEPLOY_ROOT=$DEPLOY_ROOT"
 echo "PARTS=$PARTS"
 
-if [[ -f "$DEPLOY_ROOT/.deploy-mode" ]]; then
-  # shellcheck disable=SC1091
-  source "$DEPLOY_ROOT/.deploy-mode"
-fi
-DEPLOY_MODE="${DEPLOY_MODE:-offline}"
+# shellcheck disable=SC1091
+source "$DEPLOY_ROOT/lib.sh"
+load_deploy_choice "$DEPLOY_ROOT"
 
 has() { [[ ",$PARTS," == *",$1,"* ]]; }
+
+if has bizdata; then
+  die "数据补丁已暂时停用。请用管理端「系统设置」的 EADAF / 应用数据包导出、导入。"
+fi
 
 if has web; then
   [[ -d "$PATCH_ROOT/frontend/dist" ]] || die "补丁缺少 frontend/dist"
@@ -39,33 +42,35 @@ if has api; then
   cp -a "$PATCH_ROOT/docker-images/." "$DEPLOY_ROOT/docker-images/"
 fi
 
-if has bizdata; then
-  [[ -f "$PATCH_ROOT/bizdata-patch.sql" ]] || die "补丁缺少 bizdata-patch.sql"
-fi
+# 数据补丁暂时停用。
+# if has bizdata; then
+#   [[ -f "$PATCH_ROOT/bizdata-patch.sql" ]] || die "补丁缺少 bizdata-patch.sql"
+# fi
 
-if [[ "$DEPLOY_MODE" == "k8s" ]]; then
+if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
   if has api; then
     bash "$DEPLOY_ROOT/k8s/load-images.sh"
     bash "$DEPLOY_ROOT/k8s/install.sh" --upgrade
   elif has web; then
     bash "$DEPLOY_ROOT/k8s/install.sh" --upgrade
   fi
-  if has bizdata; then
-    DEPLOY_MODE=k8s bash -c '
-      set -euo pipefail
-      root="$1"; sql="$2"
-      # shellcheck disable=SC1091
-      if [[ -f "$root/.env" ]]; then
-        set -a
-        export $(grep -E "^[A-Za-z_][A-Za-z0-9_]*=" "$root/.env" | sed "s/#.*//" | xargs)
-        set +a
-      fi
-      pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath="{.items[0].metadata.name}")"
-      kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
-        env PGPASSWORD="${POSTGRES_PASSWORD:-123456}" \
-        psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 <"$sql"
-    ' bash "$DEPLOY_ROOT" "$PATCH_ROOT/bizdata-patch.sql"
-  fi
+  # 数据补丁暂时停用。
+  # if has bizdata; then
+  #   DEPLOY_RUNTIME=k8s bash -c '
+  #     set -euo pipefail
+  #     root="$1"; sql="$2"
+  #     # shellcheck disable=SC1091
+  #     if [[ -f "$root/.env" ]]; then
+  #       set -a
+  #       export $(grep -E "^[A-Za-z_][A-Za-z0-9_]*=" "$root/.env" | sed "s/#.*//" | xargs)
+  #       set +a
+  #     fi
+  #     pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath="{.items[0].metadata.name}")"
+  #     kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
+  #       env PGPASSWORD="${POSTGRES_PASSWORD:-123456}" \
+  #       psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 <"$sql"
+  #   ' bash "$DEPLOY_ROOT" "$PATCH_ROOT/bizdata-patch.sql"
+  # fi
 else
   # shellcheck disable=SC1091
   source "$DEPLOY_ROOT/lib.sh"
@@ -81,18 +86,19 @@ else
     compose up -d --force-recreate --no-deps eadaf-web
     wait_container_healthy EADAF-web 90
   fi
-  if has bizdata; then
-    if [[ -f "$DEPLOY_ROOT/.env" ]]; then
-      set -a
-      # shellcheck disable=SC2046
-      export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$DEPLOY_ROOT/.env" | sed 's/#.*//' | xargs)
-      set +a
-    fi
-    docker exec -i -e PGPASSWORD="${POSTGRES_PASSWORD:-123456}" "${POSTGRES_CONTAINER:-EADAF-postgres}" \
-      psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
-      <"$PATCH_ROOT/bizdata-patch.sql"
-    echo "bizdata 补丁已执行"
-  fi
+  # 数据补丁暂时停用。
+  # if has bizdata; then
+  #   if [[ -f "$DEPLOY_ROOT/.env" ]]; then
+  #     set -a
+  #     # shellcheck disable=SC2046
+  #     export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$DEPLOY_ROOT/.env" | sed 's/#.*//' | xargs)
+  #     set +a
+  #   fi
+  #   docker exec -i -e PGPASSWORD="${POSTGRES_PASSWORD:-123456}" "${POSTGRES_CONTAINER:-EADAF-postgres}" \
+  #     psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
+  #     <"$PATCH_ROOT/bizdata-patch.sql"
+  #   echo "bizdata 补丁已执行"
+  # fi
   if has api || has web; then
     bash "$DEPLOY_ROOT/status.sh"
   fi

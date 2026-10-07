@@ -4,8 +4,13 @@
  * 不导出用户、口令、物化历史、物化后的业务行。
  *
  *   node scripts/deploy/export-bizdata.cjs --application EADAF --out /tmp/bizdata-patch.sql
+ *
+ * 暂时停用：数据包补丁不再从开发库导出。配置与业务数据改走管理端「系统设置」。
  */
 'use strict';
+
+console.error('数据补丁已暂时停用。请用管理端「系统设置」的 EADAF / 应用数据包导出、导入。');
+process.exit(1);
 
 const fs = require('fs');
 const path = require('path');

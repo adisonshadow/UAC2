@@ -5,6 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+# shellcheck disable=SC1091
+source "$ROOT/lib.sh"
+load_deploy_choice "$ROOT"
 
 # shellcheck disable=SC1091
 set -a
@@ -34,7 +37,7 @@ k8s_postgres_pod() {
 }
 
 psql_exec() {
-  if [[ "${DEPLOY_MODE:-}" == "k8s" ]]; then
+  if [[ "${DEPLOY_RUNTIME:-}" == "k8s" ]]; then
     local pod
     pod="$(k8s_postgres_pod)"
     [[ -n "$pod" ]] || { echo "未找到 eadaf-postgres Pod"; exit 1; }
@@ -46,7 +49,7 @@ psql_exec() {
     psql -U "$DB_USER" -d "$DB_NAME" "$@"
 }
 
-if [[ "${DEPLOY_MODE:-}" != "k8s" ]]; then
+if [[ "${DEPLOY_RUNTIME:-}" != "k8s" ]]; then
   if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
     echo "Postgres 容器未运行: $CONTAINER"
     exit 1
@@ -178,7 +181,7 @@ run_sql_file() {
     exit 1
   fi
   echo "执行 $base ..."
-  if [[ "${DEPLOY_MODE:-}" == "k8s" ]]; then
+  if [[ "${DEPLOY_RUNTIME:-}" == "k8s" ]]; then
     local pod
     pod="$(k8s_postgres_pod)"
     kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \

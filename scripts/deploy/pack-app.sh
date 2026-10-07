@@ -24,7 +24,7 @@ usage() {
   --app-dir PATH                应用仓库根目录（内含 eadaf.app.yaml）
   --arch amd64|arm64
   --kind install|upgrade|patch
-  --patch web,api,bizdata
+  --patch web,api               补丁种类（数据补丁 bizdata 已暂时停用）
   --web-port N                  仅安装包
   --api-port N                  仅安装包
   --version VER
@@ -74,7 +74,9 @@ if [[ "$NONINT" != "1" && -t 0 ]]; then
     case "$c" in 1) KIND=install ;; 2) KIND=upgrade ;; 3) KIND=patch ;; *) die "无效种类" ;; esac
   }
   if [[ "$KIND" == "patch" && -z "$PATCH_PARTS" ]]; then
-    echo "补丁: 1) 前端 web  2) 后端 api  3) 数据 bizdata（可逗号多选）"
+    echo "补丁: 1) 前端 web  2) 后端 api（可逗号多选）"
+    # 数据补丁暂时停用。配置与业务数据改走管理端「系统设置」的应用数据包。
+    # echo "  3) 数据 bizdata"
     read -r -p "选择: " c
     PATCH_PARTS=""
     IFS=',' read -r -a arr <<<"$c"
@@ -83,7 +85,8 @@ if [[ "$NONINT" != "1" && -t 0 ]]; then
       case "$item" in
         1|web) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}web" ;;
         2|api) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}api" ;;
-        3|bizdata) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}bizdata" ;;
+        # 3|bizdata) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}bizdata" ;;
+        3|bizdata) die "数据补丁已暂时停用。请用管理端「系统设置」的应用数据包导出、导入。" ;;
         *) die "无效补丁种类: $item" ;;
       esac
     done
@@ -154,7 +157,8 @@ if [[ "$KIND" == "patch" ]]; then
     case "$p" in
       web) NEED_WEB=1 ;;
       api) NEED_API=1 ;;
-      bizdata) NEED_BIZ=1 ;;
+      # bizdata) NEED_BIZ=1 ;;
+      bizdata) die "数据补丁已暂时停用。请用管理端「系统设置」的应用数据包导出、导入。" ;;
       *) die "未知补丁种类: $p" ;;
     esac
     PATCH_SLUG="${PATCH_SLUG:+$PATCH_SLUG+}$p"
@@ -264,11 +268,10 @@ if [[ "$NEED_WEB" == "1" || "$NEED_API" == "1" ]]; then
   fi
 fi
 
-if [[ "$NEED_BIZ" == "1" || "$KIND" == "install" ]]; then
-  if [[ "$NEED_BIZ" == "1" ]]; then
-    export_bizdata_sql "$APP_CODE" "$DEST/bizdata-patch.sql"
-  fi
-fi
+# 数据补丁暂时停用。应用的配置与业务数据改走管理端「系统设置」。
+# if [[ "$NEED_BIZ" == "1" ]]; then
+#   export_bizdata_sql "$APP_CODE" "$DEST/bizdata-patch.sql"
+# fi
 
 # 安装包附带注册 SQL（端口写入 URL 占位，现场 apply 再按 PUBLIC_HOST 替换）
 if [[ "$KIND" == "install" && "$PRESET" == "fpcu2" ]]; then
@@ -405,8 +408,8 @@ fi
 DEPLOY_ROOT="$(cd "$DEPLOY_ROOT" && pwd)"
 [[ -f "$DEPLOY_ROOT/docker-compose.yml" || -d "$DEPLOY_ROOT/k8s" ]] || die "$DEPLOY_ROOT 不是 EADAF 平台目录"
 # shellcheck disable=SC1091
-[[ -f "$DEPLOY_ROOT/.deploy-mode" ]] && source "$DEPLOY_ROOT/.deploy-mode"
-DEPLOY_MODE="${DEPLOY_MODE:-offline}"
+source "$DEPLOY_ROOT/lib.sh"
+load_deploy_choice "$DEPLOY_ROOT"
 APP_NAME="$(awk -F= '/^name=/{print $2}' "$PATCH_ROOT/app.meta")"
 APP_WEB_PORT="$(awk -F= '/^web_port=/{print $2}' "$PATCH_ROOT/app.meta")"
 APP_API_PORT="$(awk -F= '/^api_port=/{print $2}' "$PATCH_ROOT/app.meta")"
@@ -422,7 +425,7 @@ if [[ -d "$PATCH_ROOT/docker-images" ]]; then
   mkdir -p "$DEPLOY_ROOT/docker-images"
   cp -a "$PATCH_ROOT/docker-images/." "$DEPLOY_ROOT/docker-images/"
 fi
-if [[ "$DEPLOY_MODE" == "k8s" ]]; then
+if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
   if [[ -d "$PATCH_ROOT/docker-images" ]] && compgen -G "$PATCH_ROOT/docker-images/*.tar" >/dev/null; then
     IMG_DIR="$PATCH_ROOT/docker-images" bash "$DEPLOY_ROOT/k8s/load-images.sh" || {
       for tar in "$PATCH_ROOT"/docker-images/*.tar; do
@@ -448,23 +451,24 @@ else
     (cd "$DEPLOY_ROOT" && "${COMPOSE[@]}" -f docker-compose.yml -f "apps/$APP_NAME/compose.yml" up -d)
   fi
 fi
-if [[ -f "$PATCH_ROOT/bizdata-patch.sql" ]]; then
-  if [[ "$DEPLOY_MODE" == "k8s" ]]; then
-    pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath='{.items[0].metadata.name}')"
-    kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
-      env PGPASSWORD="${POSTGRES_PASSWORD:-123456}" \
-      psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
-      <"$PATCH_ROOT/bizdata-patch.sql"
-  else
-    set -a
-    # shellcheck disable=SC2046
-    [[ -f "$DEPLOY_ROOT/.env" ]] && export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$DEPLOY_ROOT/.env" | sed 's/#.*//' | xargs)
-    set +a
-    docker exec -i -e PGPASSWORD="${POSTGRES_PASSWORD:-123456}" "${POSTGRES_CONTAINER:-EADAF-postgres}" \
-      psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
-      <"$PATCH_ROOT/bizdata-patch.sql"
-  fi
-fi
+# 数据补丁暂时停用。配置与业务数据改走管理端「系统设置」的应用数据包。
+# if [[ -f "$PATCH_ROOT/bizdata-patch.sql" ]]; then
+#   if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
+#     pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath='{.items[0].metadata.name}')"
+#     kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
+#       env PGPASSWORD="${POSTGRES_PASSWORD:-123456}" \
+#       psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
+#       <"$PATCH_ROOT/bizdata-patch.sql"
+#   else
+#     set -a
+#     # shellcheck disable=SC2046
+#     [[ -f "$DEPLOY_ROOT/.env" ]] && export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$DEPLOY_ROOT/.env" | sed 's/#.*//' | xargs)
+#     set +a
+#     docker exec -i -e PGPASSWORD="${POSTGRES_PASSWORD:-123456}" "${POSTGRES_CONTAINER:-EADAF-postgres}" \
+#       psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
+#       <"$PATCH_ROOT/bizdata-patch.sql"
+#   fi
+# fi
 if [[ -f "$PATCH_ROOT/application.sql.template" && -f "$DEPLOY_ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC2046
@@ -477,7 +481,7 @@ if [[ -f "$PATCH_ROOT/application.sql.template" && -f "$DEPLOY_ROOT/.env" ]]; th
     -e "s|\${SSO_CALLBACK_URL}|${SSO_CALLBACK_URL:-http://localhost:${APP_API_PORT:-13303}/auth/callback}|g" \
     -e "s|\${FPCU2_PUBLIC_URL}|${FPCU2_PUBLIC_URL:-http://localhost:${APP_WEB_PORT:-13308}}|g" \
     "$PATCH_ROOT/application.sql.template" >"$tmp"
-  if [[ "$DEPLOY_MODE" == "k8s" ]]; then
+  if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
     pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath='{.items[0].metadata.name}')"
     kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
       env PGPASSWORD="${POSTGRES_PASSWORD:-123456}" \
@@ -488,7 +492,7 @@ if [[ -f "$PATCH_ROOT/application.sql.template" && -f "$DEPLOY_ROOT/.env" ]]; th
   fi
   rm -f "$tmp"
 fi
-echo "应用 $APP_NAME 已应用到 $DEPLOY_ROOT （模式 $DEPLOY_MODE）"
+echo "应用 ${APP_NAME} 已应用到 ${DEPLOY_ROOT} （网络 ${DEPLOY_NETWORK}，运行方式 ${DEPLOY_RUNTIME}）"
 APPLY
 chmod +x "$DEST/apply.sh"
 

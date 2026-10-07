@@ -9,15 +9,15 @@ case "$mod" in
   all) parts=web,api ;;
   fpcu2-bff|fpcu2-web)
     echo "业务应用补丁已从平台包拆出。请在应用目录放置 eadaf.app.yaml 后执行:" >&2
-    echo "  pnpm pack:app -- --app-dir <应用目录> --kind patch --patch web|api|bizdata" >&2
+    echo "  pnpm pack:app -- --app-dir <应用目录> --kind patch --patch web|api" >&2
     exit 1
     ;;
   -h|--help|help|"")
     cat <<'EOF'
 用法: pnpm offline:patch <eadaf-api|eadaf-web|all>
 
-平台补丁只有前端 web、后端 api。数据补丁:
-  bash scripts/deploy/pack-eadaf.sh --mode offline --kind patch --patch bizdata --arch amd64 --non-interactive --yes
+平台补丁只有前端 web、后端 api。
+数据补丁已暂时停用。配置与业务数据请用管理端「系统设置」的 EADAF / 应用数据包导出、导入。
 
 业务应用请使用 pnpm pack:app。
 EOF
@@ -29,7 +29,8 @@ EOF
     ;;
 esac
 exec bash "$SCRIPT_DIR/deploy/pack-eadaf.sh" \
-  --mode offline \
+  --network offline \
+  --runtime compose \
   --kind patch \
   --patch "$parts" \
   --arch "${OFFLINE_ARCH:-amd64}" \

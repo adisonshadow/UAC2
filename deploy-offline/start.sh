@@ -152,7 +152,7 @@ prompt_arch() {
 prompt_action() {
   echo ""
   echo "请选择下一步："
-  if [[ "$DEPLOY_MODE" == "normal" ]]; then
+  if [[ "$DEPLOY_NETWORK" == "online" ]]; then
     echo "  1) 用系统包管理器安装 Docker（已安装则跳过）"
   else
     echo "  1) 安装静态 Docker（首次，需包内有对应平台二进制）"
@@ -178,7 +178,7 @@ static_bundle_dir() {
 }
 
 run_install_docker() {
-  if [[ "$DEPLOY_MODE" == "normal" ]]; then
+  if [[ "$DEPLOY_NETWORK" == "online" ]]; then
     [[ -f "$ROOT/install-docker.sh" ]] || die "缺少 install-docker.sh"
     bash "$ROOT/install-docker.sh"
     return 0
@@ -216,14 +216,12 @@ echo "========================================"
 echo "  EADAF 平台部署（不含业务应用）"
 echo "========================================"
 
-if [[ -f "$ROOT/.deploy-mode" ]]; then
-  # shellcheck disable=SC1091
-  source "$ROOT/.deploy-mode"
-fi
-DEPLOY_MODE="${DEPLOY_MODE:-offline}"
-echo "部署模式: ${DEPLOY_MODE}"
-if [[ "$DEPLOY_MODE" == "k8s" ]]; then
-  echo "这是 K8s 包。请在本目录执行: ./k8s/install.sh"
+# shellcheck disable=SC1091
+source "$ROOT/lib.sh"
+load_deploy_choice "$ROOT"
+echo "网络: ${DEPLOY_NETWORK}    运行方式: ${DEPLOY_RUNTIME}"
+if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
+  echo "运行方式是 K8s。镜像仍在包内导入，请执行: ./k8s/install.sh"
   exit 0
 fi
 

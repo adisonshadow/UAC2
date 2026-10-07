@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 把本升级包应用到已安装的 deploy-offline。保留 .env 与数据卷，不重装 Docker / 集群。
+# 升级包暂时只有程序，不覆盖、不执行 init-db 表结构。
 set -euo pipefail
 
 PATCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,11 +17,11 @@ fi
 DEPLOY_ROOT="$(cd "$DEPLOY_ROOT" && pwd)"
 echo "DEPLOY_ROOT=$DEPLOY_ROOT"
 
+# 先记下选择；复制新 lib.sh 之后再正规化一次
 if [[ -f "$DEPLOY_ROOT/.deploy-mode" ]]; then
   # shellcheck disable=SC1091
   source "$DEPLOY_ROOT/.deploy-mode"
 fi
-DEPLOY_MODE="${DEPLOY_MODE:-offline}"
 
 copy_tree() {
   local src="$1" dest="$2"
@@ -31,8 +32,9 @@ copy_tree() {
 
 # 更新底座脚本与编排，不覆盖现场 .env
 for f in docker-compose.yml lib.sh up.sh ctl.sh status.sh init-db.sh start.sh \
-  apply-schema.sh install-docker.sh env.template init-sql.manifest schema-baseline.txt \
-  nginx/conf/default.conf init/fix-db-connection.js README-offline.md; do
+  install-docker.sh env.template \
+  nginx/conf/default.conf init/fix-db-connection.js; do
+  # 表结构只留在安装包，升级不覆盖：apply-schema.sh init-sql.manifest schema-baseline.txt
   [[ -e "$PATCH_ROOT/$f" ]] || continue
   mkdir -p "$DEPLOY_ROOT/$(dirname "$f")"
   cp -a "$PATCH_ROOT/$f" "$DEPLOY_ROOT/$f"
@@ -41,10 +43,11 @@ if [[ -d "$PATCH_ROOT/k8s" ]]; then
   mkdir -p "$DEPLOY_ROOT/k8s"
   cp -a "$PATCH_ROOT/k8s/." "$DEPLOY_ROOT/k8s/"
 fi
-if [[ -d "$PATCH_ROOT/init-sql" ]]; then
-  mkdir -p "$DEPLOY_ROOT/init-sql"
-  cp -a "$PATCH_ROOT/init-sql/." "$DEPLOY_ROOT/init-sql/"
-fi
+# 升级包暂时不带表结构 SQL。
+# if [[ -d "$PATCH_ROOT/init-sql" ]]; then
+#   mkdir -p "$DEPLOY_ROOT/init-sql"
+#   cp -a "$PATCH_ROOT/init-sql/." "$DEPLOY_ROOT/init-sql/"
+# fi
 if [[ -d "$PATCH_ROOT/frontend/dist" ]]; then
   mkdir -p "$DEPLOY_ROOT/frontend"
   rm -rf "$DEPLOY_ROOT/frontend/dist"
@@ -55,11 +58,15 @@ if [[ -d "$PATCH_ROOT/docker-images" ]]; then
   cp -a "$PATCH_ROOT/docker-images/." "$DEPLOY_ROOT/docker-images/"
 fi
 
-chmod +x "$DEPLOY_ROOT/apply-schema.sh" "$DEPLOY_ROOT/lib.sh" "$DEPLOY_ROOT/ctl.sh" 2>/dev/null || true
+chmod +x "$DEPLOY_ROOT/lib.sh" "$DEPLOY_ROOT/ctl.sh" 2>/dev/null || true
+# shellcheck disable=SC1091
+source "$DEPLOY_ROOT/lib.sh"
+load_deploy_choice "$DEPLOY_ROOT"
 
-if [[ "$DEPLOY_MODE" == "k8s" ]]; then
+if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
   bash "$DEPLOY_ROOT/k8s/load-images.sh"
-  bash "$DEPLOY_ROOT/apply-schema.sh"
+  # 升级暂时不跑表结构迁移。init-db 只在 EADAF 安装包。
+  # bash "$DEPLOY_ROOT/apply-schema.sh"
   bash "$DEPLOY_ROOT/k8s/install.sh" --upgrade
 else
   # shellcheck disable=SC1091
@@ -70,7 +77,8 @@ else
   if [[ -d "$PATCH_ROOT/docker-images" ]]; then
     load_module_images eadaf-api eadaf-web
   fi
-  bash "$DEPLOY_ROOT/apply-schema.sh"
+  # 升级暂时不跑表结构迁移。init-db 只在 EADAF 安装包。
+  # bash "$DEPLOY_ROOT/apply-schema.sh"
   apply_public_host_urls
   compose up -d --force-recreate --no-deps eadaf-api
   wait_container_healthy EADAF-api 240

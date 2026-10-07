@@ -81,7 +81,7 @@ pull_platform_image() {
       echo "本地已有 ${want_arch}: $name"
       return 0
     fi
-    echo "本地 $name 为 $existing，需重新拉取 ${want_arch}"
+    echo "本地 ${name} 为 ${existing}，需重新拉取 ${want_arch}"
   fi
   local mirrors=(
     "$name"
@@ -115,7 +115,7 @@ save_image() {
   echo "docker save $image -> $filename"
   docker save -o "$dest_dir/$filename" "$image"
   arch="$(docker image inspect "$image" --format '{{.Architecture}}')"
-  [[ "$arch" == "$want_arch" ]] || die "$image 架构为 $arch，期望 $want_arch"
+  [[ "$arch" == "$want_arch" ]] || die "${image} 架构为 ${arch}，期望 ${want_arch}"
 }
 
 build_eadaf_web() {
@@ -230,7 +230,7 @@ copy_runtime_skeleton() {
   local f
   for f in docker-compose.yml lib.sh up.sh ctl.sh status.sh init-db.sh start.sh \
     apply-schema.sh apply-upgrade.sh apply-patch.sh install-docker.sh \
-    env.template init-sql.manifest schema-baseline.txt README-offline.md; do
+    env.template init-sql.manifest schema-baseline.txt; do
     cp "$SKELETON/$f" "$dest/$f"
   done
   mkdir -p "$dest/nginx/conf" "$dest/init" "$dest/logs/api" "$dest/logs/nginx" \
@@ -258,9 +258,11 @@ lf_fix() {
 }
 
 export_bizdata_sql() {
-  local application="$1" out="$2"
-  need_cmd node
-  node "$PACK_LIB_DIR/export-bizdata.cjs" --application "$application" --out "$out"
+  # 数据补丁暂时停用。配置与业务数据改走管理端「系统设置」的 EADAF / 应用数据包。
+  die "数据补丁已暂时停用。请用管理端「系统设置」的 EADAF / 应用数据包导出、导入。"
+  # local application="$1" out="$2"
+  # need_cmd node
+  # node "$PACK_LIB_DIR/export-bizdata.cjs" --application "$application" --out "$out"
 }
 
 confirm_or_die() {
@@ -269,7 +271,7 @@ confirm_or_die() {
     return 0
   fi
   local answer
-  read -r -p "确认开始构建？[y/N]: " answer
+  read -r -p "确认开始构建？[Y/n]: " answer
   answer="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
-  [[ "$answer" == "y" || "$answer" == "yes" ]] || die "已取消"
+  [[ -z "$answer" || "$answer" == "y" || "$answer" == "yes" ]] || die "已取消"
 }

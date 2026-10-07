@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Shell A：交互或参数打包 EADAF 平台（不含业务应用）。
 #   bash scripts/deploy/pack-eadaf.sh
-#   bash scripts/deploy/pack-eadaf.sh --mode offline --os centos --arch amd64 --kind install --non-interactive --yes
+#   bash scripts/deploy/pack-eadaf.sh --network offline --runtime compose --os centos --arch amd64 --kind install --non-interactive --yes
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-pack.sh"
 
+NETWORK=""
+RUNTIME=""
 MODE=""
 OS_NAME=""
 ARCH=""
@@ -24,11 +26,13 @@ usage() {
   cat <<'EOF'
 用法: bash scripts/deploy/pack-eadaf.sh [选项]
 
-  --mode offline|normal|k8s
-  --os centos|ubuntu|debian     默认发行版（写入包内，离线包仍含三种安装脚本）
+  --network offline|online       目标机能否上网安装运行时
+  --runtime compose|k8s         Compose，或在已有集群里以 Pod 运行
+  --mode offline|normal|k8s     旧参数：offline=离线+Compose，normal=在线+Compose，k8s=离线+K8s
+  --os centos|ubuntu|debian     默认发行版（写入包内，安装脚本仍含三种发行版）
   --arch amd64|arm64
   --kind install|upgrade|patch
-  --patch web,api,bizdata       补丁种类，可逗号组合
+  --patch web,api               补丁种类，可逗号组合（数据补丁 bizdata 已暂时停用）
   --web-port N                  仅安装包，默认 9527
   --api-port N                  仅安装包，默认 9526
   --version VER                 默认 package.json
@@ -40,6 +44,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --network) NETWORK="${2:-}"; shift 2 ;;
+    --runtime) RUNTIME="${2:-}"; shift 2 ;;
     --mode) MODE="${2:-}"; shift 2 ;;
     --os) OS_NAME="${2:-}"; shift 2 ;;
     --arch) ARCH="${2:-}"; shift 2 ;;
@@ -67,19 +73,41 @@ ask() {
   fi
 }
 
+apply_legacy_mode() {
+  [[ -n "$MODE" ]] || return 0
+  case "$MODE" in
+    offline) NETWORK="${NETWORK:-offline}"; RUNTIME="${RUNTIME:-compose}" ;;
+    normal|online) NETWORK="${NETWORK:-online}"; RUNTIME="${RUNTIME:-compose}" ;;
+    k8s) RUNTIME="${RUNTIME:-k8s}"; NETWORK="${NETWORK:-offline}" ;;
+    *) die "不支持的 --mode: ${MODE}（请改用 --network 与 --runtime）" ;;
+  esac
+}
+apply_legacy_mode
+
 if [[ "$NONINT" != "1" && -t 0 ]]; then
-  [[ -n "$MODE" ]] || {
-    echo "模式:"
-    echo "  1) 离线  2) 普通  3) K8s"
-    read -r -p "选择 [1-3]: " c
-    case "$c" in
-      1) MODE=offline ;;
-      2) MODE=normal ;;
-      3) MODE=k8s ;;
-      *) die "无效模式" ;;
+  [[ -n "$NETWORK" ]] || {
+    echo "网络（决定如何准备 Docker；程序镜像都在包里）："
+    echo "  1) 离线"
+    echo "  2) 在线"
+    read -r -p "选择 [1-2，回车=离线]: " c
+    case "${c:-1}" in
+      1) NETWORK=offline ;;
+      2) NETWORK=online ;;
+      *) die "无效网络选项" ;;
     esac
   }
-  if [[ "$MODE" != "k8s" && -z "$OS_NAME" ]]; then
+  [[ -n "$RUNTIME" ]] || {
+    echo "运行方式："
+    echo "  1) Compose"
+    echo "  2) K8s Pod（集群需已存在，镜像仍随包导入）"
+    read -r -p "选择 [1-2，回车=Compose]: " c
+    case "${c:-1}" in
+      1) RUNTIME=compose ;;
+      2) RUNTIME=k8s ;;
+      *) die "无效运行方式" ;;
+    esac
+  }
+  if [[ -z "$OS_NAME" ]]; then
     echo "默认发行版（包内仍带齐 CentOS / Ubuntu / Debian 的安装脚本）:"
     echo "  1) centos  2) ubuntu  3) debian"
     read -r -p "选择 [1-3，回车=centos]: " c
@@ -113,8 +141,10 @@ if [[ "$NONINT" != "1" && -t 0 ]]; then
   }
   if [[ "$KIND" == "patch" && -z "$PATCH_PARTS" ]]; then
     echo "补丁种类（可多选，逗号分隔）:"
-    echo "  1) 前端程序 web  2) 后端程序 api  3) 数据 bizdata"
-    read -r -p "选择，例如 1,3: " c
+    echo "  1) 前端程序 web  2) 后端程序 api"
+    # 数据补丁暂时停用。配置与业务数据改走管理端「系统设置」的 EADAF / 应用数据包。
+    # echo "  3) 数据 bizdata"
+    read -r -p "选择，例如 1,2: " c
     PATCH_PARTS=""
     IFS=',' read -r -a arr <<<"$c"
     for item in "${arr[@]}"; do
@@ -122,7 +152,8 @@ if [[ "$NONINT" != "1" && -t 0 ]]; then
       case "$item" in
         1|web) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}web" ;;
         2|api) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}api" ;;
-        3|bizdata) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}bizdata" ;;
+        # 3|bizdata) PATCH_PARTS="${PATCH_PARTS:+$PATCH_PARTS,}bizdata" ;;
+        3|bizdata) die "数据补丁已暂时停用。请用管理端「系统设置」的 EADAF / 应用数据包导出、导入。" ;;
         *) die "无效补丁种类: $item" ;;
       esac
     done
@@ -134,8 +165,8 @@ if [[ "$NONINT" != "1" && -t 0 ]]; then
   VERSION="$(ask "版本" "${VERSION:-$(package_version)}")"
   OUT_DIR="$(ask "输出目录" "${OUT_DIR:-$REPO_ROOT/deploy/EADAF}")"
 else
-  [[ -n "$MODE" && -n "$KIND" && -n "$ARCH" ]] || die "非交互模式需要 --mode --kind --arch"
-  [[ "$KIND" != "patch" || -n "$PATCH_PARTS" ]] || die "补丁需要 --patch web,api,bizdata"
+  [[ -n "$NETWORK" && -n "$RUNTIME" && -n "$KIND" && -n "$ARCH" ]] || die "非交互模式需要 --network、--runtime、--kind、--arch"
+  [[ "$KIND" != "patch" || -n "$PATCH_PARTS" ]] || die "补丁需要 --patch web,api"
   OS_NAME="${OS_NAME:-centos}"
   WEB_PORT="${WEB_PORT:-9527}"
   API_PORT="${API_PORT:-9526}"
@@ -144,22 +175,23 @@ else
   ASSUME_YES=1
 fi
 
-MODE="$(printf '%s' "$MODE" | tr '[:upper:]' '[:lower:]')"
+NETWORK="$(printf '%s' "$NETWORK" | tr '[:upper:]' '[:lower:]')"
+RUNTIME="$(printf '%s' "$RUNTIME" | tr '[:upper:]' '[:lower:]')"
 KIND="$(printf '%s' "$KIND" | tr '[:upper:]' '[:lower:]')"
-case "$MODE" in
-  offline|normal|k8s) ;;
-  *) die "不支持的模式: $MODE" ;;
+case "$NETWORK" in
+  offline|online) ;;
+  *) die "不支持的网络选项: ${NETWORK}（offline|online）" ;;
+esac
+case "$RUNTIME" in
+  compose|k8s) ;;
+  *) die "不支持的运行方式: ${RUNTIME}（compose|k8s）" ;;
 esac
 case "$KIND" in
   install|upgrade|patch) ;;
   *) die "不支持的种类: $KIND" ;;
 esac
 ARCH="$(normalize_arch "$ARCH")" || die "不支持的架构: $ARCH"
-if [[ "$MODE" != "k8s" ]]; then
-  OS_NAME="$(normalize_os "${OS_NAME:-centos}")" || die "不支持的发行版: $OS_NAME"
-else
-  OS_NAME="${OS_NAME:-centos}"
-fi
+OS_NAME="$(normalize_os "${OS_NAME:-centos}")" || die "不支持的发行版: $OS_NAME"
 PLATFORM="$(platform_of_arch "$ARCH")"
 
 PATCH_SLUG=""
@@ -171,7 +203,9 @@ NEED_SQL=0
 if [[ "$KIND" == "install" ]]; then
   NEED_WEB=1; NEED_API=1; NEED_BASE=1; NEED_SQL=1
 elif [[ "$KIND" == "upgrade" ]]; then
-  NEED_WEB=1; NEED_API=1; NEED_SQL=1
+  # 升级包暂时只有程序，不带表结构、不带数据。表结构只进 EADAF 安装包。
+  NEED_WEB=1; NEED_API=1
+  # NEED_SQL=1
 else
   IFS=',' read -r -a parts <<<"$PATCH_PARTS"
   for p in "${parts[@]}"; do
@@ -179,7 +213,8 @@ else
     case "$p" in
       web) NEED_WEB=1 ;;
       api) NEED_API=1 ;;
-      bizdata) NEED_BIZ=1 ;;
+      # bizdata) NEED_BIZ=1 ;;
+      bizdata) die "数据补丁已暂时停用。请用管理端「系统设置」的 EADAF / 应用数据包导出、导入。" ;;
       *) die "未知补丁种类: $p" ;;
     esac
     PATCH_SLUG="${PATCH_SLUG:+$PATCH_SLUG+}$p"
@@ -190,22 +225,23 @@ fi
 DATE_STAMP="$(date +%Y%m%d)"
 if [[ "$KIND" == "patch" ]]; then
   if [[ "$NEED_WEB" == "0" && "$NEED_API" == "0" ]]; then
-    ARCHIVE="eadaf-${MODE}-patch-${PATCH_SLUG}-v${VERSION}-${DATE_STAMP}.tar.gz"
+    ARCHIVE="eadaf-${NETWORK}-${RUNTIME}-patch-${PATCH_SLUG}-v${VERSION}-${DATE_STAMP}.tar.gz"
   else
-    ARCHIVE="eadaf-${MODE}-patch-${PATCH_SLUG}-${ARCH}-v${VERSION}-${DATE_STAMP}.tar.gz"
+    ARCHIVE="eadaf-${NETWORK}-${RUNTIME}-patch-${PATCH_SLUG}-${ARCH}-v${VERSION}-${DATE_STAMP}.tar.gz"
   fi
 else
-  ARCHIVE="eadaf-${MODE}-${KIND}-${ARCH}-v${VERSION}-${DATE_STAMP}.tar.gz"
+  ARCHIVE="eadaf-${NETWORK}-${RUNTIME}-${KIND}-${ARCH}-v${VERSION}-${DATE_STAMP}.tar.gz"
 fi
 
 echo ""
 echo "摘要"
-echo "  模式: $MODE"
+echo "  网络: $NETWORK"
+echo "  运行方式: $RUNTIME"
 echo "  发行版默认: $OS_NAME"
 echo "  架构: $ARCH"
 echo "  种类: $KIND ${PATCH_SLUG:+($PATCH_SLUG)}"
 if [[ "$KIND" == "install" ]]; then
-  echo "  端口: web=$WEB_PORT api=$API_PORT（只改宿主机映射）"
+  echo "  端口: web=${WEB_PORT} api=${API_PORT}（只改宿主机映射）"
 fi
 echo "  版本: $VERSION"
 echo "  输出: $OUT_DIR/$ARCHIVE"
@@ -235,7 +271,8 @@ if [[ "$KIND" == "install" || "$KIND" == "upgrade" ]]; then
   if [[ "$KIND" == "install" ]]; then
     write_install_env "$DEST" "$WEB_PORT" "$API_PORT"
     cat >"$DEST/.deploy-mode" <<EOF
-DEPLOY_MODE=${MODE}
+DEPLOY_NETWORK=${NETWORK}
+DEPLOY_RUNTIME=${RUNTIME}
 DEPLOY_KIND=install
 EOF
     cat >"$DEST/.deploy-platform" <<EOF
@@ -277,24 +314,28 @@ fi
 if [[ "$NEED_SQL" == "1" ]]; then
   copy_platform_sql "$DEST"
 fi
-if [[ "$NEED_BIZ" == "1" ]]; then
-  log "导出 EADAF bizdata"
-  export_bizdata_sql "EADAF" "$DEST/bizdata-patch.sql"
-fi
+# 数据补丁暂时停用。配置与业务数据改走管理端「系统设置」。
+# if [[ "$NEED_BIZ" == "1" ]]; then
+#   log "导出 EADAF bizdata"
+#   export_bizdata_sql "EADAF" "$DEST/bizdata-patch.sql"
+# fi
 
-if [[ "$KIND" == "install" && "$MODE" == "offline" ]]; then
+if [[ "$KIND" == "install" && "$RUNTIME" == "compose" && "$NETWORK" == "offline" ]]; then
   log "下载静态 Docker ($ARCH)"
   need_cmd curl
   fetch_docker_static "$ARCH" "$DEST"
   rm -f "$DEST/install-docker.sh"
   rm -rf "$DEST/k8s"
-elif [[ "$KIND" == "install" && "$MODE" == "normal" ]]; then
+elif [[ "$KIND" == "install" && "$RUNTIME" == "compose" && "$NETWORK" == "online" ]]; then
   rm -rf "$DEST/k8s" "$DEST/docker-static" "$DEST/centos-docker-static"
-elif [[ "$KIND" == "install" && "$MODE" == "k8s" ]]; then
+elif [[ "$KIND" == "install" && "$RUNTIME" == "k8s" ]]; then
   rm -f "$DEST/install-docker.sh"
   rm -rf "$DEST/docker-static" "$DEST/centos-docker-static"
 elif [[ "$KIND" == "upgrade" ]]; then
-  if [[ "$MODE" != "k8s" ]]; then
+  # 升级包暂时只有程序，不带 init-db 表结构。
+  rm -f "$DEST/apply-schema.sh" "$DEST/init-sql.manifest" "$DEST/schema-baseline.txt"
+  rm -rf "$DEST/init-sql"
+  if [[ "$RUNTIME" != "k8s" ]]; then
     rm -rf "$DEST/k8s"
   fi
   rm -f "$DEST/install-docker.sh"
@@ -305,7 +346,7 @@ elif [[ "$KIND" == "patch" ]]; then
   printf '%s' "$(printf '%s' "$PATCH_SLUG" | tr '+' ',')" >"$DEST/patch-parts"
   cp "$SKELETON/apply-patch.sh" "$DEST/apply.sh"
   chmod +x "$DEST/apply.sh"
-  if [[ "$MODE" == "k8s" ]]; then
+  if [[ "$RUNTIME" == "k8s" ]]; then
     mkdir -p "$DEST/k8s"
     cp "$SKELETON/k8s/"*.sh "$DEST/k8s/"
     chmod +x "$DEST/k8s/"*.sh
@@ -315,7 +356,8 @@ fi
 SHA="$(git_sha)"
 cat >"$DEST/MANIFEST.txt" <<EOF
 product=eadaf
-mode=${MODE}
+network=${NETWORK}
+runtime=${RUNTIME}
 kind=${KIND}
 parts=${PATCH_SLUG:-all}
 os_default=${OS_NAME}

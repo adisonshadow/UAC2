@@ -28,6 +28,42 @@ die() {
   exit 1
 }
 
+# 读取 .deploy-mode。网络（offline|online）与运行方式（compose|k8s）分开。
+# 旧包只有 DEPLOY_MODE=offline|normal|k8s 时，在这里换算成新字段。
+load_deploy_choice() {
+  local root="${1:-$OFFLINE_ROOT}"
+  if [[ -f "$root/.deploy-mode" ]]; then
+    # shellcheck disable=SC1091
+    source "$root/.deploy-mode"
+  fi
+  if [[ -z "${DEPLOY_RUNTIME:-}" && -n "${DEPLOY_MODE:-}" ]]; then
+    case "$DEPLOY_MODE" in
+      k8s)
+        DEPLOY_RUNTIME=k8s
+        DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}"
+        ;;
+      normal|online)
+        DEPLOY_RUNTIME=compose
+        DEPLOY_NETWORK=online
+        ;;
+      *)
+        DEPLOY_RUNTIME=compose
+        DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}"
+        ;;
+    esac
+  fi
+  DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}"
+  DEPLOY_RUNTIME="${DEPLOY_RUNTIME:-compose}"
+  if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
+    DEPLOY_MODE=k8s
+  elif [[ "$DEPLOY_NETWORK" == "online" ]]; then
+    DEPLOY_MODE=normal
+  else
+    DEPLOY_MODE=offline
+  fi
+  export DEPLOY_NETWORK DEPLOY_RUNTIME DEPLOY_MODE
+}
+
 require_docker() {
   command -v docker >/dev/null 2>&1 || die "未找到 docker。请先执行 ./start.sh 选择 OS/架构后安装静态 Docker"
   docker info >/dev/null 2>&1 || die "Docker 未运行或当前用户无权限"

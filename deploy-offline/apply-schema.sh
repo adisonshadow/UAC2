@@ -12,10 +12,9 @@ if [[ -f "$ROOT/.env" ]]; then
   export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ROOT/.env" | sed 's/#.*//' | xargs)
   set +a
 fi
-if [[ -f "$ROOT/.deploy-mode" ]]; then
-  # shellcheck disable=SC1091
-  source "$ROOT/.deploy-mode"
-fi
+# shellcheck disable=SC1091
+source "$ROOT/lib.sh"
+load_deploy_choice "$ROOT"
 
 DB_NAME="${POSTGRES_DATABASE:-eadaf_db}"
 DB_USER="${POSTGRES_USER:-my_name}"
@@ -34,7 +33,7 @@ k8s_postgres_pod() {
 }
 
 psql_exec() {
-  if [[ "${DEPLOY_MODE:-}" == "k8s" ]]; then
+  if [[ "${DEPLOY_RUNTIME:-}" == "k8s" ]]; then
     local pod
     pod="$(k8s_postgres_pod)"
     [[ -n "$pod" ]] || die "未找到 eadaf-postgres Pod"

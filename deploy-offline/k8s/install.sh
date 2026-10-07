@@ -51,7 +51,7 @@ if [[ "$UPGRADE" -eq 0 ]]; then
   kubectl -n "$NS" rollout status deployment/postgres --timeout=180s
   kubectl -n "$NS" rollout status deployment/redis --timeout=120s
   kubectl -n "$NS" rollout status deployment/mysql --timeout=240s
-  DEPLOY_MODE=k8s K8S_NAMESPACE="$NS" bash "$ROOT/init-db.sh"
+  DEPLOY_RUNTIME=k8s K8S_NAMESPACE="$NS" bash "$ROOT/init-db.sh"
 else
   echo "升级模式：不重新初始化数据库"
 fi
