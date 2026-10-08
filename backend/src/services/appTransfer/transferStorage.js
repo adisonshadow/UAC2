@@ -341,6 +341,7 @@ async function importStorageObjectsSection(ctx, opts = {}) {
         };
 
         const existing = await models.StorageObject.findByPk(obj.object_id);
+        let servedRelative = destRelative;
         if (existing) {
           if (ctx.strategy === 'overwrite') {
             await existing.update({
@@ -356,7 +357,9 @@ async function importStorageObjectsSection(ctx, opts = {}) {
             section.counts.updated += 1;
           } else {
             section.counts.skipped += 1;
-            continue;
+            servedRelative = existing.relative_path
+              ? assertSafeRelativePath(String(existing.relative_path).replace(/\\/g, '/'))
+              : destRelative;
           }
         } else {
           await models.StorageObject.create(payload);
@@ -364,11 +367,13 @@ async function importStorageObjectsSection(ctx, opts = {}) {
         }
 
         const srcAbs = resolvePackageFile(filesDir, obj.relative_path || destRelative);
-        if (srcAbs) {
-          await copyObjectFile(srcAbs, destRelative);
+        const destAbs = path.join(getStorageRoot(), assertSafeRelativePath(servedRelative));
+        const missingOnDisk = !fs.existsSync(destAbs);
+        if (srcAbs && (!existing || ctx.strategy === 'overwrite' || missingOnDisk)) {
+          await copyObjectFile(srcAbs, servedRelative);
           section.counts.copied += 1;
-        } else if (includeFiles) {
-          section.notes.push(`对象「${label}」包内无二进制,仅写入元数据`);
+        } else if (includeFiles && missingOnDisk && !srcAbs) {
+          ctx.itemFailed(section, label, new Error('包内无对应二进制,记录已写入但文件无法访问'));
         }
       } catch (e) {
         ctx.itemFailed(section, label, e);

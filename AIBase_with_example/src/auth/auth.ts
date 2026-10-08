@@ -35,6 +35,6 @@ export async function checkAuth(): Promise<boolean> {
 
 export function buildSsoLoginUrl(applicationId?: string) {
   const appId = applicationId || import.meta.env.VITE_SSO_APPLICATION_ID;
-  const EADAFFrontend = 'http://localhost:9527';
+  const EADAFFrontend = 'http://localhost:29527';
   return `${EADAFFrontend}/auth/login?app=${appId}`;
 }

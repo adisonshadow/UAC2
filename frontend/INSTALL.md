@@ -26,8 +26,8 @@ yarn install
 
 ```ts
 export const APP_ENV = {
-  port: 9527,                              // 开发服务器端口
-  devApiBaseUrl: 'http://localhost:9526',  // 开发 proxy 目标
+  port: 29527,                             // 开发服务器端口
+  devApiBaseUrl: 'http://localhost:29526', // 开发 proxy 目标
   prodApiBaseUrl: '',                      // 生产 API（同源代理 /api 时留空）
 };
 ```
@@ -38,7 +38,7 @@ export const APP_ENV = {
 yarn dev
 ```
 
-浏览器访问：http://localhost:9527
+浏览器访问：http://localhost:29527
 
 ## 构建
 

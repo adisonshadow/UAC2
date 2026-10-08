@@ -69,7 +69,7 @@ ORDER BY s.slug
 async function main() {
   const client = new Client({
     host: process.env.POSTGRES_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_PORT || '35432', 10),
+    port: parseInt(process.env.POSTGRES_PORT || '25432', 10),
     database: process.env.POSTGRES_DATABASE || 'eadaf_db',
     user: process.env.POSTGRES_USER || 'my_name',
     password: process.env.POSTGRES_PASSWORD || '123456',

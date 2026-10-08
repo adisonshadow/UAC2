@@ -222,7 +222,7 @@ else
   [[ -n "$PATCH_SLUG" ]] || die "未选择补丁种类"
 fi
 
-DATE_STAMP="$(date +%Y%m%d)"
+DATE_STAMP="$(date +%Y%m%d-%H%M)"
 if [[ "$KIND" == "patch" ]]; then
   if [[ "$NEED_WEB" == "0" && "$NEED_API" == "0" ]]; then
     ARCHIVE="eadaf-${NETWORK}-${RUNTIME}-patch-${PATCH_SLUG}-v${VERSION}-${DATE_STAMP}.tar.gz"

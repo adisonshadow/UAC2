@@ -26,7 +26,7 @@ EADAF 管理端，基于 React 19、Vite、Ant Design 6 与 Pro Components，集
 # 在仓库根目录
 pnpm install
 
-# 启动开发服务（默认 http://localhost:9527）
+# 启动开发服务（默认 http://localhost:29527）
 cd EADAF_frontend
 pnpm dev
 ```
@@ -37,8 +37,8 @@ pnpm dev
 
 | 项 | 默认 |
 |----|------|
-| 前端端口 | `9527` |
-| 开发 API | `http://localhost:9526`（Vite proxy 转发 `/api`） |
+| 前端端口 | `29527` |
+| 开发 API | `http://localhost:29526`（Vite proxy 转发 `/api`） |
 
 生产构建时修改 `prodApiBaseUrl`；若 Nginx 同源代理 `/api` 可留空。
 
@@ -54,7 +54,7 @@ pnpm refresh:ai-base  # 重新链接 / 刷新 @eadaf/ai-base 本地包
 
 ## 关键注意事项
 
-1. **先启动后端**（`EADAF_backend`，默认 `9526`），否则页面请求会失败。
+1. **先启动后端**（`EADAF_backend`，默认 `29526`），否则页面请求会失败。
 2. **Monorepo 依赖**：`@eadaf/ai-base` 来自 `AIBase_with_example/package/ai-base`；改 ai-base 源码后需在其目录 `pnpm build`，再执行 `pnpm refresh:ai-base`。
 3. **React 单例**：`vite.config.ts` 已对 `react` / `react-dom` 做 dedupe，勿在子包中引入第二份 React。
 4. **OpenAPI 类型**：后端接口变更后执行 `pnpm openapi2ts` 更新 `src/services/UAC/api/`。

@@ -32,8 +32,8 @@ function parseTrustedHosts() {
     `${apiHost}:${apiPort}`,
     `localhost:${apiPort}`,
     `127.0.0.1:${apiPort}`,
-    'localhost:9526',
-    '127.0.0.1:9526',
+    'localhost:29526',
+    '127.0.0.1:29526',
     'localhost:5171',
     '127.0.0.1:5171',
   ];

@@ -183,9 +183,23 @@ fetch_docker_static() {
   fi
   if [[ ! -f "$cache/docker-compose" ]]; then
     download_with_fallback "$cache/docker-compose" \
+      "https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-${compose_arch}" \
       "https://mirror.ghproxy.com/https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-${compose_arch}" \
-      "https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-${compose_arch}"
-    chmod +x "$cache/docker-compose"
+      "https://ghfast.top/https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-${compose_arch}" \
+      "https://cdn.jsdelivr.net/gh/docker/compose@v2.20.2/bin/release/docker-compose-linux-${compose_arch}" \
+      || true
+    if [[ ! -f "$cache/docker-compose" ]]; then
+      # 打包机已有 docker compose 插件时，写入说明包装脚本（客户机用 docker compose）
+      cat >"$cache/docker-compose" <<'WRAP'
+#!/bin/sh
+# 离线包未带上 compose 静态二进制时的回退：调用本机 docker compose 插件
+exec docker compose "$@"
+WRAP
+      chmod +x "$cache/docker-compose"
+      log_warn "未能下载 docker-compose 静态二进制，已写入 docker compose 插件回退包装"
+    else
+      chmod +x "$cache/docker-compose"
+    fi
   fi
   local os dest
   for os in centos ubuntu debian; do

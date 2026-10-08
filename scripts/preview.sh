@@ -103,8 +103,8 @@ while :; do
   fi
 
   # 兼容新旧启动日志：
-  #   旧: API Server started on port 9526
-  #   新: API Server started on 0.0.0.0:9526
+  #   旧: API Server started on port 29526
+  #   新: API Server started on 0.0.0.0:29526
   STARTED_LINE="$(grep -m1 -E 'API Server started on (port )?[0-9.:a-fA-F]+' "$BACKEND_LOG" 2>/dev/null || true)"
   if [[ -n "$STARTED_LINE" ]]; then
     BACKEND_PORT="$(printf '%s' "$STARTED_LINE" | grep -oE '[0-9]+' | tail -n1)"
@@ -113,7 +113,7 @@ while :; do
   fi
 
   # 日志可能因缓冲晚出现：默认/环境端口已可连也算就绪
-  CANDIDATE_PORT="${API_PORT:-9526}"
+  CANDIDATE_PORT="${API_PORT:-29526}"
   if wait_for_port "$CANDIDATE_PORT" 1; then
     BACKEND_PORT="$CANDIDATE_PORT"
     STARTED=1
@@ -145,7 +145,7 @@ echo ""
 echo "================================================================"
 echo "🟢 [2/2] 预览 frontend/dist (pnpm --filter \"$FRONTEND_FILTER\" preview)"
 echo "        backend: http://localhost:${BACKEND_PORT:-<unknown>}"
-echo "        frontend: http://localhost:9527 (vite preview)"
+echo "        frontend: http://localhost:29527 (vite preview)"
 echo "================================================================"
 echo ""
 

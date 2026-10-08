@@ -34,7 +34,7 @@ pnpm init-db                                 # 结构 + 超管 + EADAF 全局/�
 pnpm init-db-with-mock                       # 另含 Mock 用户/部门与销售示例实体
 pnpm init-db-with-aibase-seed                # 另含 Demo 全量 AI 种子（会 TRUNCATE Skill/Tool）
 
-# 4. 启动（nodemon 热重载，默认端口 9526）
+# 4. 启动（nodemon 热重载，默认端口 29526）
 npm run dev
 ```
 
@@ -71,8 +71,8 @@ pnpm migrate-eadaf-ai-skills
 ### 验证
 
 ```bash
-curl -s http://localhost:9526/api/v1/health
-# Swagger: http://localhost:9526/swagger
+curl -s http://localhost:29526/api/v1/health
+# Swagger: http://localhost:29526/swagger
 ```
 
 ## 关键注意事项

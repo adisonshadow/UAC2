@@ -19,16 +19,16 @@ pnpm install
 **先启动后端，再启动前端**（否则 API 请求会 502）：
 
 ```bash
-# 终端 1：后端（默认 9526）
+# 终端 1：后端（默认 29526）
 cd EADAF_backend
 pnpm dev
 
-# 终端 2：前端（默认 9527）
+# 终端 2：前端（默认 29527）
 cd EADAF_frontend
 pnpm dev
 ```
 
-浏览器访问：<http://localhost:9527>
+浏览器访问：<http://localhost:29527>
 
 ### 端口与代理
 
@@ -36,8 +36,8 @@ pnpm dev
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `APP_ENV.port` | `9527` | Vite dev 端口 |
-| `APP_ENV.devApiBaseUrl` | `http://localhost:9526` | dev 代理目标 |
+| `APP_ENV.port` | `29527` | Vite dev 端口 |
+| `APP_ENV.devApiBaseUrl` | `http://localhost:29526` | dev 代理目标 |
 | `APP_ENV.prodApiBaseUrl` | `''` | 生产 API 根地址（同源 Nginx 代理时可留空） |
 
 前端请求 `/api/*` 时，Vite 会代理到 `devApiBaseUrl`，配置见 [`vite.config.ts`](./vite.config.ts) 的 `server.proxy`。
@@ -169,7 +169,7 @@ pnpm openapi2ts
 
 | 现象 | 处理 |
 |------|------|
-| API 502 / `ECONNREFUSED 9526` | 先启动 `EADAF_backend` |
+| API 502 / `ECONNREFUSED 29526` | 先启动 `EADAF_backend` |
 | ai-base 新 API 不生效 | `pnpm refresh:ai-base` 后重启 dev |
 | 依赖预构建异常 | 删除 `node_modules/.vite` 后重启 |
 | `husky` 提示 `.git can't be found` | 可忽略，不影响 dev/build |

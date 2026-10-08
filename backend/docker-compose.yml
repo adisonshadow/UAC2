@@ -1,10 +1,10 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: EADAF-postgres
+    container_name: EADAF-dev-postgres
     restart: unless-stopped
     ports:
-      - "${POSTGRES_PORT:-35432}:5432"
+      - "${POSTGRES_PORT:-25432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DATABASE:-eadaf_db}
       POSTGRES_USER: ${POSTGRES_USER:-my_name}
@@ -19,10 +19,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: EADAF-redis
+    container_name: EADAF-dev-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-36379}:6379"
+      - "${REDIS_PORT:-26379}:6379"
     command: redis-server --appendonly yes
     volumes:
       - EADAF_redis_data:/data

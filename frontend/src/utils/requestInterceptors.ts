@@ -57,9 +57,15 @@ export const requestInterceptors = [
       [AUTH_HEADER]: `${AUTH_PREFIX}${token}`,
     };
 
-    // SSO 应用签发的 JWT 必须带 app，否则后端用平台密钥验签会报「无效的令牌」
+    // SSO 应用 JWT 必须带 app；但认证页上的 ?app= 只表示「正在给该应用做 SSO」，
+    // 不能自动注入到所有请求，否则会把平台 JWT 拿去验应用密钥并误清登录态。
+    // 需要带 app 的调用方（如 Auth 页 getAuthCheck）应显式传 params.app。
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+    const onAuthPage = (AUTH_PAGES as readonly string[]).includes(pathname);
     const pageApp =
-      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('app') : null;
+      !onAuthPage && typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('app')
+        : null;
     const existingParams =
       options.params && typeof options.params === 'object' && !Array.isArray(options.params)
         ? (options.params as Record<string, unknown>)

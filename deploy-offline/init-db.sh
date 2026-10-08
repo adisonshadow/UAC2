@@ -166,9 +166,28 @@ SQL
 
 load_sql_manifest
 
+# 物化连接种子是 localhost:35432（本机开发）；Docker/K8s 内 API 必须连服务名 postgres:5432
+fix_bizdata_db_connection() {
+  if [[ "${DEPLOY_RUNTIME:-}" == "k8s" ]]; then
+    echo "K8s 模式请在 API Pod 内执行 init/fix-db-connection.js（如需）"
+    return 0
+  fi
+  if ! docker ps --format '{{.Names}}' | grep -qx 'EADAF-api'; then
+    echo "EADAF-api 未运行，跳过物化连接修正（启动 API 后可执行: docker exec -w /app/backend EADAF-api node /data/fix-db-connection.js）"
+    return 0
+  fi
+  local script="$ROOT/init/fix-db-connection.js"
+  [[ -f "$script" ]] || { echo "缺少 $script，跳过物化连接修正"; return 0; }
+  echo "修正 bizdata 默认连接 → 容器内 ${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432} ..."
+  docker cp "$script" EADAF-api:/tmp/fix-db-connection.js
+  docker exec -w /app/backend EADAF-api node /tmp/fix-db-connection.js
+}
+
 if [[ "$SKIP_FULL_INIT" -eq 1 ]]; then
   ensure_superadmin
   echo "数据库初始化完成（跳过全量；已确保 admin）。表结构增量请用升级包。"
+  # 全量跳过时仍要修正连接（否则管理端测连会 ECONNREFUSED 127.0.0.1:35432）
+  fix_bizdata_db_connection || true
   exit 0
 fi
 
@@ -203,4 +222,5 @@ done
 
 record_schema_migrations
 echo "数据库结构初始化完成"
-echo "数据库初始化完成"
+# 全量 init 之后 API 可能尚未启动；由 up.sh 在 eadaf-api healthy 后再调一次更稳妥
+echo "数据库初始化完成（物化连接将在 API 就绪后修正为容器内地址）"

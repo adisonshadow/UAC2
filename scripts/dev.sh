@@ -6,7 +6,7 @@
 #   2) 再启动 frontend（pnpm --filter frontend dev）
 #
 # 设计要点：
-#   - 若 9526（或 API_PORT）上已有健康的本仓库 backend / nodemon，则复用，避免 EADDRINUSE。
+#   - 若 29526（或 API_PORT）上已有健康的本仓库 backend / nodemon，则复用，避免 EADDRINUSE。
 #   - 本次脚本自己拉起的 backend，Ctrl+C 时会杀掉整棵进程树（含 nodemon 子进程）。
 #   - 复用已有 backend 时，Ctrl+C 只停 frontend，不杀 nodemon（改文件会热重载）。
 #   - 强制重启：pnpm killdev && pnpm dev
@@ -46,7 +46,7 @@ read_api_port() {
       return
     fi
   fi
-  printf '%s\n' "9526"
+  printf '%s\n' "29526"
 }
 
 port_listening() {
@@ -194,8 +194,8 @@ start_backend() {
     fi
 
     # 兼容新旧启动日志：
-    #   旧: API Server started on port 9526
-    #   新: API Server started on 0.0.0.0:9526
+    #   旧: API Server started on port 29526
+    #   新: API Server started on 0.0.0.0:29526
     started_line="$(grep -m1 -E 'API Server started on (port )?[0-9.:a-fA-F]+' "$BACKEND_LOG" 2>/dev/null || true)"
     if [[ -n "$started_line" ]]; then
       BACKEND_PORT="$(printf '%s' "$started_line" | grep -oE '[0-9]+' | tail -n1)"

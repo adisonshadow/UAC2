@@ -4,10 +4,10 @@
  */
 export const APP_ENV = {
   /** 前端开发服务器端口 */
-  port: 9527,
+  port: 29527,
 
   /** 开发环境：后端 API 地址（devServer proxy 转发目标） */
-  devApiBaseUrl: 'http://localhost:9526',
+  devApiBaseUrl: 'http://localhost:29526',
 
   /** 生产环境：后端 API 地址（跨域部署填完整 URL；同源 Nginx 代理 /api 时留空） */
   prodApiBaseUrl: '',

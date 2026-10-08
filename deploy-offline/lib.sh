@@ -274,7 +274,8 @@ load_module_image() {
   tar_path="$OFFLINE_ROOT/docker-images/$tar_name"
   [[ -f "$tar_path" ]] || die "缺少镜像包: $tar_path"
   log_step "加载镜像 $mod -> $image_name ($tar_name)"
-  docker load -i "$tar_path"
+  # 用 stdin，避免 Docker Desktop 在 /mnt/c 等路径上 docker load -i 找不到文件
+  docker load <"$tar_path"
   log_ok "已加载 $image_name"
 }
 

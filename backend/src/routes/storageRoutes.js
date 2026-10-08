@@ -1,5 +1,4 @@
 const Router = require('koa-router');
-const path = require('path');
 const fs = require('fs');
 const koaBody = require('koa-body').default;
 const StorageController = require('../controllers/storageController');
@@ -7,11 +6,11 @@ const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const { operationAudit } = require('../middlewares/operationAudit');const { authRequired, authOptional } = require('../middlewares/storageAuth');
-const config = require('../config');
+const { getStorageRoot } = require('../services/storage/storageService');
 
 const router = new Router({ prefix: '/api/v1/storage' });
 
-const storageRoot = path.join(process.cwd(), config.storage.root);
+const storageRoot = getStorageRoot();
 if (!fs.existsSync(storageRoot)) {
   fs.mkdirSync(storageRoot, { recursive: true });
 }

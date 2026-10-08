@@ -1,5 +1,6 @@
 -- FPCU 应用在 EADAF 中注册（幂等）
--- 变量由 run-init.sh 通过 envsubst 注入
+-- redirect_uri 使用「跟随 Host」后缀，换服务器 IP/域名无需改库
+-- 变量：FPCU2_APPLICATION_ID / FPCU2_APP_SECRET / FPCU2_API_HOST_PORT / FPCU2_WEB_HOST_PORT
 
 INSERT INTO uac.applications (
   application_id,
@@ -22,9 +23,10 @@ INSERT INTO uac.applications (
   jsonb_build_object(
     'client_id', 'FPCU',
     'client_secret', '${FPCU2_APP_SECRET}',
-    'redirect_uri', '${SSO_CALLBACK_URL}',
+    'redirect_uri', ':${FPCU2_API_HOST_PORT}/auth/callback',
+    'redirect_uri_use_system_host', true,
     'redirect_mode', 'HEADER_REDIRECT',
-    'frontend_url', '${FPCU2_PUBLIC_URL}'
+    'frontend_url', ':${FPCU2_WEB_HOST_PORT}'
   ),
   true,
   jsonb_build_object('app_secret', '${FPCU2_APP_SECRET}'),

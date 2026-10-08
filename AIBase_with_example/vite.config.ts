@@ -27,13 +27,13 @@ export default defineConfig({
     include: ['react-is'],
   },
   server: {
-    port: 9529,
+    port: 29529,
     watch: {
       ignored: ['!**/package/ai-base/src/**'],
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:9526',
+        target: 'http://localhost:29526',
         changeOrigin: true,
       },
     },

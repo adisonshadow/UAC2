@@ -68,8 +68,8 @@
 
 - Node.js **≥ 22.13**（与 `backend` 的 `engines` 一致）
 - pnpm **10+**（仓库使用 `pnpm@10.33.2`）
-- PostgreSQL 14+（开发默认 `localhost:35432`）
-- Redis（开发默认 `localhost:36379`，可选）
+- PostgreSQL 14+（开发默认 `localhost:25432`）
+- Redis（开发默认 `localhost:26379`，可选）
 
 
 
@@ -114,20 +114,20 @@ pnpm migrate-eadaf-ai-skills
 仓库根目录一条命令会先等 API 监听成功，再起前端：
 
 ```bash
-pnpm dev          # API 9526 + 管理端 9527
+pnpm dev          # API 29526 + 管理端 29527
 pnpm killdev      # 停掉本次 dev 拉起的进程
 ```
 
 也可以分两个终端：
 
 ```bash
-cd backend && pnpm dev     # API，默认 9526，nodemon 热重载
-cd frontend && pnpm dev    # 管理端，默认 9527
+cd backend && pnpm dev     # API，默认 29526，nodemon 热重载
+cd frontend && pnpm dev    # 管理端，默认 29527
 ```
 
-- 管理端：[http://localhost:9527](http://localhost:9527)
-- API 文档：[http://localhost:9526/swagger](http://localhost:9526/swagger)
-- 健康检查：`curl http://localhost:9526/api/v1/health`
+- 管理端：[http://localhost:29527](http://localhost:29527)
+- API 文档：[http://localhost:29526/swagger](http://localhost:29526/swagger)
+- 健康检查：`curl http://localhost:29526/api/v1/health`
 
 
 
@@ -162,8 +162,8 @@ pnpm --filter ./frontend pm2prod
 | ------------------ | --------------- | ------------------------------------------------------------------------------------------------ |
 | `backend pm2dev`   | `uac-api-dev`   | `NODE_ENV=development`，pm2 watch 文件变更后自动重启                                                       |
 | `backend pm2prod`  | `uac-api`       | `NODE_ENV=production`，加载 `.env.production`                                                       |
-| `frontend pm2dev`  | `eadaf-web-dev` | Vite 开发服务（9527，自带 HMR）                                                                           |
-| `frontend pm2prod` | `eadaf-web`     | `vite preview` 托管已构建的 `dist`。需要先 `pnpm --filter ./frontend build`。`/api/v1` 代理到 `localhost:9526` |
+| `frontend pm2dev`  | `eadaf-web-dev` | Vite 开发服务（29527，自带 HMR）                                                                           |
+| `frontend pm2prod` | `eadaf-web`     | `vite preview` 托管已构建的 `dist`。需要先 `pnpm --filter ./frontend build`。`/api/v1` 代理到 `localhost:29526` |
 
 
 配置文件：`backend/ecosystem.config.cjs`、`frontend/ecosystem.config.cjs`。每个文件里有 dev / prod 两个进程，脚本用 `--only` 选择。
@@ -218,7 +218,7 @@ pnpm pack:app      # 业务应用包 → deploy/APP/
 
 ### 7.2 端口
 
-本地开发默认 API `9526`、管理端 `9527`，监听 `0.0.0.0`。修改本地端口时同时改 `backend/.env.*` 与 `frontend/config/env.ts`。
+本地开发默认 API `29526`、管理端 `29527`，监听 `0.0.0.0`。修改本地端口时同时改 `backend/.env.*` 与 `frontend/config/env.ts`。
 
 部署服务器上的安装包只改宿主机映射和 `EADAF_PUBLIC_URL`。容器内端口保持 9526 / 9527，nginx 把 `/api` 反代到 `eadaf-api:9526`。前端生产构建使用相对路径 `/api/v1`。
 

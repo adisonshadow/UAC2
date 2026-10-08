@@ -40,8 +40,8 @@ bash scripts/deploy/pack-eadaf.sh --network offline --runtime compose --os cento
 
 | 种类 | 文件名 |
 |------|--------|
-| 安装、升级 | `eadaf-<网络>-<运行方式>-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
-| 补丁 | `eadaf-<网络>-<运行方式>-patch-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
+| 安装、升级 | `eadaf-<网络>-<运行方式>-<种类>-<架构>-v<版本>-<日期>-<时分>.tar.gz` |
+| 补丁 | `eadaf-<网络>-<运行方式>-patch-<种类>-<架构>-v<版本>-<日期>-<时分>.tar.gz` |
 
 补丁种类是 `web`（前端）、`api`（后端），多选用 `web+api`。~~`bizdata`（数据）；只有数据补丁时文件名不带架构。~~ 数据补丁已暂时停用。
 
@@ -79,8 +79,8 @@ pnpm pack:app
 
 | 种类 | 文件名 |
 |------|--------|
-| 安装、升级 | `<应用名>-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
-| 补丁 | `<应用名>-patch-<种类>-<架构>-v<版本>-<日期>.tar.gz` |
+| 安装、升级 | `<应用名>-<种类>-<架构>-v<版本>-<日期>-<时分>.tar.gz` |
+| 补丁 | `<应用名>-patch-<种类>-<架构>-v<版本>-<日期>-<时分>.tar.gz` |
 
 ~~应用数据补丁写入的是该应用在 EADAF 里的 BizData，不是应用自带的另一套库。~~ 应用数据补丁已暂时停用。该应用的配置、模型与业务数据用系统设置里的「应用导出/导入」。
 
@@ -95,7 +95,7 @@ pnpm pack:app
 Compose（离线或在线）：
 
 ```bash
-tar -zxf eadaf-offline-compose-install-amd64-v1.2.0-20261007.tar.gz
+tar -zxf eadaf-offline-compose-install-amd64-v1.2.0-20261007-1430.tar.gz
 cd deploy-offline
 # 编辑 .env：PUBLIC_HOST、JWT_SECRET、ENCRYPTION_KEY、数据库口令
 chmod +x start.sh up.sh status.sh ctl.sh init-db.sh
@@ -121,8 +121,8 @@ K8s（在线或离线）在同一目录执行 `./k8s/install.sh`。集群需要�
 `DEPLOY_ROOT` 指向已经在跑的平台目录。升级保留 `.env` 和数据卷，不重装 Docker / 集群，也不改表结构和业务数据。补丁只换前端 dist 或 API 镜像。
 
 ```bash
-tar -zxf eadaf-offline-compose-upgrade-amd64-v1.2.0-20261007.tar.gz
-cd eadaf-offline-compose-upgrade-amd64-v1.2.0-20261007
+tar -zxf eadaf-offline-compose-upgrade-amd64-v1.2.0-20261007-1430.tar.gz
+cd eadaf-offline-compose-upgrade-amd64-v1.2.0-20261007-1430
 DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh
 ```
 
@@ -137,9 +137,11 @@ DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh
 先完成第 4 节，确认 EADAF 已经启动，再导入应用包。`apply.sh` 读取平台目录里的 `.deploy-mode`：Compose 走 `docker compose`，K8s 走 `kubectl apply`。
 
 ```bash
-tar -zxf fpcu2-install-amd64-v0.1.3-20261007.tar.gz
-cd fpcu2-install-amd64-v0.1.3-20261007
+tar -zxf fpcu2-install-amd64-v0.1.3-20261007-1430.tar.gz
+cd fpcu2-install-amd64-v0.1.3-20261007-1430
 DEPLOY_ROOT=/path/to/deploy-offline ./apply.sh
 ```
 
 应用的升级包、补丁包用同一条命令。应用包不负责安装 Docker 或创建集群。
+
+**对外地址跟随浏览器 Host**：SSO 回调、FPCU 二次跳转、前端拼 EADAF 地址都用「当前访问的 hostname + 端口」，不把客户 IP/域名写进包。换服务器或改域名一般只需 DNS/访问方式变化，不必改 `.env`。`.env` 里主要是容器内互调（如 `EADAF_API_BASE_URL=http://eadaf-api:9526`）和端口（`FPCU2_WEB_HOST_PORT` / `FPCU2_API_HOST_PORT`）。管理端注册应用时默认勾选「自动跟随本系统域名/IP」，`redirect_uri` 形如 `:13303/auth/callback`。

@@ -19,8 +19,35 @@ DEPLOY_ROOT="$(cd "$DEPLOY_ROOT" && pwd)"
 echo "DEPLOY_ROOT=$DEPLOY_ROOT"
 echo "PARTS=$PARTS"
 
+# 补丁包不覆盖平台 lib.sh；现场可能是旧版，缺 load_deploy_choice 时用本地兼容实现。
 # shellcheck disable=SC1091
-source "$DEPLOY_ROOT/lib.sh"
+[[ -f "$DEPLOY_ROOT/lib.sh" ]] && source "$DEPLOY_ROOT/lib.sh"
+if ! declare -F load_deploy_choice >/dev/null 2>&1; then
+  load_deploy_choice() {
+    local root="${1:-.}"
+    if [[ -f "$root/.deploy-mode" ]]; then
+      # shellcheck disable=SC1091
+      source "$root/.deploy-mode"
+    fi
+    if [[ -z "${DEPLOY_RUNTIME:-}" && -n "${DEPLOY_MODE:-}" ]]; then
+      case "$DEPLOY_MODE" in
+        k8s) DEPLOY_RUNTIME=k8s; DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}" ;;
+        normal|online) DEPLOY_RUNTIME=compose; DEPLOY_NETWORK=online ;;
+        *) DEPLOY_RUNTIME=compose; DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}" ;;
+      esac
+    fi
+    DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}"
+    DEPLOY_RUNTIME="${DEPLOY_RUNTIME:-compose}"
+    if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
+      DEPLOY_MODE=k8s
+    elif [[ "$DEPLOY_NETWORK" == "online" ]]; then
+      DEPLOY_MODE=normal
+    else
+      DEPLOY_MODE=offline
+    fi
+    export DEPLOY_NETWORK DEPLOY_RUNTIME DEPLOY_MODE
+  }
+fi
 load_deploy_choice "$DEPLOY_ROOT"
 
 has() { [[ ",$PARTS," == *",$1,"* ]]; }

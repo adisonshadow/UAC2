@@ -57,7 +57,7 @@ const defaultUploadTypes = {
 
 const postgresql = {
   host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT, 35432),
+  port: parseInt(process.env.POSTGRES_PORT, 25432),
   database: process.env.POSTGRES_DATABASE || 'eadaf_db',
   user: process.env.POSTGRES_USER || 'my_name',
   password: process.env.POSTGRES_PASSWORD || '123456',
@@ -69,7 +69,7 @@ const postgresql = {
 };
 
 const api = {
-  port: parseInt(process.env.API_PORT, 3000),
+  port: parseInt(process.env.API_PORT, 29526),
   /** 默认 0.0.0.0：局域网 / 公网可访问；仅本机请设 127.0.0.1（localhost 视为 0.0.0.0，兼容旧 .env） */
   host: (() => {
     const raw = String(process.env.API_HOST || '0.0.0.0').trim();
@@ -124,7 +124,7 @@ const logging = {
 
 const redis = {
   host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT, 36379),
+  port: parseInt(process.env.REDIS_PORT, 26379),
   password: process.env.REDIS_PASSWORD || ''
 };
 

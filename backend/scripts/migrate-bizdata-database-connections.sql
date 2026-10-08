@@ -34,7 +34,7 @@ SELECT
     '本地 PostgreSQL（应用库）',
     'postgresql',
     'localhost',
-    35432,
+    25432,
     'my_name',
     NULL,
     'eadaf_db',

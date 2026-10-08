@@ -10,10 +10,11 @@ const User = require('../../models/user');
 const { normalizeRestrictions } = require('./storageAccessService');
 const { isSystemBucket, isSystemBucketCode } = require('./systemBucketService');
 const imgCropService = require('./imgCropService');
+const { resolveStorageRoot } = require('./storageRoot');
 const logger = require('../../utils/logger');
 
 function getStorageRoot() {
-  return path.join(process.cwd(), config.storage.root);
+  return resolveStorageRoot(config.storage.root, process.cwd());
 }
 
 function ensureDir(dir) {

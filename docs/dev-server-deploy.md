@@ -195,9 +195,9 @@ sudo systemctl restart docker
 
 | 容器 | 镜像 | 宿主机端口 |
 |------|------|------------|
-| `EADAF-postgres` | postgres:16-alpine | `35432` |
-| `EADAF-redis` | redis:7-alpine | `36379` |
-| `EADAF-mysql` | mysql:8.0 | `13306`（BizData 可选） |
+| `EADAF-dev-postgres` | postgres:16-alpine | `25432` |
+| `EADAF-dev-redis` | redis:7-alpine | `26379` |
+| `EADAF-dev-mysql` | mysql:8.0 | `23306`（BizData 可选） |
 
 账号口令与 `backend/.env.example` 一致（Postgres：`my_name` / `123456` / `eadaf_db`）。
 
@@ -226,7 +226,7 @@ cp .env.example .env.development
 cp .env.example .env.production
 ```
 
-按机器实际情况改 `.env.development`（至少核对 Postgres / Redis 端口）。默认 `API_HOST=0.0.0.0`、`CORS_ORIGIN=*`，用局域网 IP 或公网 IP 访问即可，不必再手写 Origin。安全组 / 防火墙需放行 `9526`、`9527`。
+按机器实际情况改 `.env.development`（至少核对 Postgres / Redis 端口）。默认 `API_HOST=0.0.0.0`、`CORS_ORIGIN=*`，用局域网 IP 或公网 IP 访问即可，不必再手写 Origin。安全组 / 防火墙需放行 `29526`、`29527`。
 
 安装 `psql`（`pnpm init-db` 依赖它）：
 
@@ -269,8 +269,8 @@ pnpm dev
 
 能正常起来后 **`Ctrl+C` 退出**。检查：
 
-- 健康检查：`curl -s http://localhost:9526/api/v1/health`
-- Swagger：<http://localhost:9526/swagger>
+- 健康检查：`curl -s http://localhost:29526/api/v1/health`
+- Swagger：<http://localhost:29526/swagger>
 
 默认超管由 `backend/scripts/superadmin.sql` 写入，**初始化完成后尽快改密**。
 
@@ -332,7 +332,7 @@ pnpm pm2dev
 
 | 命令 | 进程名 | 说明 |
 |------|--------|------|
-| `pnpm pm2dev` | `uac-api-dev` + `eadaf-web-dev` | 仅高配开发机：API watch 热重启；前端 Vite `--host`（9527）；依赖已编译的 `@eadaf/ai-base` |
+| `pnpm pm2dev` | `uac-api-dev` + `eadaf-web-dev` | 仅高配开发机：API watch 热重启；前端 Vite `--host`（29527）；依赖已编译的 `@eadaf/ai-base` |
 | `pnpm pm2prod` | `uac-api` + `eadaf-web` | 低配 / 长期托管：API 读 `.env.production`；需先编译 ai-base，再 `pnpm --filter ./frontend build`，再 `vite preview` |
 
 ```bash
@@ -345,10 +345,10 @@ pm2 startup    # 按提示把开机自启命令复制执行
 
 访问：
 
-- 管理端：`http://<服务器IP>:9527`
-- API：`http://<服务器IP>:9526`
+- 管理端：`http://<服务器IP>:29527`
+- API：`http://<服务器IP>:29526`
 
-安全组 / 防火墙需放行 `9526`、`9527`（以及你要对外的 DB 端口，开发机通常不要把 `35432` 暴露到公网）。
+安全组 / 防火墙需放行 `29526`、`29527`（以及你要对外的 DB 端口，开发机通常不要把 `25432` 暴露到公网）。
 
 ---
 
@@ -383,7 +383,7 @@ git remote -v
 | `get.docker.com` / nvm 脚本超时 | 用文档里的国内镜像或 `githubproxy.cc` |
 | `docker compose up` 报 `443 i/o timeout` | 检查 `/etc/docker/daemon.json` 加速器，重启 docker |
 | `permission denied` 操作 docker.sock | 重新 SSH 登录，使 docker 组生效 |
-| `pnpm init-db` 连接失败 | `docker ps` 看 Postgres 是否 `healthy`；核对 `.env.development` 端口 `35432` |
+| `pnpm init-db` 连接失败 | `docker ps` 看 Postgres 是否 `healthy`；核对 `.env.development` 端口 `25432` |
 | 前端能开、接口 CORS 失败 | 确认 `.env.*` 里 `CORS_ORIGIN=*`（或包含当前页面 Origin），并已重启 API |
 | `pm2dev` 找不到命令 | 先在仓库根目录执行过 `pnpm install`；全局 CLI 再 `npm i -g pm2` |
 | 前端报找不到 `@eadaf/ai-base` / `dist/index.js` | `dist` 未进仓库；按 [§6.1](#61-编译-eadafai-base必做) 执行 `pnpm run build`，或 `pnpm --filter ./AIBase_with_example/package/ai-base build` |

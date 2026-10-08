@@ -167,7 +167,7 @@ else
   NEED_WEB=1; NEED_API=1
 fi
 
-DATE_STAMP="$(date +%Y%m%d)"
+DATE_STAMP="$(date +%Y%m%d-%H%M)"
 if [[ "$KIND" == "patch" && "$NEED_WEB" == "0" && "$NEED_API" == "0" ]]; then
   ARCHIVE="${APP_NAME}-patch-${PATCH_SLUG}-v${VERSION}-${DATE_STAMP}.tar.gz"
 elif [[ "$KIND" == "patch" ]]; then
@@ -185,6 +185,17 @@ if [[ "$KIND" == "install" ]]; then
   echo "  端口: web=$WEB_PORT api=$API_PORT"
 fi
 echo "  输出: $OUT_DIR/$ARCHIVE"
+if [[ "${PRESET:-}" == "fpcu2" && -z "${FPCU2_APP_SECRET:-}" ]]; then
+  FPCU_SECRET_DEFAULT="62bb0941354d3e506ed5b7d9126f2fd50655e0966d2695d127e3758477b8ed07"
+  if [[ "$NONINT" != "1" && -t 0 ]]; then
+    read -r -p "FPCU2 应用密钥 [$FPCU_SECRET_DEFAULT]: " FPCU2_APP_SECRET
+    FPCU2_APP_SECRET="${FPCU2_APP_SECRET:-$FPCU_SECRET_DEFAULT}"
+  else
+    FPCU2_APP_SECRET="$FPCU_SECRET_DEFAULT"
+  fi
+  export FPCU2_APP_SECRET
+  echo "  密钥: 已设置（${FPCU2_APP_SECRET:0:8}…）"
+fi
 confirm_or_die "$ASSUME_YES"
 
 if [[ "$NEED_WEB" == "1" || "$NEED_API" == "1" ]]; then
@@ -298,6 +309,10 @@ if [[ -n "$BFF_IMAGE" || -n "$WEB_IMAGE" ]]; then
       - "${HOST_WEB}:${WEB_CONTAINER_PORT}"
     env_file:
       - .env
+    environment:
+      EADAF_WEB_HOST_PORT: "\${EADAF_WEB_HOST_PORT:-9527}"
+      FPCU2_SSO_APPLICATION_ID: "\${FPCU2_APPLICATION_ID:-10000000-0001-4000-8000-000000006666}"
+      FPCU2_BFF_UPSTREAM: "${APP_NAME}-bff:${BFF_CONTAINER_PORT:-13303}"
 EOF
     fi
     if [[ -n "$BFF_IMAGE" ]]; then
@@ -310,6 +325,17 @@ EOF
       - "${HOST_API}:${BFF_CONTAINER_PORT}"
     env_file:
       - .env
+    environment:
+      # 容器内互调，与客户访问 IP/域名无关
+      EADAF_API_BASE_URL: "\${EADAF_API_BASE_URL:-http://eadaf-api:9526}"
+      EADAF_WEB_HOST_PORT: "\${EADAF_WEB_HOST_PORT:-9527}"
+      FPCU2_WEB_HOST_PORT: "${HOST_WEB}"
+      FPCU2_API_HOST_PORT: "${HOST_API}"
+      FPCU2_APPLICATION_ID: "\${FPCU2_APPLICATION_ID:-10000000-0001-4000-8000-000000006666}"
+      FPCU2_APP_SECRET: "\${FPCU2_APP_SECRET:-62bb0941354d3e506ed5b7d9126f2fd50655e0966d2695d127e3758477b8ed07}"
+      SSO_JWT_SALT: "\${SSO_JWT_SALT:-\${FPCU2_APP_SECRET:-62bb0941354d3e506ed5b7d9126f2fd50655e0966d2695d127e3758477b8ed07}}"
+      # 勿继承平台 .env 的 SSO_REDIRECT_MODE=POST_REDIRECT
+      SSO_REDIRECT_MODE: HEADER_REDIRECT
     depends_on:
       eadaf-api:
         condition: service_healthy
@@ -407,12 +433,85 @@ if [[ -z "${DEPLOY_ROOT:-}" ]]; then
 fi
 DEPLOY_ROOT="$(cd "$DEPLOY_ROOT" && pwd)"
 [[ -f "$DEPLOY_ROOT/docker-compose.yml" || -d "$DEPLOY_ROOT/k8s" ]] || die "$DEPLOY_ROOT 不是 EADAF 平台目录"
+# 平台 lib.sh 可能是旧版（无 load_deploy_choice）；应用包自带兼容实现，不依赖平台脚本版本。
 # shellcheck disable=SC1091
-source "$DEPLOY_ROOT/lib.sh"
+[[ -f "$DEPLOY_ROOT/lib.sh" ]] && source "$DEPLOY_ROOT/lib.sh"
+if ! declare -F load_deploy_choice >/dev/null 2>&1; then
+  load_deploy_choice() {
+    local root="${1:-.}"
+    if [[ -f "$root/.deploy-mode" ]]; then
+      # shellcheck disable=SC1091
+      source "$root/.deploy-mode"
+    fi
+    if [[ -z "${DEPLOY_RUNTIME:-}" && -n "${DEPLOY_MODE:-}" ]]; then
+      case "$DEPLOY_MODE" in
+        k8s) DEPLOY_RUNTIME=k8s; DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}" ;;
+        normal|online) DEPLOY_RUNTIME=compose; DEPLOY_NETWORK=online ;;
+        *) DEPLOY_RUNTIME=compose; DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}" ;;
+      esac
+    fi
+    DEPLOY_NETWORK="${DEPLOY_NETWORK:-offline}"
+    DEPLOY_RUNTIME="${DEPLOY_RUNTIME:-compose}"
+    if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
+      DEPLOY_MODE=k8s
+    elif [[ "$DEPLOY_NETWORK" == "online" ]]; then
+      DEPLOY_MODE=normal
+    else
+      DEPLOY_MODE=offline
+    fi
+    export DEPLOY_NETWORK DEPLOY_RUNTIME DEPLOY_MODE
+  }
+fi
 load_deploy_choice "$DEPLOY_ROOT"
 APP_NAME="$(awk -F= '/^name=/{print $2}' "$PATCH_ROOT/app.meta")"
 APP_WEB_PORT="$(awk -F= '/^web_port=/{print $2}' "$PATCH_ROOT/app.meta")"
 APP_API_PORT="$(awk -F= '/^api_port=/{print $2}' "$PATCH_ROOT/app.meta")"
+APP_WEB_PORT="${APP_WEB_PORT:-13308}"
+APP_API_PORT="${APP_API_PORT:-13303}"
+
+# 只写入端口与容器内互调地址；对外 IP/域名由请求 Host 推导，换服务器不必改 .env
+upsert_env() {
+  local file="$1" key="$2" val="$3"
+  touch "$file"
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      sed -i '' -e "s|^${key}=.*|${key}=${val}|" "$file"
+    else
+      sed -i -e "s|^${key}=.*|${key}=${val}|" "$file"
+    fi
+  else
+    printf '%s=%s\n' "$key" "$val" >>"$file"
+  fi
+}
+ENV_FILE="$DEPLOY_ROOT/.env"
+[[ -f "$ENV_FILE" ]] || { [[ -f "$DEPLOY_ROOT/env.template" ]] && cp "$DEPLOY_ROOT/env.template" "$ENV_FILE"; }
+if [[ -f "$ENV_FILE" ]]; then
+  upsert_env "$ENV_FILE" EADAF_API_BASE_URL "http://eadaf-api:9526"
+  upsert_env "$ENV_FILE" EADAF_WEB_HOST_PORT "${EADAF_WEB_HOST_PORT:-9527}"
+  upsert_env "$ENV_FILE" FPCU2_WEB_HOST_PORT "$APP_WEB_PORT"
+  upsert_env "$ENV_FILE" FPCU2_API_HOST_PORT "$APP_API_PORT"
+  upsert_env "$ENV_FILE" FPCU2_APPLICATION_ID "${FPCU2_APPLICATION_ID:-10000000-0001-4000-8000-000000006666}"
+  if ! grep -qE '^FPCU2_APP_SECRET=.+' "$ENV_FILE" 2>/dev/null || grep -qE '^FPCU2_APP_SECRET=change-me$' "$ENV_FILE" 2>/dev/null; then
+    upsert_env "$ENV_FILE" FPCU2_APP_SECRET "62bb0941354d3e506ed5b7d9126f2fd50655e0966d2695d127e3758477b8ed07"
+  fi
+  # 清掉易误导的绝对对外 URL（旧包残留 localhost），避免盖过 Host 跟随
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    sed -i '' \
+      -e '/^FRONTEND_URL=/d' \
+      -e '/^SSO_CALLBACK_URL=/d' \
+      -e '/^FPCU2_PUBLIC_URL=/d' \
+      -e '/^FPCU2_PUBLIC_API_BASE_URL=/d' \
+      "$ENV_FILE" || true
+  else
+    sed -i \
+      -e '/^FRONTEND_URL=/d' \
+      -e '/^SSO_CALLBACK_URL=/d' \
+      -e '/^FPCU2_PUBLIC_URL=/d' \
+      -e '/^FPCU2_PUBLIC_API_BASE_URL=/d' \
+      "$ENV_FILE" || true
+  fi
+fi
+
 mkdir -p "$DEPLOY_ROOT/apps/$APP_NAME"
 if [[ -f "$PATCH_ROOT/compose.yml" ]]; then
   cp "$PATCH_ROOT/compose.yml" "$DEPLOY_ROOT/apps/$APP_NAME/compose.yml"
@@ -444,31 +543,13 @@ else
   init_compose
   if compgen -G "$PATCH_ROOT/docker-images/*.tar" >/dev/null; then
     for tar in "$PATCH_ROOT"/docker-images/*.tar; do
-      docker load -i "$tar"
+      docker load <"$tar"
     done
   fi
   if [[ -f "$DEPLOY_ROOT/apps/$APP_NAME/compose.yml" ]]; then
-    (cd "$DEPLOY_ROOT" && "${COMPOSE[@]}" -f docker-compose.yml -f "apps/$APP_NAME/compose.yml" up -d)
+    (cd "$DEPLOY_ROOT" && "${COMPOSE[@]}" -f docker-compose.yml -f "apps/$APP_NAME/compose.yml" up -d --force-recreate)
   fi
 fi
-# 数据补丁暂时停用。配置与业务数据改走管理端「系统设置」的应用数据包。
-# if [[ -f "$PATCH_ROOT/bizdata-patch.sql" ]]; then
-#   if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
-#     pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath='{.items[0].metadata.name}')"
-#     kubectl exec -i -n "${K8S_NAMESPACE:-eadaf}" "$pod" -- \
-#       env PGPASSWORD="${POSTGRES_PASSWORD:-123456}" \
-#       psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
-#       <"$PATCH_ROOT/bizdata-patch.sql"
-#   else
-#     set -a
-#     # shellcheck disable=SC2046
-#     [[ -f "$DEPLOY_ROOT/.env" ]] && export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$DEPLOY_ROOT/.env" | sed 's/#.*//' | xargs)
-#     set +a
-#     docker exec -i -e PGPASSWORD="${POSTGRES_PASSWORD:-123456}" "${POSTGRES_CONTAINER:-EADAF-postgres}" \
-#       psql -U "${POSTGRES_USER:-my_name}" -d "${POSTGRES_DATABASE:-eadaf_db}" -v ON_ERROR_STOP=1 \
-#       <"$PATCH_ROOT/bizdata-patch.sql"
-#   fi
-# fi
 if [[ -f "$PATCH_ROOT/application.sql.template" && -f "$DEPLOY_ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC2046
@@ -477,9 +558,9 @@ if [[ -f "$PATCH_ROOT/application.sql.template" && -f "$DEPLOY_ROOT/.env" ]]; th
   tmp="$(mktemp)"
   sed \
     -e "s|\${FPCU2_APPLICATION_ID}|${FPCU2_APPLICATION_ID:-10000000-0001-4000-8000-000000006666}|g" \
-    -e "s|\${FPCU2_APP_SECRET}|${FPCU2_APP_SECRET:-change-me}|g" \
-    -e "s|\${SSO_CALLBACK_URL}|${SSO_CALLBACK_URL:-http://localhost:${APP_API_PORT:-13303}/auth/callback}|g" \
-    -e "s|\${FPCU2_PUBLIC_URL}|${FPCU2_PUBLIC_URL:-http://localhost:${APP_WEB_PORT:-13308}}|g" \
+    -e "s|\${FPCU2_APP_SECRET}|${FPCU2_APP_SECRET:-62bb0941354d3e506ed5b7d9126f2fd50655e0966d2695d127e3758477b8ed07}|g" \
+    -e "s|\${FPCU2_API_HOST_PORT}|${FPCU2_API_HOST_PORT:-${APP_API_PORT}}|g" \
+    -e "s|\${FPCU2_WEB_HOST_PORT}|${FPCU2_WEB_HOST_PORT:-${APP_WEB_PORT}}|g" \
     "$PATCH_ROOT/application.sql.template" >"$tmp"
   if [[ "$DEPLOY_RUNTIME" == "k8s" ]]; then
     pod="$(kubectl get pod -n "${K8S_NAMESPACE:-eadaf}" -l app=eadaf-postgres -o jsonpath='{.items[0].metadata.name}')"
@@ -493,6 +574,7 @@ if [[ -f "$PATCH_ROOT/application.sql.template" && -f "$DEPLOY_ROOT/.env" ]]; th
   rm -f "$tmp"
 fi
 echo "应用 ${APP_NAME} 已应用到 ${DEPLOY_ROOT} （网络 ${DEPLOY_NETWORK}，运行方式 ${DEPLOY_RUNTIME}）"
+echo "对外地址跟随浏览器 Host；仅端口 FPCU2_WEB_HOST_PORT=${APP_WEB_PORT} / FPCU2_API_HOST_PORT=${APP_API_PORT}"
 APPLY
 chmod +x "$DEST/apply.sh"
 
