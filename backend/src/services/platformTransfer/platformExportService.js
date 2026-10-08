@@ -197,7 +197,7 @@ async function buildPlatformExportArchive(rawOptions = {}) {
   const payload = await buildPlatformExport(rawOptions);
   const { _storageFileEntries, ...publicPayload } = payload;
   const includeFiles = publicPayload.options.includeFiles === true;
-  const archive = createTransferZipArchive({
+  const archive = await createTransferZipArchive({
     manifest: buildManifest({
       format: FORMAT,
       options: publicPayload.options,

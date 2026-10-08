@@ -11,12 +11,12 @@ const {
   listRecoverableFinalizes,
 } = require('./tusProgressStore');
 const {
-  getStorageRoot,
   getTusDir,
   buildObjectRelativePath,
   findObjectByBucketAndMd5,
   getObjectById,
 } = require('./storageService');
+const objectStore = require('./objectStore');
 
 const WORKER_PATH = path.join(__dirname, 'finalizeTusUploadWorker.js');
 
@@ -122,22 +122,17 @@ async function processFinalize(uploadId) {
   await updateSession(uploadId, { status: 'finalizing' });
 
   const sourcePath = path.join(getTusDir(), uploadId);
-  const destPath = session.relativePath
-    ? path.join(getStorageRoot(), session.relativePath)
-    : null;
 
-  if (destPath) {
-    try {
-      await fsp.stat(destPath);
-      const hashed = session.contentMd5
-        ? { md5: session.contentMd5, size: session.uploadLength }
-        : await runWorker({ action: 'hash', sourcePath: destPath });
-      const contentMd5 = normalizeMd5(hashed.md5);
-      if (!contentMd5) throw new Error('无法计算文件 MD5');
-      await persistObject(session, contentMd5, hashed.size, destPath, session.objectId || undefined);
+  if (session.relativePath && session.contentMd5) {
+    const stored = await objectStore.stat(session.relativePath);
+    if (stored) {
+      await persistObject(
+        session,
+        normalizeMd5(session.contentMd5),
+        Number(stored.size || session.uploadLength || 0),
+        session.objectId || undefined,
+      );
       return;
-    } catch (error) {
-      if (error && error.code !== 'ENOENT') throw error;
     }
   }
 
@@ -170,13 +165,15 @@ async function processFinalize(uploadId) {
   const bucket = await StorageBucket.findByPk(session.bucketId);
   if (!bucket) throw new Error('Bucket 不存在');
   const relativePath = buildObjectRelativePath(bucket.code, objectId, session.filename);
-  const finalDest = path.join(getStorageRoot(), relativePath);
   await updateSession(uploadId, { relativePath, contentMd5 });
-  await runWorker({ action: 'place', sourcePath, destPath: finalDest });
-  await persistObject({ ...session, relativePath }, contentMd5, size, finalDest, objectId);
+  await objectStore.putFile(relativePath, sourcePath, {
+    'Content-Type': session.mimeType || 'application/octet-stream',
+  });
+  await fsp.unlink(sourcePath).catch(() => {});
+  await persistObject({ ...session, relativePath }, contentMd5, size, objectId);
 }
 
-async function persistObject(session, contentMd5, size, destPath, objectId) {
+async function persistObject(session, contentMd5, size, objectId) {
   const id = objectId || uuidv4();
   try {
     await StorageObject.create({
@@ -194,7 +191,7 @@ async function persistObject(session, contentMd5, size, destPath, objectId) {
     if (error.name === 'SequelizeUniqueConstraintError') {
       const dup = await findObjectByBucketAndMd5(session.bucketId, contentMd5);
       if (dup) {
-        await fsp.unlink(destPath).catch(() => {});
+        await objectStore.remove(session.relativePath).catch(() => {});
         await updateSession(session.uploadId, {
           status: 'duplicate',
           contentMd5,

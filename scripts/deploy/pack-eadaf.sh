@@ -282,18 +282,22 @@ EOF
   fi
 fi
 
+MINIO_UPSTREAM="minio/minio:RELEASE.2025-04-22T22-12-26Z"
 if [[ "$NEED_BASE" == "1" ]]; then
   log "拉取基础镜像"
   pull_platform_image "node:22-bookworm" "$PLATFORM" "$ARCH"
-  for img in nginx:1.25-alpine postgres:16-alpine mysql:8.0 redis:7-alpine; do
+  for img in nginx:1.25-alpine postgres:16-alpine mysql:8.0 redis:7-alpine "$MINIO_UPSTREAM"; do
     pull_platform_image "$img" "$PLATFORM" "$ARCH"
   done
+  docker tag "$MINIO_UPSTREAM" eadaf-minio:v1
 fi
 if [[ "$NEED_API" == "1" && "$NEED_BASE" == "0" ]]; then
   pull_platform_image "node:22-bookworm" "$PLATFORM" "$ARCH"
 fi
 if [[ "$KIND" == "upgrade" ]]; then
   pull_platform_image "nginx:1.25-alpine" "$PLATFORM" "$ARCH"
+  pull_platform_image "$MINIO_UPSTREAM" "$PLATFORM" "$ARCH"
+  docker tag "$MINIO_UPSTREAM" eadaf-minio:v1
 fi
 
 if [[ "$NEED_API" == "1" ]]; then
@@ -301,12 +305,13 @@ if [[ "$NEED_API" == "1" ]]; then
   save_image "eadaf-api:v1" "$DEST/docker-images" "$ARCH"
 fi
 if [[ "$NEED_BASE" == "1" ]]; then
-  for img in nginx:1.25-alpine postgres:16-alpine mysql:8.0 redis:7-alpine; do
+  for img in nginx:1.25-alpine postgres:16-alpine mysql:8.0 redis:7-alpine eadaf-minio:v1; do
     save_image "$img" "$DEST/docker-images" "$ARCH"
   done
 fi
 if [[ "$KIND" == "upgrade" ]]; then
   save_image "nginx:1.25-alpine" "$DEST/docker-images" "$ARCH"
+  save_image "eadaf-minio:v1" "$DEST/docker-images" "$ARCH"
 fi
 if [[ "$NEED_WEB" == "1" ]]; then
   build_eadaf_web "$DEST"

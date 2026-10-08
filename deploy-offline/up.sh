@@ -48,7 +48,9 @@ wait_container_healthy EADAF-mysql 180
 log_step "4/6 初始化 EADAF 数据库"
 bash "$ROOT/init-db.sh"
 
-log_step "5/6 启动 eadaf-api / eadaf-web"
+log_step "5/6 启动 MinIO / eadaf-api / eadaf-web"
+compose up -d minio
+wait_container_healthy EADAF-minio 120
 compose up -d eadaf-api
 wait_container_healthy EADAF-api 240
 compose up -d eadaf-web

@@ -125,6 +125,14 @@ cd backend && pnpm dev     # API，默认 29526，nodemon 热重载
 cd frontend && pnpm dev    # 管理端，默认 29527
 ```
 
+文件上传、预览和裁剪走本机 MinIO。先起一个容器（账号与 `backend/.env.example` 一致）：
+
+```bash
+docker run -d --name eadaf-minio -p 9000:9000 \
+  -e MINIO_ROOT_USER=eadaf -e MINIO_ROOT_PASSWORD=eadaf-minio-secret \
+  minio/minio server /data
+```
+
 - 管理端：[http://localhost:29527](http://localhost:29527)
 - API 文档：[http://localhost:29526/swagger](http://localhost:29526/swagger)
 - 健康检查：`curl http://localhost:29526/api/v1/health`
@@ -158,10 +166,10 @@ pnpm --filter ./frontend pm2prod
 ### 4.2 进程对照
 
 
-| 命令                 | pm2 进程名         | 说明                                                                                               |
-| ------------------ | --------------- | ------------------------------------------------------------------------------------------------ |
-| `backend pm2dev`   | `uac-api-dev`   | `NODE_ENV=development`，pm2 watch 文件变更后自动重启                                                       |
-| `backend pm2prod`  | `uac-api`       | `NODE_ENV=production`，加载 `.env.production`                                                       |
+| 命令                 | pm2 进程名         | 说明                                                                                                |
+| ------------------ | --------------- | ------------------------------------------------------------------------------------------------- |
+| `backend pm2dev`   | `uac-api-dev`   | `NODE_ENV=development`，pm2 watch 文件变更后自动重启                                                        |
+| `backend pm2prod`  | `uac-api`       | `NODE_ENV=production`，加载 `.env.production`                                                        |
 | `frontend pm2dev`  | `eadaf-web-dev` | Vite 开发服务（29527，自带 HMR）                                                                           |
 | `frontend pm2prod` | `eadaf-web`     | `vite preview` 托管已构建的 `dist`。需要先 `pnpm --filter ./frontend build`。`/api/v1` 代理到 `localhost:29526` |
 
@@ -184,12 +192,14 @@ pm2 kill                       # 关闭 pm2 守护进程
 
 开发机打出运行时压缩包，到 Linux 上安装 / 升级。平台包不含业务应用；支持 CentOS、Ubuntu、Debian 与 amd64 / arm64。
 
-升级包和补丁包暂时只有程序（镜像 / 前端 dist），不带表结构、不带业务数据。表结构只在 EADAF 安装包里。~~数据补丁（`bizdata`）~~ 已暂时停用。
+升级包和补丁包暂时只有程序（镜像 / 前端 dist），不带表结构、不带业务数据。表结构只在 EADAF 安装包里。~~数据补丁（~~`bizdata`~~）~~ 已暂时停用。
 
 ```bash
 pnpm pack:eadaf    # 平台安装 / 升级 / 补丁 → deploy/EADAF/
 pnpm pack:app      # 业务应用包 → deploy/APP/
 ```
+
+上传的文件放在 **MinIO** 独立卷 `eadaf_minio_data`，不在 API 容器磁盘里。安装包和升级包带 MinIO 镜像；升级会先启动 MinIO，再重建 API。只打前端补丁不动 MinIO。已经写在旧容器磁盘里的文件不会自动搬进 MinIO。
 
 完整说明（网络与运行方式、包内容、导入步骤）见 [docs/pack-and-deploy.md](./docs/pack-and-deploy.md)。服务器上用 Node 直接跑开发环境见 [docs/dev-server-deploy.md](./docs/dev-server-deploy.md)。
 

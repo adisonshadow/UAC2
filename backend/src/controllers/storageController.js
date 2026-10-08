@@ -1,6 +1,6 @@
-const fs = require('fs');
 const path = require('path');
 const storageService = require('../services/storage/storageService');
+const objectStore = require('../services/storage/objectStore');
 const imgCropService = require('../services/storage/imgCropService');
 const { assertObjectAccess } = require('../services/storage/storageAccessService');
 const { getSession, isOwner } = require('../services/storage/tusProgressStore');
@@ -255,16 +255,9 @@ class StorageController {
         authContext: ctx.state.authContext,
       });
 
-      const filePath = await storageService.getObjectFilePath(objectRow);
-      if (!fs.existsSync(filePath)) {
-        ctx.status = 404;
-        ctx.body = { code: 404, message: '物理文件不存在', data: null };
-        return;
-      }
-
-      const croppedPath = await imgCropService.cropImage({
+      const cropped = await imgCropService.cropImage({
         objectId: objectRow.object_id,
-        sourcePath: filePath,
+        sourceKey: objectRow.relative_path,
         query: ctx.query,
       });
 
@@ -272,7 +265,7 @@ class StorageController {
       ctx.set('Content-Type', 'image/webp');
       ctx.set('Content-Disposition', `inline; filename="${encodeURIComponent(baseName)}.webp"`);
       ctx.set('Cache-Control', 'public, max-age=31536000, immutable');
-      ctx.body = fs.createReadStream(croppedPath);
+      ctx.body = cropped;
     } catch (error) {
       StorageController.sendError(ctx, error, error.status || 500);
     }
@@ -296,8 +289,8 @@ class StorageController {
         authContext: ctx.state.authContext,
       });
 
-      const filePath = await storageService.getObjectFilePath(objectRow);
-      if (!fs.existsSync(filePath)) {
+      const stored = await objectStore.stat(objectRow.relative_path);
+      if (!stored) {
         ctx.status = 404;
         ctx.body = { code: 404, message: '物理文件不存在', data: null };
         return;
@@ -305,7 +298,7 @@ class StorageController {
 
       ctx.set('Content-Type', objectRow.mime_type || 'application/octet-stream');
       ctx.set('Content-Disposition', `${disposition}; filename="${encodeURIComponent(objectRow.name)}"`);
-      ctx.body = fs.createReadStream(filePath);
+      ctx.body = await objectStore.getStream(objectRow.relative_path);
     } catch (error) {
       StorageController.sendError(ctx, error, error.status || 403);
     }

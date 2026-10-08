@@ -1,3 +1,5 @@
+const os = require('os');
+const path = require('path');
 const Router = require('koa-router');
 const fs = require('fs');
 const koaBody = require('koa-body').default;
@@ -6,11 +8,9 @@ const auth = require('../middlewares/auth');
 const authWithBuiltinApiGuard = require('../middlewares/withBuiltinApiGuard');
 
 const { operationAudit } = require('../middlewares/operationAudit');const { authRequired, authOptional } = require('../middlewares/storageAuth');
-const { getStorageRoot } = require('../services/storage/storageService');
-
 const router = new Router({ prefix: '/api/v1/storage' });
 
-const storageRoot = getStorageRoot();
+const storageRoot = path.join(os.tmpdir(), 'eadaf-storage-upload');
 if (!fs.existsSync(storageRoot)) {
   fs.mkdirSync(storageRoot, { recursive: true });
 }
@@ -273,7 +273,7 @@ router.post('/objects/dedup-check', authRequired, StorageController.dedupCheck);
  *     summary: 创建 tus 上传会话（超大文件断点续传）[需要认证]
  *     description: |
  *       tus 1.0 协议。Upload-Metadata 必填 bucketCode、filename；可选 contentType、md5、applicationId。
- *       PATCH 流式写入磁盘，完成后 GET /tus/{id}/result 取 StorageObject。
+ *       PATCH 先写入临时目录，完成后对象进入 MinIO，再 GET /tus/{id}/result 取 StorageObject。
  *       轻量接口 POST /objects/upload 上限 100MB；本通道可传小文件，上限见 Tus-Max-Size（默认 5GB）。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -387,7 +387,7 @@ router.get('/tus/:id/result', authRequired, StorageController.getTusResult);
  *   delete:
  *     tags: [Storage]
  *     summary: 删除文件 [需要认证]
- *     description: 删除文件记录，并同步删除磁盘上的原文件及对应图片裁剪缓存。
+ *     description: 删除文件记录，并同步删除 MinIO 中的原文件及对应图片裁剪缓存。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -478,7 +478,7 @@ router.get('/objects/:id/preview', authOptional, StorageController.previewObject
  *     tags: [Storage]
  *     summary: 图片自动裁剪（按 w/h/fit 缩放并缓存，返回 webp）
  *     description: |
- *       传入文件资源 ID 与裁剪参数，服务端使用 sharp 生成 webp 并写入磁盘缓存。
+ *       传入文件资源 ID 与裁剪参数，服务端使用 sharp 生成 webp 并写入 MinIO 缓存。
  *       鉴权与 preview 相同：公开 Bucket 可匿名访问。
  *       两种用法：
  *       1) 同时指定 w、h：fit=cover 覆盖裁剪到精确尺寸；fit=contain（默认）按原图比例缩放到框内（不留白，输出未必等于 w×h）。

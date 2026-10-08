@@ -36,20 +36,22 @@ services:
       API_HOST: "0.0.0.0"
       API_PORT: "9526"
       LOG_FILE: /data/logs/app.log
-      STORAGE_ROOT: /data/upload
-      IMG_CROP_CACHE_DIR: /data/img_crop_cache
       DB_BACKUP_DIR: /data/db-backup
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-eadaf}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-eadaf-minio-secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-eadaf}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     volumes:
       - ./logs/api:/data/logs
-      - eadaf_upload_data:/data/upload
-      - eadaf_img_crop_cache:/data/img_crop_cache
       - eadaf_db_backup:/data/db-backup
       - ./.env:/app/backend/.env.production:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:9526/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -108,10 +110,26 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: eadaf-minio:v1
+    container_name: EADAF-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-eadaf}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-eadaf-minio-secret}
+    volumes:
+      - eadaf_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
 volumes:
   EADAF_postgres_data:
   EADAF_redis_data:
   EADAF_mysql_data:
-  eadaf_upload_data:
-  eadaf_img_crop_cache:
+  eadaf_minio_data:
   eadaf_db_backup:

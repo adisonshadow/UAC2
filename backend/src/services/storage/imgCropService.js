@@ -1,7 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const sharp = require('sharp');
-const config = require('../../config');
+const objectStore = require('./objectStore');
 
 /** 对外仅暴露 cover / contain；contain 内部映射为 sharp inside（按比例适配，不留白） */
 const FIT_VALUES = new Set(['cover', 'contain']);
@@ -45,12 +43,8 @@ function buildCacheFileName(objectId, { w, h, fit }) {
   return `${objectId}_${wPart}x${hPart}_${fitPart}.webp`;
 }
 
-function ensureCacheDir() {
-  const dir = config.storage.cropCacheDir;
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
+function cacheObjectKey(objectId, params) {
+  return `img-crop-cache/${buildCacheFileName(objectId, params)}`;
 }
 
 /**
@@ -72,49 +66,43 @@ function buildResizeOptions({ w, h, fit }) {
   return options;
 }
 
-async function cropImage({ objectId, sourcePath, query }) {
+async function cropImage({ objectId, sourceKey, query }) {
   if (!objectId) {
     const err = new Error('objectId 为必填项');
     err.status = 400;
     throw err;
   }
-  if (!sourcePath || !fs.existsSync(sourcePath)) {
+  if (!sourceKey) {
     const err = new Error('原图文件不存在');
     err.status = 404;
     throw err;
   }
 
   const params = parseCropQuery(query);
-  const cacheDir = ensureCacheDir();
-  const cacheFileName = buildCacheFileName(objectId, params);
-  const cachedImagePath = path.join(cacheDir, cacheFileName);
-
-  if (fs.existsSync(cachedImagePath)) {
-    return cachedImagePath;
+  const cacheKey = cacheObjectKey(objectId, params);
+  if (await objectStore.stat(cacheKey)) {
+    return objectStore.getStream(cacheKey);
   }
 
-  await sharp(sourcePath)
+  const sourceStat = await objectStore.stat(sourceKey);
+  if (!sourceStat) {
+    const err = new Error('原图文件不存在');
+    err.status = 404;
+    throw err;
+  }
+
+  const source = await objectStore.getBuffer(sourceKey);
+  const cropped = await sharp(source)
     .resize(buildResizeOptions(params))
     .webp({ quality: 80 })
-    .toFile(cachedImagePath);
-
-  return cachedImagePath;
+    .toBuffer();
+  await objectStore.putBuffer(cacheKey, cropped, { 'Content-Type': 'image/webp' });
+  return objectStore.getStream(cacheKey);
 }
 
-function purgeCropCache(objectId) {
+async function purgeCropCache(objectId) {
   if (!objectId) return;
-  const dir = config.storage.cropCacheDir;
-  if (!dir || !fs.existsSync(dir)) return;
-  const prefix = `${objectId}_`;
-  const names = fs.readdirSync(dir);
-  names.forEach((name) => {
-    if (!name.startsWith(prefix) || !name.endsWith('.webp')) return;
-    try {
-      fs.unlinkSync(path.join(dir, name));
-    } catch {
-      // 缓存文件缺失或占用时忽略，不影响主删除
-    }
-  });
+  await objectStore.removeByPrefix(`img-crop-cache/${objectId}_`);
 }
 
 module.exports = {

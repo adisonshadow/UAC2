@@ -230,6 +230,10 @@ if (process.env.NODE_ENV !== 'test') {
   ensureSystemBucket().catch((error) => {
     logger.error('初始化系统 Storage Bucket 失败', { message: error.message, stack: error.stack });
   });
+  const { ensureBucket } = require('./services/storage/objectStore');
+  ensureBucket().catch((error) => {
+    logger.error('初始化 MinIO 存储桶失败', { message: error.message, stack: error.stack });
+  });
 }
 
 // 检查服务器是否已启动
