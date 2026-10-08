@@ -12,11 +12,12 @@ OFFLINE_MODULES=(
   "mysql|mysql|EADAF-mysql|mysql:8.0|mysql_8.0.tar"
   "eadaf-api|eadaf-api|EADAF-api|eadaf-api:v1|eadaf-api_v1.tar"
   "eadaf-web|eadaf-web|EADAF-web|nginx:1.25-alpine|nginx_1.25-alpine.tar"
+  "minio|minio|EADAF-minio|eadaf-minio:v1|eadaf-minio_v1.tar"
 )
 
 OFFLINE_APP_MODULES=(eadaf-api eadaf-web)
 OFFLINE_DB_MODULES=(postgres redis mysql)
-OFFLINE_ALL_MODULES=(postgres redis mysql eadaf-api eadaf-web)
+OFFLINE_ALL_MODULES=(postgres redis mysql minio eadaf-api eadaf-web)
 
 log_step() { printf '\n==== %s ====\n' "$*"; }
 log_ok() { printf '[OK] %s\n' "$*"; }

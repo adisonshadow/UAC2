@@ -22,7 +22,7 @@ usage() {
   reinstall <module|all>         覆盖重装：load 镜像 + force-recreate + 等待 + status
 
 模块名:
-  postgres redis mysql eadaf-api eadaf-web
+  postgres redis mysql minio eadaf-api eadaf-web
 
 业务应用不在本底座内，请使用应用包的 apply.sh。
 

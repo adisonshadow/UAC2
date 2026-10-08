@@ -1,12 +1,10 @@
 /**
  * 迁移包中的存储桶 / 对象文件收集与导入。
  */
-const fs = require('fs');
-const fsp = require('fs/promises');
-const path = require('path');
 const { Op } = require('sequelize');
 const models = require('../../models');
-const { getStorageRoot, buildObjectRelativePath } = require('../storage/storageService');
+const { buildObjectRelativePath } = require('../storage/storageService');
+const objectStore = require('../storage/objectStore');
 const { isSystemBucketCode, getSystemBucketConfig } = require('../storage/systemBucketService');
 const {
   extractStorageObjectId,
@@ -23,10 +21,6 @@ function pickModelFields(model, row) {
     if (Object.prototype.hasOwnProperty.call(row, key)) out[key] = row[key];
   }
   return out;
-}
-
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 /** Logo 与 SSO 登录页侧栏图/Lottie。这些文件常落在系统桶且 application_id 不是本应用。 */
@@ -118,11 +112,11 @@ async function decorateObjects(objectRows, storageBuckets, warnings) {
     ...pickModelFields(models.StorageObject, r),
     bucket_code: known.get(r.bucket_id)?.code || null,
   }));
-  const { entries, missing } = collectFileEntries(storageObjects);
+  const { entries, missing } = await collectFileEntries(storageObjects);
   if (missing.length) {
     const preview = missing.slice(0, 8).join(', ');
     warnings.push(
-      `${missing.length} 个对象在磁盘上缺失,已跳过二进制: ${preview}${missing.length > 8 ? '…' : ''}`,
+      `${missing.length} 个对象在对象存储中缺失,已跳过二进制: ${preview}${missing.length > 8 ? '…' : ''}`,
     );
   }
   return { storageBuckets: mergedBuckets, storageObjects, storageFileEntries: entries };
@@ -191,9 +185,7 @@ async function resolveTargetBucket(ctx, obj, { transaction, section } = {}) {
 
 async function copyObjectFile(srcAbs, destRelative) {
   const safe = assertSafeRelativePath(destRelative);
-  const destAbs = path.join(getStorageRoot(), safe);
-  ensureDir(path.dirname(destAbs));
-  await fsp.copyFile(srcAbs, destAbs);
+  await objectStore.putFile(safe, srcAbs);
   return safe;
 }
 
@@ -367,12 +359,17 @@ async function importStorageObjectsSection(ctx, opts = {}) {
         }
 
         const srcAbs = resolvePackageFile(filesDir, obj.relative_path || destRelative);
-        const destAbs = path.join(getStorageRoot(), assertSafeRelativePath(servedRelative));
-        const missingOnDisk = !fs.existsSync(destAbs);
-        if (srcAbs && (!existing || ctx.strategy === 'overwrite' || missingOnDisk)) {
+        const stored = await objectStore.stat(assertSafeRelativePath(servedRelative));
+        const objectMissing = !stored;
+        if (objectStore.shouldCopyStoredObject({
+          existing: Boolean(existing),
+          strategy: ctx.strategy,
+          objectMissing,
+          hasPackageFile: Boolean(srcAbs),
+        })) {
           await copyObjectFile(srcAbs, servedRelative);
           section.counts.copied += 1;
-        } else if (includeFiles && missingOnDisk && !srcAbs) {
+        } else if (includeFiles && objectMissing && !srcAbs) {
           ctx.itemFailed(section, label, new Error('包内无对应二进制,记录已写入但文件无法访问'));
         }
       } catch (e) {

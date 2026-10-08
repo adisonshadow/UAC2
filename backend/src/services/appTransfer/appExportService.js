@@ -854,9 +854,9 @@ async function* exportAppStream(applicationId, rawOptions = {}) {
 }
 
 function buildAppExportArchive(applicationId, rawOptions = {}) {
-  return prepareAppExport(applicationId, rawOptions).then(({ app, options, ctx, summary }) => {
+  return prepareAppExport(applicationId, rawOptions).then(async ({ app, options, ctx, summary }) => {
     const fileOptions = buildFileOptions(options, ctx.sourceApplicationId);
-    const archive = createTransferZipArchive({
+    const archive = await createTransferZipArchive({
       manifest: buildManifest({
         format: 'eadaf-app-export',
         options: fileOptions,

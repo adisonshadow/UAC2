@@ -159,8 +159,8 @@ const BrowserPage: React.FC = () => {
     modal.confirm({
       title: '确认删除该文件？',
       content: record.name
-        ? `将永久删除「${record.name}」及其磁盘文件，此操作不可恢复。`
-        : '将永久删除该记录及其磁盘文件，此操作不可恢复。',
+        ? `将永久删除「${record.name}」及其存储对象，此操作不可恢复。`
+        : '将永久删除该记录及其存储对象，此操作不可恢复。',
       okText: '删除',
       okType: 'danger',
       onOk: async () => {
@@ -443,7 +443,7 @@ const BrowserPage: React.FC = () => {
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Typography.Paragraph style={{ marginBottom: 0 }}>
             在 URL 中传入<strong>资源 ID</strong>（本页列表「资源 ID」列）与裁剪参数，即可获取指定尺寸的 webp 图片。
-            服务端首次生成后会写入磁盘缓存，相同参数再次请求直接返回缓存文件。
+            服务端首次生成后会写入 MinIO 缓存，相同参数再次请求直接返回缓存文件。
           </Typography.Paragraph>
 
           <Typography.Title level={5} style={{ margin: 0 }}>
@@ -532,7 +532,7 @@ const BrowserPage: React.FC = () => {
             <li>仅支持 <Typography.Text code>image/*</Typography.Text> 类型；响应固定为 <Typography.Text code>image/webp</Typography.Text>。</li>
             <li>鉴权与预览相同：公开 Bucket 可匿名；私有 Bucket 需携带 JWT（用户或应用 Token）。</li>
             <li>可直接用于 <Typography.Text code>&lt;img src=&quot;...&quot; /&gt;</Typography.Text>；内置 API 编码为 <Typography.Text code>storage:object:crop</Typography.Text>。</li>
-            <li>缓存目录由环境变量 <Typography.Text code>IMG_CROP_CACHE_DIR</Typography.Text> 配置，默认 <Typography.Text code>backend/img_crop_cache</Typography.Text>。</li>
+            <li>裁剪结果缓存在 MinIO，对象键前缀为 <Typography.Text code>img-crop-cache/</Typography.Text>。</li>
           </ul>
         </Space>
       </Modal>

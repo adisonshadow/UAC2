@@ -11,11 +11,6 @@ const { PassThrough } = require('stream');
 const archiver = require('archiver');
 const yauzl = require('yauzl');
 
-function getStorageRootSafe() {
-  const { getStorageRoot } = require('../storage/storageService');
-  return getStorageRoot();
-}
-
 const PACKAGE_FORMAT_VERSION = 2;
 const PAYLOAD_NAME = 'payload.json';
 const MANIFEST_NAME = 'manifest.json';
@@ -160,8 +155,8 @@ function cleanupUpload(filePath) {
   return Promise.all(tasks);
 }
 
-function collectFileEntries(objects) {
-  const root = getStorageRootSafe();
+async function collectFileEntries(objects) {
+  const objectStore = require('../storage/objectStore');
   const missing = [];
   const entries = [];
   for (const obj of objects || []) {
@@ -177,9 +172,9 @@ function collectFileEntries(objects) {
       missing.push(rel);
       continue;
     }
-    const abs = path.join(root, safe);
-    if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
-      entries.push({ relativePath: safe, absPath: abs, zipName: `${FILES_DIR_NAME}/${safe}` });
+    const stored = await objectStore.stat(safe);
+    if (stored) {
+      entries.push({ relativePath: safe, zipName: `${FILES_DIR_NAME}/${safe}` });
     } else {
       missing.push(safe);
     }
@@ -218,7 +213,8 @@ function buildManifest({ format, options, summary, includeFiles }) {
 /**
  * 流式 zip。调用方把返回的 archive 设为响应体。
  */
-function createTransferZipArchive({ manifest, payloadStream, fileEntries = [] }) {
+async function createTransferZipArchive({ manifest, payloadStream, fileEntries = [] }) {
+  const objectStore = require('../storage/objectStore');
   const archive = archiver('zip', { zlib: { level: 1 } });
   const output = new PassThrough();
   archive.on('error', (err) => {
@@ -228,7 +224,11 @@ function createTransferZipArchive({ manifest, payloadStream, fileEntries = [] })
   archive.append(Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'), { name: MANIFEST_NAME });
   archive.append(payloadStream, { name: PAYLOAD_NAME });
   for (const entry of fileEntries) {
-    archive.file(entry.absPath, { name: entry.zipName });
+    if (entry.absPath) {
+      archive.file(entry.absPath, { name: entry.zipName });
+    } else {
+      archive.append(await objectStore.getStream(entry.relativePath), { name: entry.zipName });
+    }
   }
   archive.finalize();
   return output;

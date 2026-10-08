@@ -152,6 +152,13 @@ const cropCacheDir = path.isAbsolute(cropCacheDirRaw)
 const storage = {
   root: process.env.STORAGE_ROOT || 'upload_test',
   cropCacheDir,
+  minio: {
+    endpoint: process.env.MINIO_ENDPOINT || '',
+    accessKey: process.env.MINIO_ACCESS_KEY || '',
+    secretKey: process.env.MINIO_SECRET_KEY || '',
+    bucket: process.env.MINIO_BUCKET || 'eadaf',
+    region: process.env.MINIO_REGION || 'us-east-1',
+  },
   systemBucket: {
     code: process.env.SYSTEM_STORAGE_BUCKET_CODE || 'eadaf-system',
     name: process.env.SYSTEM_STORAGE_BUCKET_NAME || 'EADAF系统资源',

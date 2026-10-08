@@ -1,3 +1,4 @@
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
@@ -11,6 +12,7 @@ const { normalizeRestrictions } = require('./storageAccessService');
 const { isSystemBucket, isSystemBucketCode } = require('./systemBucketService');
 const imgCropService = require('./imgCropService');
 const { resolveStorageRoot } = require('./storageRoot');
+const objectStore = require('./objectStore');
 const logger = require('../../utils/logger');
 
 function getStorageRoot() {
@@ -22,7 +24,9 @@ function ensureDir(dir) {
 }
 
 function getTusDir() {
-  return path.join(getStorageRoot(), config.storage.tus.dirName || '.tus');
+  const dir = path.join(os.tmpdir(), config.storage.tus.dirName || 'eadaf-tus');
+  ensureDir(dir);
+  return dir;
 }
 
 function sanitizeStorageFilename(name) {
@@ -297,13 +301,6 @@ async function deleteObject(id) {
   const row = await StorageObject.findByPk(id);
   if (!row) return false;
 
-  let filePath = null;
-  try {
-    filePath = await getObjectFilePath(row);
-  } catch (error) {
-    logger.warn('删除文件时路径无效，仅删除记录', { objectId: id, message: error.message });
-  }
-
   const relativePath = row.relative_path;
   const others = relativePath
     ? await StorageObject.count({
@@ -313,16 +310,16 @@ async function deleteObject(id) {
 
   await row.destroy();
 
-  if (filePath && others === 0 && fs.existsSync(filePath)) {
+  if (relativePath && others === 0) {
     try {
-      fs.unlinkSync(filePath);
+      await objectStore.remove(relativePath);
     } catch (error) {
-      logger.warn('删除存储文件失败', { objectId: id, filePath, message: error.message });
+      logger.warn('删除存储对象失败', { objectId: id, relativePath, message: error.message });
     }
   }
 
   try {
-    imgCropService.purgeCropCache(id);
+    await imgCropService.purgeCropCache(id);
   } catch (error) {
     logger.warn('清理裁剪缓存失败', { objectId: id, message: error.message });
   }
@@ -339,16 +336,12 @@ async function uploadObject({ bucketCode, file, authContext, applicationId }) {
   const createdBy = resolveUploadUserId(authContext);
 
   const objectId = uuidv4();
-  const ext = path.extname(file.originalFilename || '') || '';
   const safeName = sanitizeStorageFilename(file.originalFilename || 'file');
-  const relativePath = path.join(bucketRow.code, `${objectId}${ext}`);
+  const relativePath = buildObjectRelativePath(bucketRow.code, objectId, file.originalFilename || 'file');
 
-  const destDir = path.join(getStorageRoot(), bucketRow.code);
-  ensureDir(destDir);
-  const destPath = path.join(getStorageRoot(), relativePath);
-
-  const buffer = fs.readFileSync(file.filepath);
-  fs.writeFileSync(destPath, buffer);
+  const stored = await objectStore.putFile(relativePath, file.filepath, {
+    'Content-Type': file.mimetype || 'application/octet-stream',
+  });
   if (file.filepath && fs.existsSync(file.filepath)) {
     try { fs.unlinkSync(file.filepath); } catch { /* ignore temp cleanup */ }
   }
@@ -358,8 +351,8 @@ async function uploadObject({ bucketCode, file, authContext, applicationId }) {
     bucket_id: bucketRow.bucket_id,
     name: safeName,
     mime_type: file.mimetype || 'application/octet-stream',
-    size: file.size || buffer.length,
-    relative_path: relativePath.split(path.sep).join('/'),
+    size: file.size || stored.size,
+    relative_path: relativePath,
     application_id: resolvedAppId,
     created_by: createdBy,
   });

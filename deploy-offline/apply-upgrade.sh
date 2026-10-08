@@ -58,6 +58,19 @@ if [[ -d "$PATCH_ROOT/docker-images" ]]; then
   cp -a "$PATCH_ROOT/docker-images/." "$DEPLOY_ROOT/docker-images/"
 fi
 
+if [[ -f "$DEPLOY_ROOT/.env" ]] && ! grep -q '^MINIO_ENDPOINT=' "$DEPLOY_ROOT/.env"; then
+  cat >>"$DEPLOY_ROOT/.env" <<'EOF'
+
+# 文件存储（MinIO 独立卷）。已有 .env 升级时补上，不覆盖其它项。
+MINIO_ENDPOINT=http://minio:9000
+MINIO_ACCESS_KEY=eadaf
+MINIO_SECRET_KEY=eadaf-minio-secret
+MINIO_BUCKET=eadaf
+MINIO_ROOT_USER=eadaf
+MINIO_ROOT_PASSWORD=eadaf-minio-secret
+EOF
+fi
+
 chmod +x "$DEPLOY_ROOT/lib.sh" "$DEPLOY_ROOT/ctl.sh" 2>/dev/null || true
 # shellcheck disable=SC1091
 source "$DEPLOY_ROOT/lib.sh"
@@ -75,11 +88,13 @@ else
   require_docker
   init_compose
   if [[ -d "$PATCH_ROOT/docker-images" ]]; then
-    load_module_images eadaf-api eadaf-web
+    load_module_images eadaf-api eadaf-web minio
   fi
   # 升级暂时不跑表结构迁移。init-db 只在 EADAF 安装包。
   # bash "$DEPLOY_ROOT/apply-schema.sh"
   apply_public_host_urls
+  compose up -d minio
+  wait_container_healthy EADAF-minio 120
   compose up -d --force-recreate --no-deps eadaf-api
   wait_container_healthy EADAF-api 240
   compose up -d --force-recreate --no-deps eadaf-web
