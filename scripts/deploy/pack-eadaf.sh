@@ -282,7 +282,7 @@ EOF
   fi
 fi
 
-MINIO_UPSTREAM="minio/minio:RELEASE.2025-04-22T22-12-26Z"
+MINIO_UPSTREAM="pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
 if [[ "$NEED_BASE" == "1" ]]; then
   log "拉取基础镜像"
   pull_platform_image "node:22-bookworm" "$PLATFORM" "$ARCH"

@@ -32,6 +32,27 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    container_name: EADAF-dev-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-eadaf}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-eadaf-minio-secret}
+    volumes:
+      - EADAF_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
 volumes:
   EADAF_postgres_data:
   EADAF_redis_data:
+  EADAF_minio_data:

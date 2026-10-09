@@ -125,12 +125,12 @@ cd backend && pnpm dev     # API，默认 29526，nodemon 热重载
 cd frontend && pnpm dev    # 管理端，默认 29527
 ```
 
-文件上传、预览和裁剪走本机 MinIO。先起一个容器（账号与 `backend/.env.example` 一致）：
+文件上传、预览和裁剪走本机 MinIO。在 `backend` 目录用开发 Compose 拉起（数据卷 `EADAF_minio_data`，账号与 `backend/.env.example` 一致）：
 
 ```bash
-docker run -d --name eadaf-minio -p 9000:9000 \
-  -e MINIO_ROOT_USER=eadaf -e MINIO_ROOT_PASSWORD=eadaf-minio-secret \
-  minio/minio server /data
+cd backend
+docker compose -f docker-compose.yml up -d minio
+# 需要 MySQL 时改用：docker compose -f docker-compose_with_MySQL.yml up -d minio
 ```
 
 - 管理端：[http://localhost:29527](http://localhost:29527)

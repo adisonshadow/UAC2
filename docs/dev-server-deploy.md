@@ -198,6 +198,7 @@ sudo systemctl restart docker
 | `EADAF-dev-postgres` | postgres:16-alpine | `25432` |
 | `EADAF-dev-redis` | redis:7-alpine | `26379` |
 | `EADAF-dev-mysql` | mysql:8.0 | `23306`（BizData 可选） |
+| `EADAF-dev-minio` | pgsty/minio 社区版 | `9000`（API）、`9001`（控制台），数据卷 `EADAF_minio_data` |
 
 账号口令与 `backend/.env.example` 一致（Postgres：`my_name` / `123456` / `eadaf_db`）。
 
